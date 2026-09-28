@@ -1,0 +1,50 @@
+# --- phụ thuộc ---
+# cài lại bằng `npm ci` từ package-lock.json, không cần lên GitHub
+node_modules/
+
+# --- kết quả build ---
+dist/
+# thư mục sinh ra lúc chạy `npm run check`
+# (comment phải đứng riêng một dòng, đặt sau dấu / sẽ thành pattern chết)
+.check/
+coverage/
+*.tsbuildinfo
+
+# --- cache ---
+.vite/
+.vite-inspect/
+
+# --- biến môi trường, KHÔNG BAO GIỜ commit ---
+# chỉ file .env.example được commit, để người khác biết cần đặt biến gì
+.env
+.env.*
+!.env.example
+
+# --- log ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- trình soạn thảo ---
+# có thể commit .vscode/extensions.json nếu muốn chung gợi ý tiện ích
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# --- hệ điều hành ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- file cục bộ của từng máy ---
+*.local
+.env.local
+
+# --- KHÔNG ignore public/assets ---
+# logo, ảnh món quà và video trong đó được code trỏ tới trực tiếp bằng đường
+# dẫn, không commit thì clone về là trang vỡ ảnh. Tổng cả thư mục ~4.5MB.
