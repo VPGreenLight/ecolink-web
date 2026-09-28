@@ -1,9 +1,5 @@
 # EcoLink Web
 
-Bản React thuần của dự án EcoLink (sinh ra từ Figma Make). Không còn `.figma/`,
-không còn plugin Vite custom, không còn `data-node-id` / `data-name` — code đọc
-và sửa được như dự án React bình thường.
-
 ## Chạy
 
 ```bash
@@ -22,7 +18,7 @@ npm run dev     # http://localhost:5173
 ## Cấu trúc
 
 ```
-public/assets/            ảnh gốc từ Figma (giữ nguyên tên file)
+public/assets/            ảnh gốc từ Figma 
 src/
   App.tsx                 route table (react-router)
   index.css               Tailwind v4 @theme: màu, font, class dùng lại
