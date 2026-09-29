@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   CATEGORIES,
   DESC_MAX,
@@ -388,10 +388,15 @@ function Photos({
 }
 
 function Thumb({ file, alt }: { file: File; alt: string }) {
-  // objectURL phải được huỷ, nếu không mỗi lần chọn ảnh là một handle treo
-  // trong bộ nhớ tới khi đóng trang.
-  const url = useMemo(() => URL.createObjectURL(file), [file])
-  useEffect(() => () => URL.revokeObjectURL(url), [url])
+  // Tạo objectURL trong effect chứ không dùng useMemo: StrictMode ở dev gọi
+  // effect 2 lần, cleanup lần một sẽ huỷ URL nếu tạo ở useMemo và ảnh vỡ.
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    const u = URL.createObjectURL(file)
+    setUrl(u)
+    return () => URL.revokeObjectURL(u)
+  }, [file])
+  if (!url) return <span className="size-28 rounded-xl border border-line bg-surface-2" />
   return <img src={url} alt={alt} className="size-28 rounded-xl border border-line object-cover" />
 }
 

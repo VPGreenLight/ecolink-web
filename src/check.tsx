@@ -26,7 +26,8 @@ const CASES = [
   ["Blog", Insights, "Bài viết về rác thải"],
   ["Home", Home, "Phân loại đúng"],
   ["Rewards", Rewards, "Điểm tiêu dùng"],
-  ["Scanner", Scanner, "Chai nhựa PET"],
+  // assert the idle state: result copy is only rendered after a scan
+  ["Scanner", Scanner, "Dùng trang này thế nào"],
   ["MapPage", MapPage, "Cô Ba Thu Gom"],
   ["Partners", Partners, "Duy Tân"],
   ["Feedback", Feedback, "Khiếu nại và góp ý"],

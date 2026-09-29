@@ -59,9 +59,12 @@
      xanh thứ hai cùng hue. Trước đây .display dùng leaf #299236 còn nút dùng
      brand #00703d nên nhìn lệch nhau. */
 
-  /* Lỗi. CHỈ dùng ở biên tin cậy: validate form khiếu nại, viền input sai.
-     Đỏ trong hue brand, 5.5:1 trên nền surface nên chữ lỗi 13px vẫn đọc
-     được. Không dùng để tô nền hay làm nút, không thì hết nghĩa "sai". */
+  /* Lỗi + hành động phá. Đỏ trong hue brand, 5.5:1 trên nền surface nên chữ
+     lỗi 13px vẫn đọc được. Dùng ở hai chỗ:
+       1. biên tin cậy — validate form khiếu nại, viền input sai
+       2. nút X đỏ "Bỏ ảnh" trên /scanner (hành động xoá, xoá luôn hết
+          ảnh đang có nên phải là màu phá chứ không phải màu trung tính)
+     Không dùng để tô nền hay làm nút thường, không thì hết nghĩa "sai". */
   --color-warn: #c0341c; /*         L44  C.160 */
 }
 
@@ -182,6 +185,136 @@
     pointer-events: none;
   }
 
+  /* Vệt quét của AI.
+     Lớp .scan-line phủ kín khung ảnh (inset: 0) nên chiều cao của nó BẰNG
+     chiều cao khung — translateY(100%) vì thế dịch đúng một khung, khác với
+     trường hợp đặt vệt trên chính đường 2px (khi đó % tính theo 2px nên vệt
+     đứng yên). Đường sáng và dải mờ là ::before/::after nên chạy theo. */
+  @keyframes scan-sweep {
+    0% {
+      transform: translateY(-2%);
+    }
+    100% {
+      transform: translateY(108%);
+    }
+  }
+
+  .scan-line {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    animation: scan-sweep 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  }
+
+  /* dải mờ kéo phía trên, cho đọc ra là tia quét chứ không phải sọc trượt */
+  .scan-line::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    left: 0;
+    top: 0;
+    height: 56px;
+    background: linear-gradient(to top, rgb(141 249 184 / 0.32), transparent);
+  }
+
+  /* lõi sáng: mảnh và sắc để thấy rõ trên nền ảnh sáng lẫn tối */
+  .scan-line::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    left: 0;
+    top: 0;
+    height: 2px;
+    background: #e2fff0;
+    box-shadow: 0 0 12px 3px rgb(141 249 184 / 0.8);
+  }
+
+  /* khung chờ: xám nhấp nháy, không dùng spinner vì nội dung đang được thay
+     thế nên skeleton giữ đúng hình dáng hơn, và không nhảy layout. */
+  @keyframes pulse-bar {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 0.9;
+    }
+  }
+
+  .pulse-bar {
+    animation: pulse-bar 1.3s ease-in-out infinite;
+  }
+
+  /* Kết quả AI hiện ra lần lượt. Dùng animation-delay đặt trong JSX thay vì
+     chuỗi setTimeout trong React: không cần state, không cần dọn timer, và tự
+     tắt dưới prefers-reduced-motion. `both` giữ trạng thái cuối nên nội dung
+     không nhấp nháy khi delay hết. */
+  @keyframes reveal {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .reveal {
+    animation: reveal 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Từng chữ hiện dần, kèm nhòe nhẹ cho có cảm giác "AI đang chốt kết quả".
+     blur nhẹ hơn blur(8px) của hiệu ứng gõ vì ở đây mỗi từ chỉ 300ms —
+     blur nặng sẽ thành lời đời. */
+  @keyframes resolve {
+    from {
+      opacity: 0;
+      filter: blur(5px);
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      filter: blur(0);
+      transform: none;
+    }
+  }
+
+  .resolve {
+    animation: resolve 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Khung chip co nhe: viền xanh hiện trước, chữ hiện sau (chữ là .resolve bên
+     trong với delay lớn hơn). */
+  @keyframes draw-frame {
+    from {
+      opacity: 0;
+      transform: scale(0.94);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .draw-frame {
+    animation: draw-frame 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Thanh độ tin cậy nở ra. Dùng scaleX thay vì animate width: width là thuộc
+     tính layout, mỗi frame phải tính lại bố cục; scaleX chạy trên GPU. */
+  @keyframes bar-grow {
+    to {
+      transform: scaleX(1);
+    }
+  }
+
+  .bar-grow {
+    transform: scaleX(0);
+    transform-origin: left;
+    animation: bar-grow 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .auth-enter {
       animation: none;
@@ -189,6 +322,27 @@
 
     .sheen::after {
       animation: none;
+    }
+
+    /* Tắt hiệu ứng quét nhưng GIỮ dải sáng đứng yên ở giữa khung — bỏ hẳn thì
+       người dùng không thấy dấu hiệu có gì đang chạy. Dải nằm ở mép trên
+       lớp phủ nên translateY(50%) mới đưa nó ra giữa khung. */
+    .scan-line,
+    .pulse-bar,
+    .reveal,
+    .resolve,
+    .draw-frame,
+    .bar-grow {
+      animation: none;
+    }
+
+    .scan-line {
+      transform: translateY(50%);
+    }
+
+    /* thanh phải hết scaleX(0) thì mới thấy, nên reset tường minh */
+    .bar-grow {
+      transform: none;
     }
   }
 
