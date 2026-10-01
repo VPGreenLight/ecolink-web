@@ -4,9 +4,10 @@ node_modules/
 
 # --- kết quả build ---
 dist/
-# thư mục sinh ra lúc chạy `npm run check`
+# thư mục sinh ra lúc chạy `npm run check` và `npm run check:routes`
 # (comment phải đứng riêng một dòng, đặt sau dấu / sẽ thành pattern chết)
 .check/
+.check-routes/
 coverage/
 *.tsbuildinfo
 

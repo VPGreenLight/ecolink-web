@@ -1,8 +1,23 @@
 import { useState, type CSSProperties, type FormEvent, type ReactNode } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { signIn } from "@/lib/session"
+import { ROLE_HOME, signIn, type Role } from "@/lib/session"
 
 type Mode = "login" | "register"
+
+/** Tài khoản dùng thử. Vai trò lấy từ tên đăng nhập, KHÔNG có ô chọn vai trò:
+ *  hệ thống thật không ai tự chọn quyền cho mình, vai trò do backend trả về theo
+ *  tài khoản. Bảng này chỉ để bản demo vào được cả 4 khu vực để xem.
+ *
+ *  Mật khẩu kiểm ở `DEMO_PASS` — không kiểm thì ai cũng vào được, có kiểm thì
+ *  phải nhớ mật khẩu trước khi xem được trang. */
+const DEMO: Record<string, { role: Role; name: string }> = {
+  user: { role: "user", name: "Nguyễn Đức" },
+  recycler: { role: "recycler", name: "Cô Ba Thu Gom" },
+  staff: { role: "staff", name: "Lê Thu Hà" },
+  admin: { role: "admin", name: "Quản trị viên" },
+}
+
+const DEMO_PASS = "123"
 
 const COPY = {
   login: {
@@ -46,12 +61,30 @@ export default function AuthForm({ mode }: { mode: Mode }) {
   const copy = COPY[mode]
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
+  const [err, setErr] = useState("")
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const data = new FormData(e.currentTarget)
-    signIn(String(data.get("name") || data.get("email") || "EcoLink"))
-    navigate("/")
+
+    if (mode === "login") {
+      const login = String(data.get("email") ?? "").trim().toLowerCase()
+      const pass = String(data.get("password") ?? "")
+      // Không kiểm tra mật khẩu thì bản demo không khác gì form bịa ra: bấm là
+      // vào. Kiểm thì đúng một câu, và người xem biết mật khẩu là gì.
+      if (!DEMO[login] || pass !== DEMO_PASS) {
+        setErr("Email hoặc mật khẩu không đúng. Kiểm tra lại rồi thử.")
+        return
+      }
+      signIn(DEMO[login].name, DEMO[login].role)
+      navigate(ROLE_HOME[DEMO[login].role])
+      return
+    }
+
+    const raw = String(data.get("name") || data.get("email") || "EcoLink")
+    const name = raw.includes("@") ? raw.split("@")[0] : raw
+    signIn(name, "user")
+    navigate(ROLE_HOME.user)
   }
 
   // form và panel đổi chỗ thật: đăng ký form ở trái, đăng nhập form ở phải.
@@ -116,7 +149,17 @@ export default function AuthForm({ mode }: { mode: Mode }) {
             )}
 
             <Field label="Email">
-              <input className="input" name="email" type="email" placeholder="ban@ecolink.vn" autoComplete="email" required />
+              <input
+                className="input"
+                name="email"
+                /* đăng nhập nhận cả tên tài khoản dùng thử ("admin") nên không
+                   dùng type=email: trình duyệt chặn "admin" là hỏng trước khi
+                   submit có kịp chạy. */
+                type={mode === "login" ? "text" : "email"}
+                placeholder={mode === "login" ? "admin" : "ban@ecolink.vn"}
+                autoComplete={mode === "login" ? "username" : "email"}
+                required
+              />
             </Field>
 
             <Field label="Mật khẩu">
@@ -124,8 +167,12 @@ export default function AuthForm({ mode }: { mode: Mode }) {
                 <input
                   name="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="Tối thiểu 8 ký tự"
-                  minLength={8}
+                  placeholder={
+                    mode === "login"
+                      ? `Mật khẩu tài khoản dùng thử`
+                      : "Tối thiểu 8 ký tự"
+                  }
+                  minLength={mode === "register" ? 8 : undefined}
                   autoComplete={mode === "register" ? "new-password" : "current-password"}
                   required
                   className="input pr-16"
@@ -140,27 +187,55 @@ export default function AuthForm({ mode }: { mode: Mode }) {
               </span>
             </Field>
 
+            {mode === "login" && err && (
+              <p role="alert" className="-mt-2 text-[13px] text-warn">
+                {err}
+              </p>
+            )}
+
             <div className="-mt-1 flex items-center justify-between">
               <label className="flex items-center gap-2 text-[13px] text-muted">
                 <input type="checkbox" className="size-4 accent-brand" />
                 Ghi nhớ đăng nhập
               </label>
               {mode === "login" && (
-                <button type="button" className="text-[13px] font-semibold text-brand transition-colors hover:text-brand-deep">
+                <Link
+                  to="/reset-password"
+                  className="text-[13px] font-semibold text-brand transition-colors hover:text-brand-deep"
+                >
                   Quên mật khẩu?
-                </button>
+                </Link>
               )}
             </div>
 
-            <button type="submit" className="btn-primary mt-1 h-12 justify-between px-5">
+            <button
+              type="submit"
+              className="group mt-1 flex h-14 w-full items-center justify-center gap-2.5 rounded-2xl bg-brand text-[15px] font-bold text-white shadow-[0_10px_26px_-10px_rgba(15,31,21,0.38)] transition-[background-color,box-shadow,transform] duration-200 ease-out hover:bg-brand-deep hover:shadow-[0_14px_30px_-10px_rgba(15,31,21,0.42)] active:scale-[0.985]"
+            >
               {copy.submit}
-              <span>→</span>
+              <svg
+                viewBox="0 0 16 16"
+                fill="none"
+                aria-hidden="true"
+                className="size-4 transition-transform duration-200 ease-out group-hover:translate-x-1"
+              >
+                <path
+                  d="M2 8h11m0 0-4-4m4 4-4 4"
+                  stroke="currentColor"
+                  strokeWidth="1.9"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </button>
           </form>
 
           <p className="mt-7 text-center text-[13px] text-muted">
             {copy.switchText}
-            <Link to={`/${copy.switchTo}`} className="ml-1.5 font-semibold text-brand transition-colors hover:text-brand-deep">
+            <Link
+              to={`/${copy.switchTo}`}
+              className="ml-2 inline-flex h-9 items-center rounded-full bg-brand/10 px-3.5 font-semibold text-brand transition-[background-color,transform] duration-200 ease-out hover:bg-brand/18 active:scale-[0.97]"
+            >
               {copy.switchLink}
             </Link>
           </p>

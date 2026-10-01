@@ -1,6 +1,5 @@
 import { useState } from "react"
 import CheckIn from "@/components/CheckIn"
-import Leaderboard from "@/components/Leaderboard"
 import {
   EARN,
   fmt,
@@ -13,6 +12,10 @@ import {
   tierProgress,
   type Reward,
 } from "@/data/rewards"
+
+/** Icon điểm. Dùng chung với CheckIn để "điểm" luôn là một biểu tượng duy
+ *  nhất, không phải chỗ này chữ "điểm" chỗ kia số trần trụi. */
+const COIN = "/assets/AI/ecolink-coin.webp"
 
 const stroke = {
   stroke: "currentColor",
@@ -28,14 +31,6 @@ function RewardIcon({ kind }: { kind: Reward["kind"] }) {
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={box}>
         <path d="M3 8.5A2.5 2.5 0 0 1 5.5 6H18a3 3 0 0 1 3 3v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16V8.5Z" {...stroke} />
         <path d="M16 10.5h5v4h-5a2 2 0 0 1 0-4Z" {...stroke} />
-      </svg>
-    )
-  if (kind === "service")
-    return (
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={box}>
-        <path d="M3 7h11v10H3zM14 10h4l3 3v4h-7z" {...stroke} />
-        <circle cx="7" cy="19" r="1.6" {...stroke} />
-        <circle cx="17.5" cy="19" r="1.6" {...stroke} />
       </svg>
     )
   if (kind === "tree")
@@ -155,51 +150,137 @@ export default function Rewards() {
         </div>
       </section>
 
-      {/* QUÀ LỚN — nền tối, đứng ngay dưới số dư. Nền tối là để khác hẳn mọi
-          khối còn lại (đều nền sáng): đây là giải đặc biệt, không phải thêm
-          một món quà nữa. .sheen quét vệt sáng chậm 5s, tắt khi bật
-          prefers-reduced-motion. */}
-      <section className="sheen mt-10 overflow-hidden rounded-2xl bg-ink p-5 text-white sm:p-7">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-          <h2 className="text-lg leading-7 font-bold tracking-tight">
+      {/* QUÀ LỚN — khối nền nhạt riêng, đứng ngay dưới số dư, tách khỏi danh mục
+          quà thường bằng nền chứ không bằng đường kẻ.
+
+          Bố cục theo mẫu "ưu đãi nổi bật": thẻ trắng nổi trên nền nhạt, ảnh
+          chiếm đầu thẻ, mép trên khối chữ bị cắt tròn (khuyết vé), rồi tới
+          thanh tiến trình và hàng giá có icon coin. Trước đây là thẻ tối xanh
+          đậm — số tiền 150.000 điểm nổi lên nhưng người dùng không thấy mình
+          còn thiếu bao nhiêu; thanh tiến trình trả lời đúng câu hỏi đó. */}
+      <section className="relative mt-10 overflow-hidden rounded-3xl bg-surface-2 px-5 py-6 md:px-8 md:py-8">
+        {/* Vòng cung trang trí — hoa văn đường đồng của mẫu. Hai vòng, không
+            cần ảnh. pointer-events-none để không chặn chọn chữ. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-28 -right-20 size-[440px] rounded-full border border-brand/12"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-14 -right-6 size-[280px] rounded-full border border-brand/12"
+        />
+
+        <header className="relative flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+          <h2 className="text-2xl leading-8 font-bold tracking-tight text-brand">
             Giải lớn mùa này
           </h2>
-          <p className="text-sm text-mint">
-            Điểm gấp 4 đến 13 lần quà thường
-          </p>
-        </div>
-        <p className="mt-2 max-w-[62ch] text-sm leading-6 text-white/70">
-          Dành cho người giữ chuỗi điểm dài. Đổi bằng điểm tiêu dùng như mọi
-          món khác, nhưng điểm xếp hạng của bạn không bị trừ.
+          <p className="text-sm text-muted">Điểm gấp 4 đến 13 lần quà thường</p>
+        </header>
+        <p className="relative mt-1.5 max-w-[62ch] text-sm leading-6 text-body">
+          Dành riêng cho người giữ chuỗi điểm dài. Đổi bằng điểm tiêu dùng như
+          mọi món khác, điểm xếp hạng của bạn không bị trừ.
         </p>
 
-        <ul className="mt-6 grid gap-4 lg:grid-cols-3">
+        <ul className="relative mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {GRAND_PRIZES.map((g) => {
             const short = Math.max(g.cost - spend, 0)
             const can = short === 0
+            const pct = can ? 100 : Math.round((spend / g.cost) * 100)
             return (
               <li
                 key={g.id}
-                className="flex gap-4 rounded-xl border border-white/12 bg-white/6 p-4"
+                className="flex flex-col rounded-2xl bg-white shadow-[0_18px_40px_-26px_rgba(15,31,21,0.38)]"
               >
-                <img
-                  src={g.img}
-                  alt={g.name}
-                  loading="lazy"
-                  decoding="async"
-                  width={400}
-                  height={300}
-                  className="size-24 shrink-0 rounded-lg object-cover sm:size-28"
-                />
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-sm leading-5 font-bold">{g.name}</h3>
-                  <p className="mt-1 text-xs leading-5 text-white/60">{g.desc}</p>
-                  <p className="mt-2.5 text-base font-bold tabular-nums text-mint">
-                    {fmt(g.cost)}{" "}
-                    <span className="text-xs font-medium text-white/60">điểm</span>
+                <div className="relative">
+                  <img
+                    src={g.img}
+                    alt={g.name}
+                    loading="lazy"
+                    decoding="async"
+                    width={400}
+                    height={300}
+                    className="aspect-[4/3] w-full rounded-t-2xl object-cover"
+                  />
+                  {/* Khuyết vé: nửa tròn màu nền khối cắt vào mép trên khối
+                      chữ. Nằm trong div bọc ảnh nên "đáy" của nó luôn trùng đáy
+                      ảnh, không phải tính tỉ lệ 4/3 bằng tay. */}
+                  <span
+                    aria-hidden="true"
+                    className="absolute bottom-0 left-1/2 size-5 -translate-x-1/2 translate-y-1/2 rounded-full bg-surface-2"
+                  />
+                </div>
+
+                <div className="flex flex-1 flex-col p-4 pt-6">
+                  <h3 className="text-[15px] leading-6 font-bold text-ink">
+                    {g.name}
+                  </h3>
+                  <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted">
+                    {g.desc}
                   </p>
-                  <p className={`text-xs ${can ? "text-mint" : "text-white/55"}`}>
+
+                  {/* Thanh tiến trình = điểm đang có trên tổng điểm món này.
+                      Một câu "Cần thêm 137.600 điểm" không cho biết mình đã
+                      gần tới nỗi bao nhiêu; thanh thì có. */}
+                  <div
+                    className="mt-4 h-1.5 overflow-hidden rounded-full bg-surface-3"
+                    role="progressbar"
+                    aria-valuenow={pct}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`Tiến độ đổi ${g.name}`}
+                  >
+                    <div
+                      className={`h-full rounded-full ${can ? "bg-brand-deep" : "bg-brand"}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <p
+                    className={`mt-2 text-[13px] leading-5 ${
+                      can ? "font-semibold text-brand-deep" : "text-muted"
+                    }`}
+                  >
                     {can ? "Đủ điểm, đổi được ngay" : `Cần thêm ${fmt(short)} điểm`}
+                  </p>
+
+                  {/* Danh sách chi tiết gấp lại. Để mở sẵn thì thẻ này cao hơn
+                      hai thẻ kia và lệch cả hàng — mà danh sách này phần lớn
+                      người dùng không cần đọc mỗi lần vào trang. */}
+                  {g.details && (
+                    <details className="mt-3">
+                      <summary className="cursor-pointer text-[13px] font-semibold text-brand">
+                        Phần quà gồm gì
+                      </summary>
+                      <ul className="mt-2 flex flex-col gap-1.5">
+                        {g.details.map((d) => (
+                          <li
+                            key={d}
+                            className="flex gap-2 text-[12px] leading-5 text-muted"
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="mt-2 size-1 shrink-0 rounded-full bg-mint"
+                            />
+                            <span>{d}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+
+                  {/* mt-auto: 3 thẻ cao bằng nhau nên giá phải bấm đáy, hàng giá
+                      thẳng hàng. */}
+                  <p className="mt-auto flex items-center gap-2 pt-4">
+                    <img
+                      src={COIN}
+                      alt=""
+                      width={24}
+                      height={24}
+                      className="size-6 shrink-0"
+                    />
+                    <span className="text-lg leading-6 font-bold tabular-nums text-ink">
+                      {fmt(g.cost)}
+                    </span>
+                    <span className="text-xs font-medium text-muted">điểm</span>
                   </p>
                 </div>
               </li>
@@ -295,11 +376,9 @@ export default function Rewards() {
         <p className="mt-6 max-w-[68ch] text-sm leading-6 text-muted">
           Đổi quà chỉ trừ điểm tiêu dùng, điểm xếp hạng giữ nguyên nên bạn không
           bị tụt hạng. Quà vật lý được giao tại nhà trong 3 đến 5 ngày làm việc;
-          quà dịch vụ và phiếu giảm giá có hiệu lực từ lần thanh toán kế tiếp.
+          phiếu giảm giá có hiệu lực từ lần thanh toán kế tiếp.
         </p>
       </section>
-
-      <Leaderboard />
 
       <section className="mt-10">
         <h2 className="text-lg leading-7 font-bold tracking-tight text-ink">

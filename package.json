@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "check": "vite build --ssr src/check.tsx --outDir .check --logLevel error && node .check/check.js"
+    "check": "vite build --ssr src/check.tsx --outDir .check --logLevel error && node .check/check.js",
+    "check:routes": "vite build --ssr src/check-routes.tsx --outDir .check-routes --logLevel error && node .check-routes/check-routes.js"
   },
   "dependencies": {
     "react": "^19.0.0",

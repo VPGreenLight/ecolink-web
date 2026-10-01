@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, NavLink, useNavigate } from "react-router-dom"
-import { signOut, useUser } from "@/lib/session"
+import { ROLE_HOME, ROLE_LABEL, signOut, useSession } from "@/lib/session"
 import { NAV_LINKS } from "@/data/nav"
 
 function initialsOf(name: string) {
@@ -59,8 +59,54 @@ function Avatar({ user, size = "size-9" }: { user: string; size?: string }) {
   )
 }
 
+/** Menu tài khoản: các mục dùng chung cho cả 4 vai trò sau đăng nhập. */
+const ACCOUNT_ITEMS = [
+  ["/account/profile", "Hồ sơ và thông báo"],
+  ["/account/password", "Đổi mật khẩu"],
+] as const
+
+/** Mục Khám phá: dùng lại cho cả khách và người đã đăng nhập. `register` chỉ
+ *  hiện khi đã đăng nhập — U-05 là bước nâng cấp từ tài khoản người dân lên
+ *  cơ sở thu mua, người chưa có tài khoản thì chưa ở trong hệ sinh thái. */
+const EXPLORE = [
+  ["/scanner", "Nhận diện rác bằng AI"],
+  ["/map", "Tìm người thu gom"],
+  ["/partners", "Đối tác tái chế"],
+  ["/leaderboard", "Xếp hạng người dùng"],
+] as const
+
+function ExploreList({ close, withRegister }: { close: () => void; withRegister: boolean }) {
+  const items = withRegister
+    ? [...EXPLORE, ["/join-recycler", "Đăng ký cơ sở thu mua"]]
+    : EXPLORE
+
+  return (
+    <>
+      <p className="px-4 pt-3 pb-1 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
+        Khám phá
+      </p>
+      <div className="p-2 pt-0">
+        {items.map(([to, label]) => (
+          <Link
+            key={to}
+            to={to}
+            onClick={close}
+            className="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
+          >
+            {label}
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-3.5 text-muted">
+              <path d="m6 4 4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </Link>
+        ))}
+      </div>
+    </>
+  )
+}
+
 function AccountMenu() {
-  const user = useUser()
+  const session = useSession()
+  const user = session?.name ?? ""
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -113,21 +159,59 @@ function AccountMenu() {
                 <Avatar user={user} size="size-11" />
                 <div className="min-w-0">
                   <p className="truncate text-sm font-bold text-ink">{user}</p>
-                <p className="text-xs text-muted">Đang đăng nhập</p>
+                <p className="text-xs text-muted">{ROLE_LABEL[session!.role]}</p>
                 </div>
               </div>
 
               <div className="p-2">
+                {/* SU-01, SU-02, SU-03: dùng chung mọi vai trò */}
+                {ACCOUNT_ITEMS.map(([to, label]) => (
+                  <Link
+                    key={to}
+                    to={to}
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="size-4 text-muted">
+                      <circle cx="12" cy="8" r="3.5" />
+                      <path d="M12 14c-3.9 0-7 2.4-7 5.4V21h14v-1.6c0-3-3.1-5.4-7-5.4Z" />
+                    </svg>
+                    {label}
+                  </Link>
+                ))}
+
+                {/* Nút duy nhất để vào khu vực theo vai trò. Menu khu vực nằm
+                    trong Portal chứ không ở navbar, nên thiếu mục này thì sau
+                    khi đăng nhập không có đường nào sang trang vận hành. */}
+                <Link
+                  to={ROLE_HOME[session!.role]}
+                  onClick={() => setOpen(false)}
+                  className="flex items-center justify-between rounded-lg bg-brand/10 px-3 py-2.5 text-sm font-semibold text-brand-deep transition-colors hover:bg-brand/16"
+                >
+                  {session!.role === "user"
+                    ? "Trang của tôi"
+                    : `Khu vực ${ROLE_LABEL[session!.role].toLowerCase()}`}
+                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-3.5">
+                    <path d="m6 4 4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </Link>
+
                 <button
                   type="button"
                   onClick={logout}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
+                  className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
                 >
                   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="size-4 text-muted">
                     <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                   Đăng xuất
                 </button>
+              </div>
+
+              {/* U-05 nằm ở đây, không ở trang đăng ký: nâng cấp từ tài khoản
+                  người dân lên cơ sở thu mua thì phải đã có tài khoản. */}
+              <div className="border-t border-line-soft">
+                <ExploreList close={() => setOpen(false)} withRegister />
               </div>
             </>
           ) : (
@@ -141,42 +225,21 @@ function AccountMenu() {
                   <Link
                     to="/register"
                     onClick={() => setOpen(false)}
-                    className="grid h-10 place-items-center rounded-lg border border-brand/30 bg-brand/10 text-[13px] font-semibold text-brand transition-colors hover:bg-brand/16 hover:border-brand/50"
+                    className="grid h-10 place-items-center rounded-xl border border-brand/30 bg-brand/10 text-[13px] font-semibold text-brand transition-[background-color,transform] duration-200 ease-out hover:bg-brand/18 hover:border-brand/50 active:scale-[0.97]"
                   >
                     Tạo tài khoản
                   </Link>
                   <Link
                     to="/login"
                     onClick={() => setOpen(false)}
-                    className="grid h-10 place-items-center rounded-lg bg-brand text-[13px] font-semibold text-white transition-colors hover:bg-brand-deep"
+                    className="grid h-10 place-items-center rounded-xl bg-brand text-[13px] font-semibold text-white transition-[background-color,transform] duration-200 ease-out hover:bg-brand-deep active:scale-[0.97]"
                   >
                     Đăng nhập
                   </Link>
                 </div>
               </div>
 
-              <p className="px-4 pt-3 pb-1 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
-                Khám phá
-              </p>
-              <div className="p-2 pt-0">
-                {[
-                  ["/scanner", "Nhận diện rác bằng AI"],
-                  ["/map", "Tìm người thu gom"],
-                  ["/partners", "Đối tác tái chế"],
-                ].map(([to, label]) => (
-                  <Link
-                    key={to}
-                    to={to}
-                    onClick={() => setOpen(false)}
-                    className="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
-                  >
-                    {label}
-                    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-3.5 text-muted">
-                      <path d="m6 4 4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </Link>
-                ))}
-              </div>
+              <ExploreList close={() => setOpen(false)} withRegister={false} />
             </>
           )}
         </div>

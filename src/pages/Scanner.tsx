@@ -640,11 +640,6 @@ function HowTo() {
           </li>
         ))}
       </ol>
-
-      <p className="rounded-lg border border-line-soft bg-surface-2 px-4 py-3 text-[13px] leading-5 text-body">
-        Bản minh hoạ: nhận diện chạy ngay trong trình duyệt, chưa nối dịch vụ AI
-        thật. Kết quả dùng ảnh và số liệu mẫu để trình diễn.
-      </p>
     </div>
   )
 }
