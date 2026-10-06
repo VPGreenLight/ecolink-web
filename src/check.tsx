@@ -66,6 +66,8 @@ import GamificationConfig from "@/pages/admin/Gamification"
 import LeaderboardConfig from "@/pages/admin/Leaderboard"
 import Fees from "@/pages/admin/Fees"
 import Reconciliation from "@/pages/admin/Reconciliation"
+import AccountProfile from "@/pages/admin/AccountProfile"
+import AccountPassword from "@/pages/admin/AccountPassword"
 
 /** name, component, substring that must survive tag-stripping */
 const CASES = [
@@ -121,6 +123,8 @@ const CASES = [
   ["staff/EcoFacts", EcoFacts, "Quản lý Eco Fact"],
   ["staff/Gifts", Gifts, "Quà tặng và voucher"],
   ["staff/CheckIn", StaffCheckIn, "Điểm danh hằng ngày"],
+  ["staff/account", AccountProfile, "Thông tin được cấp"],
+  ["staff/account/password", AccountPassword, "Đổi mật khẩu"],
 
   // ---- phân hệ ADMIN ----
   ["admin/Home", AdminHome, "Dashboard và thống kê"],
@@ -134,6 +138,8 @@ const CASES = [
   ["admin/Leaderboard", LeaderboardConfig, "Chu kỳ bảng xếp hạng"],
   ["admin/Fees", Fees, "Cấu hình phí giao dịch"],
   ["admin/Reconciliation", Reconciliation, "Đối soát và dòng tiền"],
+  ["admin/account", AccountProfile, "Thông tin được cấp"],
+  ["admin/account/password", AccountPassword, "Đổi mật khẩu"],
 ] as const
 
 let failed = 0

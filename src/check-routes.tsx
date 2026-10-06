@@ -55,6 +55,8 @@ const BY_ROLE: Record<Role, [string, string][]> = {
     ["/staff/ecofacts", "Quản lý Eco Fact"],
     ["/staff/gifts", "Quà tặng và voucher"],
     ["/staff/checkin", "Điểm danh hằng ngày"],
+    ["/staff/account", "Việc đang chờ"],
+    ["/staff/account/password", "Đổi mật khẩu"],
   ],
   admin: [
     ["/admin", "Dashboard và thống kê"],
@@ -68,6 +70,8 @@ const BY_ROLE: Record<Role, [string, string][]> = {
     ["/admin/leaderboard", "Chu kỳ bảng xếp hạng"],
     ["/admin/fees", "Cấu hình phí giao dịch"],
     ["/admin/reconciliation", "Đối soát và dòng tiền"],
+    ["/admin/account", "Việc đang chờ"],
+    ["/admin/account/password", "Đổi mật khẩu"],
   ],
 }
 

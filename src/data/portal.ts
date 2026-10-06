@@ -112,8 +112,8 @@ export const PORTAL_NAV: Record<Role, PortalSection[]> = {
         { to: "/admin/reconciliation", label: "Đối soát dòng tiền" },
       ],
     },
-    // Không có "Khác": các mục tài khoản dùng chung nằm trong Layout công
-    // khai, bấm từ console sẽ mất khung admin. Admin đổi mật khẩu bằng cách
-    // đăng xuất rồi vào lại /login.
+    // Không có "Tài khoản": 2 mục đó nằm sau avatar ở thanh trên, trong
+    // AdminShell. Trộn vào sidebar thì không phân biệt được đâu là màn hình
+    // của khu vực làm việc, đâu là mục dùng chung.
   ],
 }

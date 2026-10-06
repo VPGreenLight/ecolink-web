@@ -349,11 +349,34 @@ export const STATS = {
     { month: "T8", handovers: 3_380, volume: 198_000 },
     { month: "T9", handovers: 3_640, volume: 214_500 },
   ],
+  /** Chất lượng nhận diện AI trong 30 ngày, tách theo nhóm rác.
+   *
+   *  `correct` là số lượt quét mà AI đoán đúng. `falseReports` là số khiếu nại
+   *  của người dùng mà kiểm lại thì AI đúng, người dùng báo nhầm — cần theo dõi
+   *  riêng vì nó tốn công nhân viên xác minh mà không thu được gì, và nhiều khi
+   *  báo sai vì ảnh chụp mờ chứ không phải vì AI kém.
+   *
+   *  `correct / scans` là tỷ lệ đúng thực tế của nhóm, dưới mức trung bình nghĩa
+   *  là nhóm đó đang đánh đổi uy tín. */
+  aiByGroup: [
+    { group: "Nhựa", scans: 48_200, correct: 45_140, falseReports: 512 },
+    { group: "Giấy", scans: 21_600, correct: 20_520, falseReports: 188 },
+    { group: "Kim loại", scans: 14_300, correct: 13_614, falseReports: 96 },
+    { group: "Thủy tinh", scans: 12_900, correct: 11_895, falseReports: 341 },
+    { group: "Hữu cơ", scans: 8_700, correct: 8_178, falseReports: 143 },
+    { group: "Điện tử", scans: 6_100, correct: 5_429, falseReports: 407 },
+  ],
 }
 
 /** Cột cao nhất của biểu đồ, dùng để quy về %. Không hardcode 100% vì chiều
  *  cao cột phải bám dữ liệu, không bám con số đẹp. */
 export const TREND_PEAK = Math.max(...STATS.trend.map((t) => t.handovers))
+
+/** Số lượt quét lớn nhất — mẫu số chung để hai dãi thanh dùng CÙNG một thang
+ *  đo. Nếu mỗi dải tự chuẩn hoá theo giá trị lớn nhất của nó thì mắt so sánh
+ *  nhầm: cột "khiếu nại sai" dài bằng cột lớn nhất của nó chứ không phải bằng
+ *  tỷ lệ thật. */
+export const AI_SCAN_PEAK = Math.max(...STATS.aiByGroup.map((g) => g.scans))
 
 /* ---------------------------------------------------------------------- A-07, A-08 */
 

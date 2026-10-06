@@ -47,6 +47,12 @@ export const AI_IDLE = "/assets/AI/ecolink-ai-normal.webp"
 export const AI_SCANNING = "/assets/AI/ecolink-ai-scan.webp"
 export const AI_DONE = "/assets/AI/ecolink-ai-done.webp"
 
+/** Avatar AI đã cắt nền, 320px. Dùng ở chatbox trợ lý chứ KHÔNG dùng
+ *  `AI_IDLE` cho avatar: bản đó nặng 1,36 MB và có nền trắng vuông. Bản này 23 KB,
+ *  nền trong suốt nên đặt lên nền nào cũng được. Sinh lại bằng
+ *  `python tools/cut-avatar.py` khi ảnh gốc đổi. */
+export const AI_AVATAR = "/assets/AI/ecolink-ai-avatar.webp"
+
 /** demo: thời gian giả lập lúc "quét". Đủ lâu để thấy hiệu ứng, ngắn để
  *  không chờ bực. Có backend thì thay bằng thời gian thật của request. */
 export const SCAN_MS = 2600

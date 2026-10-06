@@ -58,6 +58,8 @@ import GamificationConfig from "@/pages/admin/Gamification"
 import LeaderboardConfig from "@/pages/admin/Leaderboard"
 import Fees from "@/pages/admin/Fees"
 import Reconciliation from "@/pages/admin/Reconciliation"
+import AccountProfile from "@/pages/admin/AccountProfile"
+import AccountPassword from "@/pages/admin/AccountPassword"
 
 /** Mọi route sau đăng nhập đều khai báo vai trò được vào. Không có route nào
  *  "ai cũng vào được": mọi chức năng đều thuộc đúng một vai trò trong tài
@@ -153,6 +155,8 @@ export function AppRoutes() {
             <Route path="ecofacts" element={<EcoFacts />} />
             <Route path="gifts" element={<Gifts />} />
             <Route path="checkin" element={<StaffCheckIn />} />
+            <Route path="account" element={<AccountProfile />} />
+            <Route path="account/password" element={<AccountPassword />} />
           </Route>
 
           {/* ---- phân hệ ADMIN ----
@@ -177,6 +181,8 @@ export function AppRoutes() {
             <Route path="leaderboard" element={<LeaderboardConfig />} />
             <Route path="fees" element={<Fees />} />
             <Route path="reconciliation" element={<Reconciliation />} />
+            <Route path="account" element={<AccountProfile />} />
+            <Route path="account/password" element={<AccountPassword />} />
           </Route>
       </Routes>
   )

@@ -193,3 +193,53 @@ export function Empty({ children }: { children: React.ReactNode }) {
     </p>
   )
 }
+
+/** Biểu đồ cột đứng, cho dãy số theo thời gian.
+ *
+ *  Vẽ bằng CSS chứ không cột SVG: cột là hình chữ nhật, CSS lo một việc mà SVG
+ *  phải tự tính toạ độ cho từng điểm. Thêm tháng sau chỉ thêm phần tử vào mảng.
+ *
+ *  `value` nhận kèm số gốc chứ không nhận phần trăm — người đọc biểu đồ phải
+ *  thấy đúng con số, không phải tỷ lệ quy về đỉnh. Tỷ lệ chỉ dùng cho CHIỀU
+ *  CAO thanh, và chiều cao đó không có nghĩa nếu không ghi số tuyệt đối. */
+export function ColumnChart({
+  data,
+  format = (n) => fmtNum(n),
+  height = 168,
+}: {
+  data: readonly { label: string; value: number }[]
+  format?: (n: number) => string
+  height?: number
+}) {
+  const peak = Math.max(...data.map((d) => d.value))
+
+  return (
+    <div>
+      <div className="flex items-end gap-2" style={{ height }}>
+        {data.map((d) => (
+          <div key={d.label} className="flex h-full min-w-0 flex-1 flex-col justify-end gap-1.5">
+            <span className="text-center text-[11px] font-semibold tabular-nums text-muted">
+              {format(d.value)}
+            </span>
+            <span
+              className="w-full rounded-t-md bg-brand"
+              style={{ height: `${Math.max((d.value / peak) * 100, 1.5)}%` }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 flex gap-2 border-t border-line-soft pt-2">
+        {data.map((d) => (
+          <span
+            key={d.label}
+            className="min-w-0 flex-1 truncate text-center text-[11px] text-muted"
+          >
+            {d.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const fmtNum = (n: number) => n.toLocaleString("vi-VN")
