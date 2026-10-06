@@ -124,12 +124,12 @@ export default function Handover() {
                     </Link>
                   )}
                   {h.status === "collected" && (
-                    <Link to="/me/receipt" className="btn-primary h-9 px-3 text-[13px]">
+                    <Link to="/user/receipt" className="btn-primary h-9 px-3 text-[13px]">
                       Xác nhận biên nhận
                     </Link>
                   )}
                   {h.status === "done" && (
-                    <Link to="/me/transactions" className="btn-ghost h-9 px-3 text-[13px]">
+                    <Link to="/user/transactions" className="btn-ghost h-9 px-3 text-[13px]">
                       Xem tiền đã nhận
                     </Link>
                   )}

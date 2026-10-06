@@ -20,11 +20,11 @@ export const PORTAL_NAV: Record<Role, PortalSection[]> = {
     {
       title: "Tài khoản",
       items: [
-        { to: "/me", label: "Tổng quan" },
-        { to: "/me/handover", label: "Yêu cầu bàn giao" },
-        { to: "/me/receipt", label: "Xác nhận biên nhận" },
-        { to: "/me/payout", label: "Tài khoản nhận tiền" },
-        { to: "/me/transactions", label: "Lịch sử dòng tiền" },
+        { to: "/user", label: "Tổng quan" },
+        { to: "/user/handover", label: "Yêu cầu bàn giao" },
+        { to: "/user/receipt", label: "Xác nhận biên nhận" },
+        { to: "/user/payout", label: "Tài khoản nhận tiền" },
+        { to: "/user/transactions", label: "Lịch sử dòng tiền" },
       ],
     },
     {
@@ -34,7 +34,7 @@ export const PORTAL_NAV: Record<Role, PortalSection[]> = {
         { to: "/guidance", label: "Hướng dẫn phân loại" },
         { to: "/waste", label: "Tra cứu loại rác" },
         { to: "/rewards", label: "Đổi thưởng và điểm danh" },
-        { to: "/me/gamification", label: "Cây ảo và Eco Fact" },
+        { to: "/user/gamification", label: "Cây ảo và Eco Fact" },
       ],
     },
     {
@@ -112,9 +112,8 @@ export const PORTAL_NAV: Record<Role, PortalSection[]> = {
         { to: "/admin/reconciliation", label: "Đối soát dòng tiền" },
       ],
     },
-    {
-      title: "Khác",
-      items: ACCOUNT,
-    },
+    // Không có "Khác": các mục tài khoản dùng chung nằm trong Layout công
+    // khai, bấm từ console sẽ mất khung admin. Admin đổi mật khẩu bằng cách
+    // đăng xuất rồi vào lại /login.
   ],
 }

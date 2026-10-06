@@ -24,12 +24,12 @@ import NotFound from "@/pages/NotFound"
 import Profile from "@/pages/account/Profile"
 import Password from "@/pages/account/Password"
 
-import UserHome from "@/pages/me/Home"
-import Handover from "@/pages/me/Handover"
-import Receipt from "@/pages/me/Receipt"
-import Payout from "@/pages/me/Payout"
-import Transactions from "@/pages/me/Transactions"
-import Gamification from "@/pages/me/Gamification"
+import UserHome from "@/pages/user/Home"
+import Handover from "@/pages/user/Handover"
+import Receipt from "@/pages/user/Receipt"
+import Payout from "@/pages/user/Payout"
+import Transactions from "@/pages/user/Transactions"
+import Gamification from "@/pages/user/Gamification"
 
 import RecyclerHome from "@/pages/recycler/Home"
 import Requests from "@/pages/recycler/Requests"
@@ -109,7 +109,7 @@ export function AppRoutes() {
 
           {/* ---- phân hệ USER ---- */}
           <Route element={<RequireRole roles={["user"]}><Portal role="user" /></RequireRole>}>
-            <Route path="me">
+            <Route path="user">
               <Route index element={<UserHome />} />
               <Route path="handover" element={<Handover />} />
               <Route path="receipt" element={<Receipt />} />
@@ -129,31 +129,40 @@ export function AppRoutes() {
             </Route>
           </Route>
 
-          {/* ---- phân hệ STAFF ---- */}
-          <Route element={<RequireRole roles={["staff"]}><Portal role="staff" /></RequireRole>}>
-            <Route path="staff">
-              <Route index element={<StaffHome />} />
-              <Route path="ai-review" element={<AiReview />} />
-              <Route path="dataset" element={<Dataset />} />
-              <Route path="applications" element={<Applications />} />
-              <Route path="complaints" element={<Complaints />} />
-              <Route path="accounts" element={<Accounts />} />
-              <Route path="blog" element={<BlogEditor />} />
-              <Route path="ecofacts" element={<EcoFacts />} />
-              <Route path="gifts" element={<Gifts />} />
-              <Route path="checkin" element={<StaffCheckIn />} />
-            </Route>
+          <Route path="*" element={<NotFound />} />
+        </Route>
+
+          {/* ---- phân hệ STAFF ----
+              Nằm NGOÀI <Layout> như admin: khu vực làm việc nội bộ không mượn
+              navbar, footer và tab-bar của app công khai. */}
+          <Route
+            path="/staff"
+            element={
+              <RequireRole roles={["staff"]}>
+                <AdminShell role="staff" />
+              </RequireRole>
+            }
+          >
+            <Route index element={<StaffHome />} />
+            <Route path="ai-review" element={<AiReview />} />
+            <Route path="dataset" element={<Dataset />} />
+            <Route path="applications" element={<Applications />} />
+            <Route path="complaints" element={<Complaints />} />
+            <Route path="accounts" element={<Accounts />} />
+            <Route path="blog" element={<BlogEditor />} />
+            <Route path="ecofacts" element={<EcoFacts />} />
+            <Route path="gifts" element={<Gifts />} />
+            <Route path="checkin" element={<StaffCheckIn />} />
           </Route>
 
           {/* ---- phân hệ ADMIN ----
-              CỐ TÌNH nằm NGOÀI <Layout>: console quản trị có khung riêng
-              (components/admin/Shell), không mượn navbar, footer và tab-bar của
-              app công khai. */}
+              CÙNG khung với staff (components/admin/Shell), cùng lý do: không
+              mượn navbar, footer và tab-bar của app công khai. */}
           <Route
             path="/admin"
             element={
               <RequireRole roles={["admin"]}>
-                <AdminShell />
+                <AdminShell role="admin" />
               </RequireRole>
             }
           >
@@ -169,9 +178,6 @@ export function AppRoutes() {
             <Route path="fees" element={<Fees />} />
             <Route path="reconciliation" element={<Reconciliation />} />
           </Route>
-
-          <Route path="*" element={<NotFound />} />
-        </Route>
       </Routes>
   )
 }

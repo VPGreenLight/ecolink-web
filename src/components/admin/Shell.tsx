@@ -3,20 +3,23 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom"
 import { PORTAL_NAV } from "@/data/portal"
 import { ROLE_LABEL, signOut, useSession } from "@/lib/session"
 
-/** Khung riêng của khu vực quản trị.
+/** Khung riêng cho hai vai trò làm việc trong hệ thống: STAFF và ADMIN.
  *
- *  CỐ TÌNH không dùng `Layout` của app công khai: trang quản trị là một sản
- *  phẩm khác, không phải một trang trong app của người dân. Dùng chung khung thì
- *  nó mặc navbar bán hàng, tab-bar điều hướng và footer của người dùng — cả ba
- *  đều không liên quan tới việc ra quyết định cấu hình hệ thống.
+ *  CỐ TÌNH không dùng `Layout` của app công khai: đây là công cụ vận hành, không
+ *  phải một trang trong app của người dân. Dùng chung khung thì nó mặc navbar
+ *  bán hàng, tab-bar điều hướng và footer của người dùng — cả ba đều không liên
+ *  quan tới việc thẩm định dữ liệu hay cấu hình hệ thống.
  *
  *  Khác biệt nhìn thấy được ngay:
  *  - không có navbar công khai, không có footer, không có thanh tab dưới
  *  - thanh trên cố định 56px (thấp hơn navbar 76px) để nhường chỗ cho dữ liệu
- *  - sidebar 232px, dùng chung bề rộng cho mọi trang admin nên khi đổi trang
+ *  - sidebar 232px, dùng chung bề rộng cho mọi trang nên khi đổi trang
  *    nội dung không nhảy
- *  - không cuộn trang: sidebar `sticky` riêng, thanh trên `sticky` riêng */
-export default function AdminShell() {
+ *  - không cuộn trang: sidebar `sticky` riêng, thanh trên `sticky` riêng
+ *
+ *  Menu đọc từ `PORTAL_NAV[role]` nên staff và admin dùng chung component,
+ *  chỉ khác con trỏ ngữ cảnh (role) và nhãn badge. */
+export default function AdminShell({ role }: { role: "staff" | "admin" }) {
   const session = useSession()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
@@ -40,12 +43,12 @@ export default function AdminShell() {
             <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
               <path d="M4 7h16M4 12h16M4 17h16" />
             </svg>
-            <span className="sr-only">Mở menu quản trị</span>
+            <span className="sr-only">Mở menu</span>
           </button>
 
           <img src="/assets/brand/logo1.png" alt="EcoLink" className="h-7 w-auto" />
           <span className="rounded-md bg-brand/10 px-2 py-1 text-[11px] font-bold tracking-[0.1em] text-brand uppercase">
-            Console
+            {ROLE_LABEL[role]}
           </span>
 
           <div className="ml-auto flex items-center gap-3">
@@ -67,10 +70,10 @@ export default function AdminShell() {
         <aside className="w-58 shrink-0 border-r border-line-soft bg-white">
           <nav
             id="admin-nav"
-            aria-label="Điều hướng quản trị"
+            aria-label="Điều hướng khu vực quản trị"
             className={`${open ? "block" : "hidden"} lg:sticky lg:top-14 lg:block lg:max-h-[calc(100dvh-3.5rem)] lg:overflow-y-auto lg:px-4 lg:py-6`}
           >
-            {PORTAL_NAV.admin.map((sec) => (
+            {PORTAL_NAV[role].map((sec) => (
               <div key={sec.title} className="px-4 pb-5 lg:px-0">
                 <h2 className="px-3 text-[11px] font-bold tracking-[0.12em] text-brand uppercase">
                   {sec.title}
@@ -103,10 +106,6 @@ export default function AdminShell() {
           <Outlet />
         </main>
       </div>
-
-      <p className="px-4 pb-6 text-[12px] text-muted lg:px-8">
-        Đang đăng nhập với tài khoản {session?.name} · {ROLE_LABEL.admin}
-      </p>
     </div>
   )
 }

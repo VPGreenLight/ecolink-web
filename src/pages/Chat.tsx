@@ -131,7 +131,7 @@ export default function Chat() {
           biết chuyển tiền cho ai.
         </p>
         <Link
-          to={role === "recycler" ? "/recycler/requests" : "/me/handover"}
+          to={role === "recycler" ? "/recycler/requests" : "/user/handover"}
           className="btn-outline h-11 shrink-0 px-5"
         >
           Tạo yêu cầu bàn giao

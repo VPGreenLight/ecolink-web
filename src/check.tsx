@@ -32,12 +32,12 @@ import ResetPassword from "@/pages/ResetPassword"
 import Profile from "@/pages/account/Profile"
 import Password from "@/pages/account/Password"
 
-import UserHome from "@/pages/me/Home"
-import Handover from "@/pages/me/Handover"
-import Receipt from "@/pages/me/Receipt"
-import Payout from "@/pages/me/Payout"
-import Transactions from "@/pages/me/Transactions"
-import Gamification from "@/pages/me/Gamification"
+import UserHome from "@/pages/user/Home"
+import Handover from "@/pages/user/Handover"
+import Receipt from "@/pages/user/Receipt"
+import Payout from "@/pages/user/Payout"
+import Transactions from "@/pages/user/Transactions"
+import Gamification from "@/pages/user/Gamification"
 
 import RecyclerHome from "@/pages/recycler/Home"
 import Requests from "@/pages/recycler/Requests"
@@ -97,12 +97,12 @@ const CASES = [
   ["Password", Password, "Đổi mật khẩu"],
 
   // ---- phân hệ USER ----
-  ["me/Home", UserHome, "Xin chào"],
-  ["me/Handover", Handover, "Yêu cầu thu gom rác"],
-  ["me/Receipt", Receipt, "Xác nhận bàn giao rác"],
-  ["me/Payout", Payout, "Tài khoản nhận tiền"],
-  ["me/Transactions", Transactions, "Lịch sử tiền vào tài khoản"],
-  ["me/Gamification", Gamification, "Cây ảo của bạn"],
+  ["user/Home", UserHome, "Xin chào"],
+  ["user/Handover", Handover, "Yêu cầu thu gom rác"],
+  ["user/Receipt", Receipt, "Xác nhận bàn giao rác"],
+  ["user/Payout", Payout, "Tài khoản nhận tiền"],
+  ["user/Transactions", Transactions, "Lịch sử tiền vào tài khoản"],
+  ["user/Gamification", Gamification, "Cây ảo của bạn"],
 
   // ---- phân hệ RECYCLER ----
   ["recycler/Home", RecyclerHome, "Tổng quan cơ sở thu mua"],

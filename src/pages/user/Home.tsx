@@ -49,7 +49,7 @@ export default function UserHome() {
             </Table>
           )}
           <Link
-            to="/me/handover"
+            to="/user/handover"
             className="text-[13px] font-semibold text-brand hover:text-brand-deep"
           >
             Quản lý yêu cầu →

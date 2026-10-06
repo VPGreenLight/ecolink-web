@@ -127,7 +127,7 @@ export default function Payout() {
             ))}
           </ol>
           <Link
-            to="/me/transactions"
+            to="/user/transactions"
             className="mt-1 text-[13px] font-semibold text-brand hover:text-brand-deep"
           >
             Xem lịch sử dòng tiền →

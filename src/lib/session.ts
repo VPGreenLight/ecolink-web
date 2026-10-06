@@ -12,7 +12,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 
 /** Trang chủ sau khi đăng nhập, theo vai trò. */
 export const ROLE_HOME: Record<Role, string> = {
-  user: "/me",
+  user: "/user",
   recycler: "/recycler",
   staff: "/staff",
   admin: "/admin",
