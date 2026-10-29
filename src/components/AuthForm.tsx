@@ -77,14 +77,15 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         return
       }
       signIn(DEMO[login].name, DEMO[login].role)
-      navigate(ROLE_HOME[DEMO[login].role])
+      const role = DEMO[login].role
+      navigate(role === "user" ? "/" : ROLE_HOME[role])
       return
     }
 
     const raw = String(data.get("name") || data.get("email") || "EcoLink")
     const name = raw.includes("@") ? raw.split("@")[0] : raw
     signIn(name, "user")
-    navigate(ROLE_HOME.user)
+    navigate("/")
   }
 
   // form và panel đổi chỗ thật: đăng ký form ở trái, đăng nhập form ở phải.

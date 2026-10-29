@@ -30,6 +30,7 @@ import JoinRecycler from "@/pages/JoinRecycler"
 import ResetPassword from "@/pages/ResetPassword"
 
 import Profile from "@/pages/account/Profile"
+import Notifications from "@/pages/account/Notifications"
 import Password from "@/pages/account/Password"
 
 import UserHome from "@/pages/user/Home"
@@ -96,6 +97,7 @@ const CASES = [
 
   // ---- SU-01..SU-03 ----
   ["Profile", Profile, "Hồ sơ cá nhân"],
+  ["Notifications", Notifications, "Thông báo hệ thống"],
   ["Password", Password, "Đổi mật khẩu"],
 
   // ---- phân hệ USER ----

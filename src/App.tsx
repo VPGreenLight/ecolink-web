@@ -22,6 +22,7 @@ import Register from "@/pages/Register"
 import NotFound from "@/pages/NotFound"
 
 import Profile from "@/pages/account/Profile"
+import Notifications from "@/pages/account/Notifications"
 import Password from "@/pages/account/Password"
 
 import UserHome from "@/pages/user/Home"
@@ -96,6 +97,7 @@ export function AppRoutes() {
           {/* ---- sau đăng nhập, dùng chung SU-01..SU-04 ---- */}
           <Route path="account">
             <Route path="profile" element={<Profile />} />
+            <Route path="notifications" element={<Notifications />} />
             <Route path="password" element={<Password />} />
           </Route>
 
