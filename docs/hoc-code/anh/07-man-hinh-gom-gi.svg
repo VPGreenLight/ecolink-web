@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 640" font-family="Segoe UI, Arial, sans-serif">
+  <rect width="980" height="640" fill="#f7fbf8"/>
+  <text x="490" y="44" text-anchor="middle" font-size="23" font-weight="700" fill="#0f1f15">MỘT MÀN HÌNH GỒM NHỮNG GÌ — “khung xương” của mọi file trong src/pages/</text>
+  <text x="490" y="72" text-anchor="middle" font-size="15" fill="#606d64">Mọi trang đều theo 4 phần giống nhau. Nắm 4 phần này là đọc được MỌI file trong dự án.</text>
+
+  <rect x="60" y="100" width="420" height="470" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <text x="270" y="132" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">Màn hình thật (ví dụ trang Đổi thưởng)</text>
+  <rect x="90" y="150" width="360" height="52" rx="8" fill="#eff6f1"/>
+  <text x="270" y="182" text-anchor="middle" font-size="14" font-weight="700" fill="#0f1f15">Phần ① — TIÊU ĐỀ TRANG</text>
+  <rect x="90" y="214" width="360" height="94" rx="8" fill="#eff6f1"/>
+  <text x="270" y="246" text-anchor="middle" font-size="14" font-weight="700" fill="#0f1f15">Phần ② — SỐ LIỆU HIỂN THỊ</text>
+  <text x="270" y="270" text-anchor="middle" font-size="13" fill="#404b44">“Điểm của bạn: 23.400”</text>
+  <text x="270" y="292" text-anchor="middle" font-size="13" fill="#606d64">(con số lấy từ kho dữ liệu)</text>
+  <rect x="90" y="320" width="360" height="120" rx="8" fill="#eff6f1"/>
+  <text x="270" y="352" text-anchor="middle" font-size="14" font-weight="700" fill="#0f1f15">Phần ③ — DANH SÁCH / NỘI DUNG</text>
+  <text x="270" y="376" text-anchor="middle" font-size="13" fill="#404b44">Các thẻ phần quà, bảng danh sách…</text>
+  <text x="270" y="398" text-anchor="middle" font-size="13" fill="#606d64">(vẽ lần lượt từng mục một — học ở tài liệu 14, buổi 10)</text>
+  <text x="270" y="424" text-anchor="middle" font-size="13" fill="#606d64">số mục nhiều hay ít tùy dữ liệu, không viết tay từng mục</text>
+  <rect x="90" y="452" width="360" height="96" rx="8" fill="#eff6f1"/>
+  <text x="270" y="484" text-anchor="middle" font-size="14" font-weight="700" fill="#0f1f15">Phần ④ — NÚT BẤM</text>
+  <text x="270" y="508" text-anchor="middle" font-size="13" fill="#404b44">“Đổi ngay”, ô tìm kiếm, bộ lọc…</text>
+  <text x="270" y="530" text-anchor="middle" font-size="13" fill="#606d64">bấm vào thì chạy một hành động</text>
+
+  <rect x="520" y="100" width="400" height="470" rx="12" fill="#ffffff" stroke="#278733" stroke-width="2.5"/>
+  <text x="720" y="132" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">File code tương ứng — src/pages/Rewards.tsx</text>
+  <rect x="548" y="150" width="344" height="52" rx="8" fill="#f0f7f2"/>
+  <text x="720" y="172" text-anchor="middle" font-size="13" font-family="Consolas, monospace" fill="#0f1f15">import { REWARDS } from "../data/rewards"</text>
+  <text x="720" y="190" text-anchor="middle" font-size="12.5" fill="#606d64">↑ phần ① và ②: “mượn” dữ liệu từ kho về dùng</text>
+  <rect x="548" y="214" width="344" height="94" rx="8" fill="#f0f7f2"/>
+  <text x="720" y="240" text-anchor="middle" font-size="13" font-family="Consolas, monospace" fill="#0f1f15">const [q, setQ] = useState("")</text>
+  <text x="720" y="262" text-anchor="middle" font-size="12.5" fill="#606d64">↑ phần ②: ô nhớ tạm — “người dùng vừa gõ gì”</text>
+  <text x="720" y="286" text-anchor="middle" font-size="12.5" fill="#606d64">(ô nhớ này nằm trong bộ nhớ trình duyệt, F5 là quên)</text>
+  <rect x="548" y="320" width="344" height="120" rx="8" fill="#f0f7f2"/>
+  <text x="720" y="346" text-anchor="middle" font-size="13" font-family="Consolas, monospace" fill="#0f1f15">return ( &lt;div ...&gt; ... &lt;/div&gt; )</text>
+  <text x="720" y="368" text-anchor="middle" font-size="12.5" fill="#606d64">↑ phần ③: “bản vẽ” màn hình — mọi thứ</text>
+  <text x="720" y="386" text-anchor="middle" font-size="12.5" fill="#606d64">bạn nhìn thấy đều được mô tả ở đây</text>
+  <text x="720" y="410" text-anchor="middle" font-size="12.5" fill="#606d64">REWARDS.map(...) = “với mỗi phần quà,</text>
+  <text x="720" y="428" text-anchor="middle" font-size="12.5" fill="#606d64">vẽ ra một thẻ” — không viết tay từng thẻ</text>
+  <rect x="548" y="452" width="344" height="96" rx="8" fill="#f0f7f2"/>
+  <text x="720" y="478" text-anchor="middle" font-size="13" font-family="Consolas, monospace" fill="#0f1f15">onClick={() =&gt; redeem(r.id)}</text>
+  <text x="720" y="500" text-anchor="middle" font-size="12.5" fill="#606d64">↑ phần ④: “khi bấm nút thì chạy việc này”</text>
+  <text x="720" y="524" text-anchor="middle" font-size="12.5" fill="#606d64">(nút nào thiếu dòng này là nút “chết”)</text>
+
+  <text x="490" y="602" text-anchor="middle" font-size="15" font-weight="600" fill="#0f1f15">Cách đọc BẤT KỲ file trang nào: ① mượn gì → ② nhớ gì → ③ vẽ gì → ④ phản ứng khi bấm.</text>
+</svg>

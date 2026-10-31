@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, NavLink, useNavigate } from "react-router-dom"
-import { ROLE_HOME, ROLE_LABEL, signOut, useSession } from "@/lib/session"
+import { ROLE_HOME, ROLE_LABEL, useSession, type Role } from "@/lib/session"
+import { openAuthPopup, openLogoutPopup } from "@/lib/popupAuth"
 import { NAV_LINKS } from "@/data/nav"
 
 function initialsOf(name: string) {
@@ -155,10 +156,22 @@ function AccountMenu() {
     }
   }, [open])
 
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type === "AUTH_SUCCESS") {
+        const role = e.data.role as Role
+        navigate(role === "user" ? "/" : ROLE_HOME[role] || "/")
+      } else if (e.data?.type === "AUTH_LOGOUT") {
+        navigate("/")
+      }
+    }
+    window.addEventListener("message", onMessage)
+    return () => window.removeEventListener("message", onMessage)
+  }, [navigate])
+
   const logout = () => {
-    signOut()
     setOpen(false)
-    navigate("/")
+    openLogoutPopup()
   }
 
   return (
@@ -253,20 +266,28 @@ function AccountMenu() {
                     Đăng nhập để theo dõi lịch thu gom
                   </p>
                   <div className="mt-3.5 grid grid-cols-2 gap-2.5">
-                    <Link
-                      to="/register"
-                      onClick={() => setOpen(false)}
+                    <a
+                      href="/register"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setOpen(false)
+                        openAuthPopup("register")
+                      }}
                       className="grid h-10 place-items-center rounded-xl border border-brand/30 bg-brand/10 text-sm font-semibold text-brand transition-[background-color,transform] duration-200 ease-out hover:bg-brand/18 hover:border-brand/50 active:scale-[0.97]"
                     >
                       Tạo tài khoản
-                    </Link>
-                    <Link
-                      to="/login"
-                      onClick={() => setOpen(false)}
+                    </a>
+                    <a
+                      href="/login"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setOpen(false)
+                        openAuthPopup("login")
+                      }}
                       className="grid h-10 place-items-center rounded-xl bg-brand text-sm font-semibold text-white transition-[background-color,transform] duration-200 ease-out hover:bg-brand-deep active:scale-[0.97]"
                     >
                       Đăng nhập
-                    </Link>
+                    </a>
                   </div>
                 </div>
 

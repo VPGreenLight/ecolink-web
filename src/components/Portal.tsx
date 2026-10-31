@@ -1,7 +1,8 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { NavLink, Outlet, useNavigate } from "react-router-dom"
 import { PORTAL_NAV } from "@/data/portal"
-import { ROLE_LABEL, signOut, useSession, type Role } from "@/lib/session"
+import { ROLE_LABEL, useSession, type Role } from "@/lib/session"
+import { openLogoutPopup } from "@/lib/popupAuth"
 
 /** Khung chung cho 4 vai trò sau đăng nhập: sidebar điều hướng + tiêu đề.
  *
@@ -13,9 +14,16 @@ export default function Portal({ role }: { role: Role }) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
 
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type === "AUTH_LOGOUT") navigate("/")
+    }
+    window.addEventListener("message", onMessage)
+    return () => window.removeEventListener("message", onMessage)
+  }, [navigate])
+
   const logout = () => {
-    signOut()
-    navigate("/")
+    openLogoutPopup()
   }
 
   return (

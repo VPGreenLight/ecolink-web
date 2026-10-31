@@ -67,3 +67,13 @@ export const PARTNERS: Partner[] = [{ name: "...", logo: "/assets/...", ... }]
   geolocation hay map thật. Thay bằng Leaflet/MapLibre khi cần.
 - **Deploy cần SPA fallback.** Vite dev đã có sẵn; khi deploy static phải trỏ
   mọi path về `index.html`, nếu không refresh `/scanner` sẽ 404.
+
+## Nhật ký làm việc & Minh chứng đồ án
+
+Để đảm bảo tính minh bạch học thuật và cung cấp bằng chứng cho Giảng viên hướng dẫn về quá trình tự nghiên cứu, phát triển và giải quyết vấn đề (không sao chép mã nguồn):
+
+- **Quy định ghi nhật ký:** [docs/QUY_TRINH_GHI_NHAT_KY.md](docs/QUY_TRINH_GHI_NHAT_KY.md)
+- **Nhật ký chi tiết các phiên làm việc:**
+  - [Phiên 2026-09-28](docs/2026-09-28.md): Tinh chỉnh Navbar, căn lề, chuẩn hóa bảng màu thương hiệu theo WCAG, sửa 56 màn hình.
+  - [Phiên 2026-10-31](docs/2026-10-31.md): Chuẩn hóa quy chế ghi nhật ký làm việc và minh chứng quá trình code.
+

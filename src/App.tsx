@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom"
 import Layout from "@/components/Layout"
+import AuthLayout from "@/components/AuthLayout"
 import Portal from "@/components/Portal"
 import AdminShell from "@/components/admin/Shell"
 import RequireRole from "@/components/RequireRole"
@@ -19,6 +20,7 @@ import JoinRecycler from "@/pages/JoinRecycler"
 import ResetPassword from "@/pages/ResetPassword"
 import Login from "@/pages/Login"
 import Register from "@/pages/Register"
+import Logout from "@/pages/Logout"
 import NotFound from "@/pages/NotFound"
 
 import Profile from "@/pages/account/Profile"
@@ -74,8 +76,11 @@ export function AppRoutes() {
   return (
     <Routes>
         {/* auth pages own the whole screen — no nav, no footer */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        <Route element={<AuthLayout />}>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+        </Route>
+        <Route path="/logout" element={<Logout />} />
         <Route path="/reset-password" element={<ResetPassword />} />
 
         <Route element={<Layout />}>

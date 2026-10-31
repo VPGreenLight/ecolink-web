@@ -11,6 +11,7 @@ import { MemoryRouter } from "react-router-dom"
 import Navbar from "@/components/Navbar"
 import MobileNav from "@/components/MobileNav"
 import Footer from "@/components/Footer"
+import AuthLayout from "@/components/AuthLayout"
 
 import Blog from "@/pages/Blog"
 import Rewards from "@/pages/Rewards"
@@ -22,6 +23,7 @@ import Partners from "@/pages/Partners"
 import Feedback from "@/pages/Feedback"
 import Login from "@/pages/Login"
 import Register from "@/pages/Register"
+import Logout from "@/pages/Logout"
 import NotFound from "@/pages/NotFound"
 import Guidance from "@/pages/Guidance"
 import Waste from "@/pages/Waste"
@@ -84,8 +86,10 @@ const CASES = [
   ["MapPage", MapPage, "Cô Ba Thu Gom"],
   ["Partners", Partners, "Duy Tân"],
   ["Feedback", Feedback, "Khiếu nại và góp ý"],
+  ["AuthLayout", AuthLayout, "Hệ sinh thái tuần hoàn"],
   ["Login", Login, "Đăng nhập"],
   ["Register", Register, "Tạo tài khoản"],
+  ["Logout", Logout, "Xác nhận đăng xuất"],
   ["NotFound", NotFound, "Không tìm thấy trang"],
 
   // ---- công khai: U-02, U-03, U-04, U-05, U-09/R-05, U-18/R-07 ----

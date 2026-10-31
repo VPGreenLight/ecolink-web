@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 700" font-family="Segoe UI, Arial, sans-serif">
+  <rect width="980" height="700" fill="#f7fbf8"/>
+  <text x="490" y="44" text-anchor="middle" font-size="23" font-weight="700" fill="#0f1f15">BẢN ĐỒ TÙY BIẾN — 5 mức từ “dễ như ăn kẹo” đến “chưa làm được”</text>
+  <text x="490" y="72" text-anchor="middle" font-size="15" fill="#606d64">Đi từ trên xuống dưới. Màu xanh = an toàn, vàng/cam = cần chú ý, đỏ = bẫy, xám = cần học thêm.</text>
+
+  <rect x="60" y="100" width="860" height="104" rx="12" fill="#ffffff" stroke="#67dc99" stroke-width="2"/>
+  <rect x="60" y="100" width="90" height="104" rx="12" fill="#278733"/>
+  <text x="105" y="142" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">MỨC 1</text>
+  <text x="105" y="166" text-anchor="middle" font-size="13" fill="#d9f3e3">an toàn</text>
+  <text x="176" y="134" font-size="17" font-weight="700" fill="#0f1f15">Đổi CHỮ và SỐ — không cần biết code</text>
+  <text x="176" y="160" font-size="14" fill="#404b44">Đổi giá rác, tên quà, số điểm, lời chào, mật khẩu demo, số liệu thống kê…</text>
+  <text x="176" y="184" font-size="13.5" fill="#278733">→ Sửa thẳng trong thư mục src/data/ — Ctrl+S là xong. Chiếm ~80% nhu cầu thường gặp.</text>
+
+  <rect x="60" y="216" width="860" height="104" rx="12" fill="#ffffff" stroke="#67dc99" stroke-width="2"/>
+  <rect x="60" y="216" width="90" height="104" rx="12" fill="#3d9e4e"/>
+  <text x="105" y="258" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">MỨC 2</text>
+  <text x="105" y="282" text-anchor="middle" font-size="13" fill="#d9f3e3">an toàn</text>
+  <text x="176" y="250" font-size="17" font-weight="700" fill="#0f1f15">Đổi MÀU SẮC — sửa 1 file cho cả app</text>
+  <text x="176" y="276" font-size="14" fill="#404b44">Màu xanh chủ đạo, màu nút, phông chữ, độ rộng trang, bo góc…</text>
+  <text x="176" y="300" font-size="13.5" fill="#278733">→ Sửa bảng màu trong src/index.css. Nhớ kiểm tra chữ trắng còn đọc được không.</text>
+
+  <rect x="60" y="332" width="860" height="104" rx="12" fill="#ffffff" stroke="#e7b23c" stroke-width="2"/>
+  <rect x="60" y="332" width="90" height="104" rx="12" fill="#e7b23c"/>
+  <text x="105" y="374" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">MỨC 3</text>
+  <text x="105" y="398" text-anchor="middle" font-size="13" fill="#fdf3d9">vừa</text>
+  <text x="176" y="366" font-size="17" font-weight="700" fill="#0f1f15">THÊM một mục vào danh sách có sẵn</text>
+  <text x="176" y="392" font-size="14" fill="#404b44">Thêm loại rác mới, thêm phần quà, thêm bài blog, thêm yêu cầu mẫu…</text>
+  <text x="176" y="416" font-size="13.5" fill="#a15c00">→ Copy 1 khối có sẵn rồi đổi nội dung. Chú ý: “id” phải khác nhau, số không bọc trong dấu ngoặc kép.</text>
+
+  <rect x="60" y="448" width="860" height="104" rx="12" fill="#ffffff" stroke="#e07f2c" stroke-width="2"/>
+  <rect x="60" y="448" width="90" height="104" rx="12" fill="#e07f2c"/>
+  <text x="105" y="490" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">MỨC 4</text>
+  <text x="105" y="514" text-anchor="middle" font-size="13" fill="#fdf0e2">khó hơn</text>
+  <text x="176" y="482" font-size="17" font-weight="700" fill="#0f1f15">THÊM một màn hình mới + mục menu</text>
+  <text x="176" y="508" font-size="14" fill="#404b44">Ví dụ: thêm trang “Câu chuyện của tôi”, thêm trang con trong khu admin…</text>
+  <text x="176" y="532" font-size="13.5" fill="#a15c00">→ Cần sửa 3 chỗ cùng lúc (file trang mới + bảng địa chỉ + menu). Có công thức từng bước ở tài liệu 13 §5.</text>
+
+  <rect x="60" y="564" width="860" height="116" rx="12" fill="#ffffff" stroke="#c0341c" stroke-width="2.5"/>
+  <rect x="60" y="564" width="90" height="116" rx="12" fill="#c0341c"/>
+  <text x="105" y="612" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">MỨC 0</text>
+  <text x="105" y="636" text-anchor="middle" font-size="13" fill="#fbdcd7">BẪY!</text>
+  <text x="176" y="598" font-size="17" font-weight="700" fill="#0f1f15">Trông như sửa được nhưng THẬT RA KHÔNG</text>
+  <text x="176" y="624" font-size="14" fill="#404b44">~12 trang cấu hình chỉ đổi được bản nháp trên màn hình; bấm F5 là về như cũ.</text>
+  <text x="176" y="648" font-size="13.5" fill="#c0341c">→ Không phải app hỏng — app chưa có backend. Đọc kỹ “Mức 0” trong tài liệu 13 trước khi mất công.</text>
+  <text x="176" y="670" font-size="13.5" fill="#606d64">Mức 5 (không nằm trong hình): đăng nhập thật, OTP, thanh toán, lưu dữ liệu — CẦN LẬP TRÌNH BACKEND, xem tài liệu 15.</text>
+</svg>

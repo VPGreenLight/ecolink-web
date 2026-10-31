@@ -1,24 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
-/* chuyển đổi login <-> register: nội dung trượt qua giữa hai bên.
-   --auth-from đặt trong JSX (âm = từ trái, dương = từ phải).
-   opacity nhanh hơn translateX để nửa đường đi luôn nhìn thấy rõ, nếu fade
-   chậm như slide thì phần lớn thời gian nằm mờ và không thấy trượt. */
-@keyframes auth-in {
-  0% {
-    opacity: 0;
-    transform: translateX(var(--auth-from, 0));
-  }
-  30% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
 /*
  * Every neutral is tinted toward the brand hue (oklch ~156) instead of the
  * violet it used to be, and chroma collapses as lightness approaches 100.
@@ -144,12 +126,6 @@
   .btn-ghost {
     @apply border border-sage-line bg-surface text-brand
       hover:bg-surface-2;
-  }
-
-  /* trượt qua khi đổi giữa /login và /register. 700ms + ease-in-out mềm:
-     ease-out expo bay hết quãng đường trong 30% đầu nên nhìn như nhảy. */
-  .auth-enter {
-    animation: auth-in 700ms cubic-bezier(0.4, 0, 0.2, 1) both;
   }
 
   /* Quà lớn: một vệt sáng quét ngang. Đây là chỗ duy nhất trong app được
@@ -316,10 +292,6 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .auth-enter {
-      animation: none;
-    }
-
     .sheen::after {
       animation: none;
     }

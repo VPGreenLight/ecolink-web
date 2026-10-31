@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 640" font-family="Segoe UI, Arial, sans-serif">
+  <rect width="980" height="640" fill="#f7fbf8"/>
+  <text x="490" y="44" text-anchor="middle" font-size="23" font-weight="700" fill="#0f1f15">MỘT KHO DỮ LIỆU — NHIỀU MÀN HÌNH CÙNG ĐỌC</text>
+  <text x="490" y="72" text-anchor="middle" font-size="15" fill="#606d64">Ví dụ: đổi giá “Bìa carton” trong src/data/waste.ts thì những đâu đổi theo?</text>
+
+  <rect x="360" y="110" width="260" height="96" rx="12" fill="#eff6f1" stroke="#278733" stroke-width="2.5"/>
+  <text x="490" y="142" text-anchor="middle" font-size="16" font-weight="700" fill="#0f1f15">src/data/waste.ts</text>
+  <text x="490" y="166" text-anchor="middle" font-size="14" font-family="Consolas, monospace" fill="#0f1f15">{ id: "carton", price: 2_200 }</text>
+  <text x="490" y="190" text-anchor="middle" font-size="12.5" fill="#606d64">← bạn sửa 2_200 thành 3_000 ở đây</text>
+
+  <rect x="60" y="290" width="250" height="120" rx="12" fill="#ffffff" stroke="#67dc99" stroke-width="2"/>
+  <text x="185" y="322" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">Trang tra cứu /waste</text>
+  <text x="185" y="348" text-anchor="middle" font-size="13.5" fill="#278733">✔ đổi ngay (đọc thẳng)</text>
+  <text x="185" y="372" text-anchor="middle" font-size="12.5" fill="#606d64">chỉ cần bấm F5 nếu đang mở sẵn</text>
+  <text x="185" y="394" text-anchor="middle" font-size="12.5" fill="#606d64">Bảng tra cứu + bộ lọc lấy từ kho này</text>
+
+  <rect x="365" y="290" width="250" height="120" rx="12" fill="#ffffff" stroke="#67dc99" stroke-width="2"/>
+  <text x="490" y="322" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">Hướng dẫn /guidance</text>
+  <text x="490" y="348" text-anchor="middle" font-size="13.5" fill="#278733">✔ đổi ngay (đọc thẳng)</text>
+  <text x="490" y="372" text-anchor="middle" font-size="12.5" fill="#606d64">Câu luật + cách chuẩn bị</text>
+  <text x="490" y="394" text-anchor="middle" font-size="12.5" fill="#606d64">cũng lấy từ kho này</text>
+
+  <rect x="670" y="290" width="250" height="120" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <text x="795" y="322" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">Danh mục cơ sở thu mua</text>
+  <text x="795" y="348" text-anchor="middle" font-size="13.5" fill="#278733">✔ đổi, nhưng cần Tải lại trang</text>
+  <text x="795" y="372" text-anchor="middle" font-size="12.5" fill="#606d64">/recycler/catalog tự chụp một “bản</text>
+  <text x="795" y="394" text-anchor="middle" font-size="12.5" fill="#606d64">photocopy” lúc mở trang</text>
+
+  <rect x="215" y="470" width="250" height="120" rx="12" fill="#ffffff" stroke="#e7b23c" stroke-width="2"/>
+  <text x="340" y="502" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">/admin/categories</text>
+  <text x="340" y="528" text-anchor="middle" font-size="13.5" fill="#a15c00">⚠ đọc kho rồi tự chụp bản riêng</text>
+  <text x="340" y="552" text-anchor="middle" font-size="12.5" fill="#606d64">sửa giá TRÊN MÀN HÌNH admin thì</text>
+  <text x="340" y="574" text-anchor="middle" font-size="12.5" fill="#606d64">chỉ bản photocopy đó đổi (xem hình 04)</text>
+
+  <rect x="515" y="470" width="250" height="120" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <text x="640" y="502" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">/scanner (nhận diện AI)</text>
+  <text x="640" y="528" text-anchor="middle" font-size="13.5" fill="#606d64">có kho riêng src/data/scanner.ts</text>
+  <text x="640" y="552" text-anchor="middle" font-size="12.5" fill="#606d64">nên giá ở đây KHÔNG đổi theo</text>
+  <text x="640" y="574" text-anchor="middle" font-size="12.5" fill="#606d64">đây là ví dụ về “kho thứ hai”</text>
+
+  <path d="M 430 206 L 185 282" stroke="#67dc99" stroke-width="2.5" fill="none"/>
+  <path d="M 185 282 l 12 -3 l -3 11 z" fill="#67dc99"/>
+  <path d="M 490 206 L 490 282" stroke="#67dc99" stroke-width="2.5" fill="none"/>
+  <path d="M 490 282 l -6 -10 l 12 0 z" fill="#67dc99"/>
+  <path d="M 550 206 L 795 282" stroke="#67dc99" stroke-width="2.5" fill="none"/>
+  <path d="M 795 282 l -12 -3 l 3 11 z" fill="#67dc99"/>
+  <path d="M 430 206 L 340 462" stroke="#e7b23c" stroke-width="2" stroke-dasharray="6 5" fill="none"/>
+  <path d="M 340 462 l -2 -12 l 11 4 z" fill="#e7b23c"/>
+  <path d="M 550 206 L 640 462" stroke="#b9cdbf" stroke-width="2" stroke-dasharray="6 5" fill="none"/>
+  <path d="M 640 462 l -2 -12 l 11 4 z" fill="#b9cdbf"/>
+
+  <text x="490" y="244" text-anchor="middle" font-size="14" font-weight="600" fill="#278733">đường liền = đọc thẳng từ kho, luôn mới</text>
+  <text x="490" y="262" text-anchor="middle" font-size="14" font-weight="600" fill="#a15c00">đường đứt = bản chụp riêng, không dính gì tới kho gốc</text>
+</svg>
