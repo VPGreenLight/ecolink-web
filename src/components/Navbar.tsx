@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, NavLink, useNavigate } from "react-router-dom"
-import { ROLE_HOME, ROLE_LABEL, useSession, type Role } from "@/lib/session"
-import { openAuthPopup, openLogoutPopup } from "@/lib/popupAuth"
+import { ROLE_HOME, ROLE_LABEL, signOut, useSession, type Role } from "@/lib/session"
+import { openAuthPopup } from "@/lib/popupAuth"
+import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
 import { NAV_LINKS } from "@/data/nav"
 
 function initialsOf(name: string) {
@@ -98,8 +99,8 @@ const ACCOUNT_ITEMS = [
  *  hiện khi đã đăng nhập — U-05 là bước nâng cấp từ tài khoản người dân lên
  *  cơ sở thu mua, người chưa có tài khoản thì chưa ở trong hệ sinh thái. */
 const EXPLORE = [
-  ["/scanner", "Nhận diện rác bằng AI"],
-  ["/map", "Tìm người thu gom"],
+  ["/terms", "Điều khoản"],
+  ["/ecofacts", "Eco Facts"],
   // ["/partners", "Đối tác tái chế"],
   ["/leaderboard", "Xếp hạng người dùng"],
 ] as const
@@ -138,6 +139,7 @@ function AccountMenu() {
   const user = session?.name ?? ""
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  const [confirmLogout, setConfirmLogout] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -171,7 +173,13 @@ function AccountMenu() {
 
   const logout = () => {
     setOpen(false)
-    openLogoutPopup()
+    setConfirmLogout(true)
+  }
+
+  const handleConfirmLogout = () => {
+    signOut()
+    setConfirmLogout(false)
+    navigate("/")
   }
 
   return (
@@ -296,6 +304,13 @@ function AccountMenu() {
             )}
           </div>
         )}
+
+      <ConfirmLogoutDialog
+        open={confirmLogout}
+        onClose={() => setConfirmLogout(false)}
+        onConfirm={handleConfirmLogout}
+        userName={user}
+      />
     </div>
   )
 }

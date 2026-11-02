@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { NavLink, Outlet, useNavigate } from "react-router-dom"
 import { PORTAL_NAV } from "@/data/portal"
-import { ROLE_LABEL, useSession, type Role } from "@/lib/session"
-import { openLogoutPopup } from "@/lib/popupAuth"
+import { ROLE_LABEL, signOut, useSession, type Role } from "@/lib/session"
+import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
 
 /** Khung chung cho 4 vai trò sau đăng nhập: sidebar điều hướng + tiêu đề.
  *
@@ -13,17 +13,16 @@ export default function Portal({ role }: { role: Role }) {
   const session = useSession()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
-
-  useEffect(() => {
-    const onMessage = (e: MessageEvent) => {
-      if (e.data?.type === "AUTH_LOGOUT") navigate("/")
-    }
-    window.addEventListener("message", onMessage)
-    return () => window.removeEventListener("message", onMessage)
-  }, [navigate])
+  const [confirmLogout, setConfirmLogout] = useState(false)
 
   const logout = () => {
-    openLogoutPopup()
+    setConfirmLogout(true)
+  }
+
+  const handleConfirmLogout = () => {
+    signOut()
+    setConfirmLogout(false)
+    navigate("/")
   }
 
   return (
@@ -80,6 +79,13 @@ export default function Portal({ role }: { role: Role }) {
           <Outlet />
         </main>
       </div>
+
+      <ConfirmLogoutDialog
+        open={confirmLogout}
+        onClose={() => setConfirmLogout(false)}
+        onConfirm={handleConfirmLogout}
+        userName={session?.name}
+      />
     </div>
   )
 }
@@ -125,19 +131,19 @@ export function PageHead({
   body,
   action,
 }: {
-  eyebrow: string
+  eyebrow?: string
   title: string
-  body: string
+  body?: string
   action?: React.ReactNode
 }) {
   return (
     <header className="flex flex-wrap items-start justify-between gap-4 border-b border-line pb-5">
       <div className="min-w-0">
-        <p className="eyebrow">{eyebrow}</p>
+        {eyebrow && <p className="eyebrow">{eyebrow}</p>}
         <h1 className="display mt-1.5 text-[24px] leading-8 md:text-[28px] md:leading-9">
           {title}
         </h1>
-        <p className="mt-2 max-w-[68ch] text-sm leading-6 text-body">{body}</p>
+        {body && <p className="mt-2 max-w-[68ch] text-sm leading-6 text-body">{body}</p>}
       </div>
       {action}
     </header>

@@ -12,6 +12,7 @@ import Navbar from "@/components/Navbar"
 import MobileNav from "@/components/MobileNav"
 import Footer from "@/components/Footer"
 import AuthLayout from "@/components/AuthLayout"
+import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
 
 import Blog from "@/pages/Blog"
 import Rewards from "@/pages/Rewards"
@@ -30,7 +31,8 @@ import Waste from "@/pages/Waste"
 import Chat from "@/pages/Chat"
 import JoinRecycler from "@/pages/JoinRecycler"
 import ResetPassword from "@/pages/ResetPassword"
-
+import Terms from "@/pages/Terms"
+import EcoFactsPage from "@/pages/EcoFactsPage"
 import Profile from "@/pages/account/Profile"
 import Notifications from "@/pages/account/Notifications"
 import Password from "@/pages/account/Password"
@@ -90,6 +92,7 @@ const CASES = [
   ["Login", Login, "Đăng nhập"],
   ["Register", Register, "Tạo tài khoản"],
   ["Logout", Logout, "Xác nhận đăng xuất"],
+  ["ConfirmLogoutDialog", () => <ConfirmLogoutDialog open={true} onClose={() => {}} onConfirm={() => {}} userName="Test User" />, "Xác nhận đăng xuất"],
   ["NotFound", NotFound, "Không tìm thấy trang"],
 
   // ---- công khai: U-02, U-03, U-04, U-05, U-09/R-05, U-18/R-07 ----
@@ -98,6 +101,8 @@ const CASES = [
   ["Chat", Chat, "Tạo yêu cầu bàn giao"],
   ["JoinRecycler", JoinRecycler, "Đăng ký cơ sở thu mua"],
   ["ResetPassword", ResetPassword, "Đặt lại mật khẩu"],
+  ["Terms", Terms, "Điều khoản dịch vụ"],
+  ["EcoFacts", EcoFactsPage, "Virtual Tree"],
 
   // ---- SU-01..SU-03 ----
   ["Profile", Profile, "Hồ sơ cá nhân"],

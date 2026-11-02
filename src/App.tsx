@@ -18,6 +18,8 @@ import Waste from "@/pages/Waste"
 import Chat from "@/pages/Chat"
 import JoinRecycler from "@/pages/JoinRecycler"
 import ResetPassword from "@/pages/ResetPassword"
+import Terms from "@/pages/Terms"
+import EcoFactsPage from "@/pages/EcoFactsPage"
 import Login from "@/pages/Login"
 import Register from "@/pages/Register"
 import Logout from "@/pages/Logout"
@@ -98,6 +100,8 @@ export function AppRoutes() {
           <Route path="waste" element={<Waste />} />
           {/* U-05 đăng ký cơ sở thu mua */}
           <Route path="join-recycler" element={<JoinRecycler />} />
+          <Route path="terms" element={<Terms />} />
+          <Route path="ecofacts" element={<EcoFactsPage />} />
 
           {/* ---- sau đăng nhập, dùng chung SU-01..SU-04 ---- */}
           <Route path="account">

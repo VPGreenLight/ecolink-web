@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom"
 import { PORTAL_NAV } from "@/data/portal"
-import { ROLE_LABEL, useSession } from "@/lib/session"
-import { openLogoutPopup } from "@/lib/popupAuth"
+import { ROLE_LABEL, signOut, useSession } from "@/lib/session"
 import Assistant from "@/components/admin/Assistant"
+import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
 
 /** Menu tài khoản nội bộ.
  *
@@ -44,17 +44,16 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
   const session = useSession()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
-
-  useEffect(() => {
-    const onMessage = (e: MessageEvent) => {
-      if (e.data?.type === "AUTH_LOGOUT") navigate("/login")
-    }
-    window.addEventListener("message", onMessage)
-    return () => window.removeEventListener("message", onMessage)
-  }, [navigate])
+  const [confirmLogout, setConfirmLogout] = useState(false)
 
   const logout = () => {
-    openLogoutPopup()
+    setConfirmLogout(true)
+  }
+
+  const handleConfirmLogout = () => {
+    signOut()
+    setConfirmLogout(false)
+    navigate("/")
   }
 
   return (
@@ -144,6 +143,13 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
       </div>
 
       <Assistant />
+
+      <ConfirmLogoutDialog
+        open={confirmLogout}
+        onClose={() => setConfirmLogout(false)}
+        onConfirm={handleConfirmLogout}
+        userName={session?.name}
+      />
     </div>
   )
 }

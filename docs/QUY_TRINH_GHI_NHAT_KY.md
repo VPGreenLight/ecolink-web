@@ -89,3 +89,4 @@ Khi bắt đầu một buổi làm việc mới, tạo file `docs/YYYY-MM-DD.md`
 
 - [`docs/2026-09-28.md`](2026-09-28.md): Tái cấu trúc Navbar, thiết kế lại bảng màu theo hue sinh thái, đo đạc tương phản WCAG, sửa 56 màn hình và smoke test.
 - [`docs/2026-10-31.md`](2026-10-31.md): Thiết lập quy chuẩn lưu trữ nhật ký làm việc và minh chứng quá trình phát triển mã nguồn gửi giảng viên.
+- [`docs/2026-11-02.md`](2026-11-02.md): Chuyển đổi đăng xuất từ Browser Popup Window sang Confirmation Dialog nội bộ, đồng bộ điều hướng về trang chủ.
