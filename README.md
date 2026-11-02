@@ -76,5 +76,5 @@ export const PARTNERS: Partner[] = [{ name: "...", logo: "/assets/...", ... }]
 - **Nhật ký chi tiết các phiên làm việc:**
   - [Phiên 2026-09-28](docs/2026-09-28.md): Tinh chỉnh Navbar, căn lề, chuẩn hóa bảng màu thương hiệu theo WCAG, sửa 56 màn hình.
   - [Phiên 2026-10-31](docs/2026-10-31.md): Chuẩn hóa quy chế ghi nhật ký làm việc và minh chứng quá trình code.
-  - [Phiên 2026-11-02](docs/2026-11-02.md): Chuyển đổi đăng xuất sang Confirmation Dialog nội bộ, đồng bộ điều hướng về trang chủ.
+  - [Phiên 2026-11-02: Tối ưu đăng xuất](docs/2026-11-02.md): Chuyển đổi đăng xuất sang Confirmation Dialog nội bộ, đồng bộ điều hướng về trang chủ.
 
