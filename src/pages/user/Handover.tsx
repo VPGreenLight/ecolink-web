@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
 import {
   MY_HANDOVERS,
@@ -15,26 +15,24 @@ const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
 
 /** U-07 Tạo yêu cầu · U-08 Sửa / Huỷ yêu cầu.
  *
- *  Hai UC trên cùng một màn hình vì cùng một danh sách: bấm "Tạo yêu cầu" ra
- *  form, bấm "Sửa" sửa chính form đó. Tách 2 trang thì phải truyền lại dữ
- *  liệu yêu cầu qua URL, vô ích. */
+ *  Nhận trực tiếp tham số `?partnerName=...&waste=...` từ trang Bản đồ (U-05)
+ *  để mở sẵn biểu mẫu đặt lịch với đúng cơ sở thu mua và loại phế liệu đã chọn. */
 export default function Handover() {
-  const [open, setOpen] = useState(false)
+  const [searchParams] = useSearchParams()
+  const prefilledPartner = searchParams.get("partnerName") ?? ""
+  const prefilledWaste = searchParams.get("waste") ?? ""
+
+  const [open, setOpen] = useState(() => Boolean(prefilledPartner || prefilledWaste))
   const [list, setList] = useState(MY_HANDOVERS)
   const [editId, setEditId] = useState<string | null>(null)
   const [flash, setFlash] = useState("")
 
-  /** U-08 dời giờ: chỉ khi chưa ai nhận. Sau khi Recycler accept, khung giờ đã
-   *  thành cam kết của hai bên — đổi lặng lẽ thì người thu gom tới nhầm giờ
-   *  và người dân không biết mình đã đổi. */
   const reslot = (id: string, slot: string) => {
     setList((ls) => ls.map((h) => (h.id === id ? { ...h, slot } : h)))
     setEditId(null)
     setFlash(`${id}: đã đổi khung giờ sang ${slot}. Người thu gom sẽ thấy giờ mới.`)
   }
 
-  /** U-08 huỷ: hỏi lý do trước khi huỷ. Không có lý do thì người thu gom không
-   *  biết có nên ghé lần nữa hay không — mất luôn một mối quan hệ. */
   const cancel = (h: (typeof MY_HANDOVERS)[number]) => {
     const reason = window.prompt(`Huỷ yêu cầu ${h.id}. Lý do (người thu gom sẽ thấy):`)
     if (!reason?.trim()) return
@@ -71,11 +69,15 @@ export default function Handover() {
 
       {open && (
         <CreateForm
+          initialPartner={prefilledPartner}
+          initialWasteId={prefilledWaste}
           onDone={(draft) => {
             setList((ls) => [newRow(draft), ...ls])
             setOpen(false)
             setFlash(
-              "Đã gửi yêu cầu. Người thu gom sẽ xác nhận khung giờ trong hôm nay.",
+              draft.recyclerName
+                ? `Đã gửi yêu cầu tới ${draft.recyclerName}. Đối tác sẽ xác nhận khung giờ trong hôm nay.`
+                : "Đã gửi yêu cầu. Người thu gom sẽ xác nhận khung giờ trong hôm nay.",
             )
           }}
         />
@@ -164,8 +166,6 @@ export default function Handover() {
                 </Table>
                 <p className="mt-3 text-[13px] leading-5 text-muted">{h.address}</p>
 
-                {/* Danh sách khung giờ mở ngay dưới yêu cầu đang sửa: bấm là đổi,
-                    không cần mở form riêng cho một lựa chọn có 5 giá trị. */}
                 {editId === h.id && (
                   <div className="mt-3 rounded-lg border border-brand/30 bg-brand/6 p-4">
                     <p className="text-[13px] font-semibold text-ink">
@@ -200,30 +200,46 @@ export default function Handover() {
   )
 }
 
-/** Sinh yêu cầu mới từ form. Mã sinh tại chỗ chứ không lấy từ server — ở đây
- *  chỉ để danh sách có dòng mới hiện ra ngay, không phải mã thật. */
 let seq = 200
 
-type Draft = { rows: { wasteId: string; kg: number }[]; slot: string; address: string }
+type Draft = {
+  rows: { wasteId: string; kg: number }[]
+  slot: string
+  address: string
+  recyclerName?: string
+}
 
 function newRow(d: Draft) {
   seq += 1
+  const now = new Date()
+  const dd = String(now.getDate()).padStart(2, "0")
+  const mm = String(now.getMonth() + 1).padStart(2, "0")
+  const yyyy = now.getFullYear()
   return {
-    id: `BH-2609-0${seq}`,
-    recycler: "Chưa có",
+    id: `BH-2611-0${seq}`,
+    recycler: d.recyclerName || "Đang chờ cơ sở gần nhất nhận",
     address: d.address,
-    date: "30/09/2026",
+    date: `${dd}/${mm}/${yyyy}`,
     slot: d.slot,
     lines: d.rows.map((r) => ({ wasteId: r.wasteId, kg: r.kg })),
     status: "pending" as const,
   }
 }
 
-/** Form U-07. Bắt buộc có: chọn ít nhất một loại rác thu gom được và khối
- *  lượng > 0, có địa chỉ — đây là ranh giới tin cậy, không kiểm thì tạo ra
- *  yêu cầu rỗng mà vẫn báo thành công. */
-function CreateForm({ onDone }: { onDone: (d: Draft) => void }) {
-  const [rows, setRows] = useState([{ wasteId: "pet", kg: 5 }])
+function CreateForm({
+  initialPartner,
+  initialWasteId,
+  onDone,
+}: {
+  initialPartner?: string
+  initialWasteId?: string
+  onDone: (d: Draft) => void
+}) {
+  const validInitialWaste = WASTES.some((w) => w.recyclable && w.id === initialWasteId)
+    ? (initialWasteId as string)
+    : "pet"
+
+  const [rows, setRows] = useState([{ wasteId: validInitialWaste, kg: 5 }])
   const [slot, setSlot] = useState<string>(TIME_SLOTS[1])
   const [address, setAddress] = useState("Ngõ 24 Lý Tự Trọng, P. Bến Nghé, Quận 1")
   const [err, setErr] = useState("")
@@ -243,16 +259,26 @@ function CreateForm({ onDone }: { onDone: (d: Draft) => void }) {
       return
     }
     setErr("")
-    // ponytail: chưa có backend, chỉ thêm vào danh sách ở trên. Nối API thì
-    // thay đúng dòng này.
-    onDone({ rows, slot, address })
+    onDone({
+      rows,
+      slot,
+      address,
+      recyclerName: initialPartner || undefined,
+    })
   }
 
   const { gross } = estimate(rows)
 
   return (
     <form onSubmit={submit} noValidate className="card flex flex-col gap-5 p-5">
-      <h2 className="text-base font-bold text-ink">Thông tin rác cần thu gom</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-bold text-ink">Thông tin rác cần thu gom</h2>
+        {initialPartner && (
+          <span className="rounded-full border border-brand/25 bg-brand/8 px-3 py-1 text-xs font-semibold text-brand-deep">
+            Đối tác đã chọn: {initialPartner}
+          </span>
+        )}
+      </div>
 
       <ul className="flex flex-col gap-3">
         {rows.map((r, i) => (

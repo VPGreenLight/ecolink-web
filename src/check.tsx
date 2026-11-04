@@ -85,7 +85,7 @@ const CASES = [
   ["Leaderboard", LeaderboardPage, "Xếp hạng người dùng"],
   // assert the idle state: result copy is only rendered after a scan
   ["Scanner", Scanner, "Dùng trang này thế nào"],
-  ["MapPage", MapPage, "Cô Ba Thu Gom"],
+  ["MapPage", MapPage, "Cơ sở thu mua gần bạn"],
   ["Partners", Partners, "Duy Tân"],
   ["Feedback", Feedback, "Khiếu nại và góp ý"],
   ["AuthLayout", AuthLayout, "Hệ sinh thái tuần hoàn"],

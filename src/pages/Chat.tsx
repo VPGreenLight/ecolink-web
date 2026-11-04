@@ -1,45 +1,46 @@
 import { useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { PageHead } from "@/components/Portal"
 import { ADDRESS } from "@/data/map"
-import { useRole } from "@/lib/session"
+import { useRole, useUser } from "@/lib/session"
 
-/** U-09 và R-05: thương lượng qua chatbox.
- *
- *  Một trang cho cả hai vai trò, đổi góc nhìn bằng `useRole()` — người dân
- *  và cơ sở thu mua chat với nhau cùng một luồng, tách 2 trang thì phải viết
- *  2 bản tin nhắn giống hệt nhau.
- *
- *  Tin nhắn chỉ nằm trong state của trang: mở lại là mất. Đây là điểm cần nối
- *  WebSocket sớm nhất, vì thương lượng mà mất lịch thì hỏng việc thật — khác
- *  hẳn điểm danh hay điểm xanh, mất đi thì chỉ mất vui. */
 type Msg = { id: number; from: "me" | "them"; text: string; time: string }
 
 const SEED: Msg[] = [
   {
     id: 1,
     from: "them",
-    text: "Chào bạn, hôm nay mình có đi gom khu Quận 1 không? Có khoảng 20kg bìa carton.",
+    text: "Chào bạn, bên mình đang mở cửa nhận thu gom hôm nay. Bạn cần bán loại phế liệu nào và khoảng bao nhiêu kg?",
     time: "09:12",
   },
   {
     id: 2,
     from: "me",
-    text: "Có nhé. Bìa carton sạch không dính băng keo thì giá 2.200đ/kg, mình lấy 20kg đó luôn.",
+    text: "Mình có khoảng 15kg nhựa sạch đã tráng nước và 10kg bìa carton gập phẳng.",
     time: "09:15",
   },
   {
     id: 3,
     from: "them",
-    text: "Được. Mình qua lúc 10h nhé, khung giờ 10:00 - 12:00 bạn tiện không?",
+    text: "Tuyệt vời. Bạn chọn khung giờ 10:00 - 12:00 nhé, bên mình ghé cân tận nơi luôn.",
     time: "09:16",
   },
 ]
 
 export default function Chat() {
+  const [searchParams] = useSearchParams()
   const role = useRole()
-  const me = role === "recycler" ? "Cô Ba Thu Gom" : "Nguyễn Đức"
-  const them = role === "recycler" ? "Nguyễn Đức" : "Cô Ba Thu Gom"
+  const userName = useUser()
+  const partnerFromMap = searchParams.get("partnerName")
+  const addressFromMap = searchParams.get("partnerAddress")
+
+  const me = userName || (role === "recycler" ? "Cô Ba Thu Gom" : "Nguyễn Đức")
+  const them =
+    role === "recycler"
+      ? "Nguyễn Đức"
+      : partnerFromMap || "Cô Ba Thu Gom"
+  const displayAddress = addressFromMap || ADDRESS
+
   const [msgs, setMsgs] = useState(SEED)
   const [draft, setDraft] = useState("")
 
@@ -58,9 +59,14 @@ export default function Chat() {
       },
     ])
     setDraft("")
-    // ponytail: không có WebSocket, tin nhắn của đối táp không về. Nối socket
-    // thì thay dòng này, phần hiển thị giữ nguyên.
   }
+
+  const handoverLink =
+    role === "recycler"
+      ? "/recycler/requests"
+      : partnerFromMap
+        ? `/user/handover?partnerName=${encodeURIComponent(partnerFromMap)}`
+        : "/user/handover"
 
   return (
     <div className="page flex flex-col gap-6">
@@ -74,7 +80,7 @@ export default function Chat() {
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
           <div className="min-w-0">
             <p className="truncate font-bold text-ink">{them}</p>
-            <p className="mt-0.5 text-[13px] text-muted">{ADDRESS}</p>
+            <p className="mt-0.5 text-[13px] text-muted">{displayAddress}</p>
           </div>
           <span className="chip shrink-0 bg-surface-2 text-body">
             <i className="size-1.5 rounded-full bg-brand" />
@@ -131,7 +137,7 @@ export default function Chat() {
           biết chuyển tiền cho ai.
         </p>
         <Link
-          to={role === "recycler" ? "/recycler/requests" : "/user/handover"}
+          to={handoverLink}
           className="btn-outline h-11 shrink-0 px-5"
         >
           Tạo yêu cầu bàn giao

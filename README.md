@@ -4,16 +4,17 @@
 
 ```bash
 npm install
-npm run dev     # http://localhost:5173
+npm run dev     # http://localhost:5173 (tự proxy /api và /hubs sang http://localhost:5000)
 ```
 
 | Script | Việc |
 | --- | --- |
-| `npm run dev` | dev server + HMR |
+| `npm run dev` | dev server + HMR + proxy sang `.NET WebApi` |
 | `npm run build` | typecheck rồi build production vào `dist/` |
 | `npm run preview` | serve `dist/` |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run check` | render 10 component/page lên HTML, fail nếu trang trắng hoặc mất nội dung |
+| `npm run check` | render 61 component/page lên HTML, fail nếu trang trắng hoặc mất nội dung |
+| `npm run check:routes` | render toàn bộ cây route phân quyền & kiểm tra ổn định snapshot |
 
 ## Cấu trúc
 
@@ -29,25 +30,30 @@ src/
     Footer.tsx
     AuthForm.tsx          dùng chung cho /login và /register
   pages/                  1 file = 1 route
-  data/                   toàn bộ nội dung tĩnh nằm ở đây
-  lib/session.ts          đăng nhập giả lập bằng localStorage
+  data/                   nội dung tĩnh & dữ liệu dự phòng khi chạy offline
+  lib/
+    api.ts                HTTP client chuẩn hóa ApiResponse<T> & tự dò cổng Backend
+    wasteScanApi.ts       API client Module AI Waste Classification & Rule Engine
+    recyclerDiscoveryApi.ts API client Module Location-Based Recycler Discovery (U-05)
+    session.ts            đăng nhập giả lập bằng localStorage
   check.tsx               smoke test, không dùng framework test
 ```
 
-## Route
+## Route chính
 
 | Đường dẫn | Trang |
 | --- | --- |
 | `/` | Tổng quan (hero, bài báo, chỉ số) |
-| `/scanner` | Nhận diện AI (kết quả mẫu) |
-| `/map` | Điểm thu gom (bản đồ + khung chat) |
-| `/partners` | Đối tác tái chế (tìm kiếm + lọc) |
+| `/scanner` | Nhận diện AI đa mô hình + Rule Engine + báo cáo nhãn sai (`/api/v1/waste-scan/*`) |
+| `/guidance`, `/waste` | Tra cứu quy tắc xử lý rác từ Rule Engine & báo cáo nhãn sai |
+| `/map` | Tìm cơ sở thu mua gần bạn theo GPS, lọc bán kính/danh mục/giá & gợi ý dự phòng (`/api/v1/recyclers/*`) |
+| `/partners` | Đối tác tái chế & cơ sở thu mua trực tuyến |
 | `/login`, `/register` | Đăng nhập / đăng ký |
 | `*` | 404 |
 
 ## Sửa nội dung
 
-Text và ảnh nằm trong `src/data/*.ts`, không nằm trong JSX. Đổi copy, đổi giá,
+Text và ảnh mặc định nằm trong `src/data/*.ts`, không nằm trong JSX. Đổi copy, đổi giá mẫu,
 thêm bài viết, thêm đối tác → sửa file data, không đụng component.
 
 ```ts
@@ -59,12 +65,8 @@ export const PARTNERS: Partner[] = [{ name: "...", logo: "/assets/...", ... }]
 
 ## Còn thiếu (có chủ đích)
 
-- **Đăng nhập là giả lập.** `lib/session.ts` chỉ lưu tên vào `localStorage`, không
-  có API, không có token. Nối backend thật khi cần.
-- **Trang /scanner dùng ảnh và kết quả tĩnh.** Chưa gọi model nhận diện, chưa
-  upload ảnh. Muốn thật thì thay `src/data/scanner.ts` bằng fetch.
-- **Bản đồ là ảnh nền tĩnh.** Pin đặt bằng % theo layout Figma, không có
-  geolocation hay map thật. Thay bằng Leaflet/MapLibre khi cần.
+- **Đăng nhập là giả lập.** `lib/session.ts` chỉ lưu tên vào `localStorage`, chưa nối JWT thật (`/api/v1/auth/*`). `lib/api.ts` đã hỗ trợ tự đính kèm Bearer token ngay khi nối auth.
+- **Lớp nền bản đồ là ảnh minh họa.** Tọa độ GPS, khoảng cách Haversine, danh sách cơ sở, bảng giá `Active` và vị trí pin trên `/map` đã tính toán từ API thật (`/api/v1/recyclers/*`), nhưng nền bản đồ chưa gắn tile Leaflet/MapLibre tương tác kéo-thả.
 - **Deploy cần SPA fallback.** Vite dev đã có sẵn; khi deploy static phải trỏ
   mọi path về `index.html`, nếu không refresh `/scanner` sẽ 404.
 
@@ -77,4 +79,4 @@ export const PARTNERS: Partner[] = [{ name: "...", logo: "/assets/...", ... }]
   - [Phiên 2026-09-28](docs/2026-09-28.md): Tinh chỉnh Navbar, căn lề, chuẩn hóa bảng màu thương hiệu theo WCAG, sửa 56 màn hình.
   - [Phiên 2026-10-31](docs/2026-10-31.md): Chuẩn hóa quy chế ghi nhật ký làm việc và minh chứng quá trình code.
   - [Phiên 2026-11-02: Tối ưu đăng xuất](docs/2026-11-02.md): Chuyển đổi đăng xuất sang Confirmation Dialog nội bộ, đồng bộ điều hướng về trang chủ.
-
+  - [Phiên 2026-11-03: Kết nối AI Classification & Recycler Discovery](docs/2026-11-03.md): Tích hợp API nhận diện rác đa mô hình, Rule Engine, báo cáo nhãn sai và bản đồ tìm cơ sở thu mua theo GPS (`U-05`).
