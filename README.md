@@ -80,3 +80,4 @@ export const PARTNERS: Partner[] = [{ name: "...", logo: "/assets/...", ... }]
   - [Phiên 2026-10-31](docs/2026-10-31.md): Chuẩn hóa quy chế ghi nhật ký làm việc và minh chứng quá trình code.
   - [Phiên 2026-11-02: Tối ưu đăng xuất](docs/2026-11-02.md): Chuyển đổi đăng xuất sang Confirmation Dialog nội bộ, đồng bộ điều hướng về trang chủ.
   - [Phiên 2026-11-03: Kết nối AI Classification & Recycler Discovery](docs/2026-11-03.md): Tích hợp API nhận diện rác đa mô hình, Rule Engine, báo cáo nhãn sai và bản đồ tìm cơ sở thu mua theo GPS (`U-05`).
+  - [Phiên 2026-11-04: Cấu hình Host Vite & Cloudflare Tunnel](docs/2026-11-04.md): Mở `allowedHosts` trên Vite 8 và bổ sung kịch bản đẩy Frontend qua Cloudflare Quick Tunnel song song với `ngrok`.

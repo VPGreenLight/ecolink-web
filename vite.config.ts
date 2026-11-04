@@ -25,10 +25,14 @@ export default defineConfig(({ mode }) => {
       alias: { "@": path.resolve(import.meta.dirname, "./src") },
     },
     server: {
+      host: true,
       port: 5173,
+      allowedHosts: true,
       proxy,
     },
     preview: {
+      host: true,
+      allowedHosts: true,
       proxy,
     },
   }
