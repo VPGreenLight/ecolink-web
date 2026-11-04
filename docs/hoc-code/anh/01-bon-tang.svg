@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 600" font-family="Segoe UI, Arial, sans-serif">
+  <rect width="980" height="600" fill="#f7fbf8"/>
+  <text x="490" y="44" text-anchor="middle" font-size="23" font-weight="700" fill="#0f1f15">BỐN LỚP CỦA ỨNG DỤNG — sửa lớp nào, thấy ở đâu</text>
+  <text x="490" y="72" text-anchor="middle" font-size="15" fill="#606d64">Hãy hình dung app như một ngôi nhà: mỗi lớp là một phần của ngôi nhà.</text>
+
+  <rect x="80" y="96" width="820" height="98" rx="12" fill="#ffffff" stroke="#67dc99" stroke-width="2"/>
+  <rect x="80" y="96" width="10" height="98" rx="5" fill="#278733"/>
+  <text x="108" y="128" font-size="18" font-weight="700" fill="#0f1f15">LỚP GIAO DIỆN — “sơn tường, màu nút, phông chữ”</text>
+  <text x="108" y="152" font-size="13.5" fill="#606d64">File: src/index.css</text>
+  <text x="108" y="174" font-size="13.5" fill="#404b44">Chứa toàn bộ bảng màu (xanh EcoLink, đỏ báo lỗi, nền xám…)</text>
+  <line x1="640" y1="106" x2="640" y2="184" stroke="#cdded3" stroke-dasharray="4 4"/>
+  <text x="660" y="140" font-size="14" font-weight="600" fill="#278733">Sửa → CẢ APP đổi theo</text>
+  <text x="660" y="162" font-size="13" fill="#606d64">(màu nút, màu chữ, mọi trang cùng lúc)</text>
+
+  <rect x="80" y="206" width="820" height="98" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <rect x="80" y="206" width="10" height="98" rx="5" fill="#278733"/>
+  <text x="108" y="238" font-size="18" font-weight="700" fill="#0f1f15">LỚP MÀN HÌNH — “các phòng trong nhà”</text>
+  <text x="108" y="262" font-size="13.5" fill="#606d64">Thư mục: src/pages/ (mỗi file = một màn hình)</text>
+  <text x="108" y="284" font-size="13.5" fill="#404b44">Bố cục, nút bấm, câu chữ riêng của từng trang</text>
+  <line x1="640" y1="216" x2="640" y2="294" stroke="#cdded3" stroke-dasharray="4 4"/>
+  <text x="660" y="250" font-size="14" font-weight="600" fill="#278733">Sửa → chỉ phòng đó đổi</text>
+  <text x="660" y="272" font-size="13" fill="#606d64">(các trang khác không bị ảnh hưởng)</text>
+
+  <rect x="80" y="316" width="820" height="98" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <rect x="80" y="316" width="10" height="98" rx="5" fill="#278733"/>
+  <text x="108" y="348" font-size="18" font-weight="700" fill="#0f1f15">LỚP DỮ LIỆU — “kho chứa chữ và số” ⭐ nên bắt đầu ở đây</text>
+  <text x="108" y="372" font-size="13.5" fill="#606d64">Thư mục: src/data/ (13 file — giá cả, tên rác, điểm, danh sách…)</text>
+  <text x="108" y="394" font-size="13.5" fill="#404b44">Toàn bộ chữ và số bạn nhìn thấy trên app đều nằm ở đây</text>
+  <line x1="640" y1="326" x2="640" y2="404" stroke="#cdded3" stroke-dasharray="4 4"/>
+  <text x="660" y="360" font-size="14" font-weight="600" fill="#278733">Sửa → nhiều màn hình đổi</text>
+  <text x="660" y="382" font-size="13" fill="#606d64">(vì nhiều trang cùng dùng chung kho này)</text>
+
+  <rect x="80" y="426" width="820" height="98" rx="12" fill="#ffffff" stroke="#c0341c" stroke-width="2"/>
+  <rect x="80" y="426" width="10" height="98" rx="5" fill="#c0341c"/>
+  <text x="108" y="458" font-size="18" font-weight="700" fill="#0f1f15">LỚP KHUNG ĐIỀU HƯỚNG — “bản đồ tòa nhà + cửa ra vào” ⚠️ dễ gây lỗi nhất</text>
+  <text x="108" y="482" font-size="13.5" fill="#606d64">File: src/App.tsx (địa chỉ nào mở phòng nào) và src/lib/session.ts (ai được vào)</text>
+  <text x="108" y="504" font-size="13.5" fill="#404b44">Sửa sai một chữ ở đây là nhiều trang trắng xóa</text>
+  <line x1="640" y1="436" x2="640" y2="514" stroke="#cdded3" stroke-dasharray="4 4"/>
+  <text x="660" y="470" font-size="14" font-weight="600" fill="#c0341c">Sửa → có thể sập cả app</text>
+  <text x="660" y="492" font-size="13" fill="#606d64">chỉ làm khi đã đọc tài liệu 13 §5</text>
+
+  <text x="490" y="562" text-anchor="middle" font-size="15" font-weight="600" fill="#0f1f15">Bắt đầu từ LỚP DỮ LIỆU (an toàn nhất). Sửa xong luôn chạy “npm run check” để kiểm tra.</text>
+  <text x="490" y="586" text-anchor="middle" font-size="13.5" fill="#606d64">Chi tiết từng bước nằm trong tài liệu 13 — mục “Mức 1”, “Mức 2”…</text>
+</svg>

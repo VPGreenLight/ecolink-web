@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, NavLink, useNavigate } from "react-router-dom"
-import { signOut, useUser } from "@/lib/session"
+import { ROLE_HOME, ROLE_LABEL, signOut, useSession, type Role } from "@/lib/session"
+import { openAuthPopup } from "@/lib/popupAuth"
+import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
 import { NAV_LINKS } from "@/data/nav"
 
 function initialsOf(name: string) {
@@ -59,10 +61,85 @@ function Avatar({ user, size = "size-9" }: { user: string; size?: string }) {
   )
 }
 
+/** Menu tài khoản: các mục dùng chung cho cả 4 vai trò sau đăng nhập. */
+const ACCOUNT_ITEMS = [
+  {
+    to: "/account/profile",
+    label: "Hồ sơ cá nhân",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4 text-muted">
+        <circle cx="12" cy="8" r="4" />
+        <path d="M20 21a8 8 0 1 0-16 0" />
+      </svg>
+    ),
+  },
+  {
+    to: "/account/notifications",
+    label: "Thông báo",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4 text-muted">
+        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+        <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+      </svg>
+    ),
+  },
+  {
+    to: "/account/password",
+    label: "Đổi mật khẩu",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4 text-muted">
+        <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+      </svg>
+    ),
+  },
+] as const
+
+/** Mục Khám phá: dùng lại cho cả khách và người đã đăng nhập. `register` chỉ
+ *  hiện khi đã đăng nhập — U-05 là bước nâng cấp từ tài khoản người dân lên
+ *  cơ sở thu mua, người chưa có tài khoản thì chưa ở trong hệ sinh thái. */
+const EXPLORE = [
+  ["/terms", "Điều khoản"],
+  ["/ecofacts", "Eco Facts"],
+  // ["/partners", "Đối tác tái chế"],
+  ["/leaderboard", "Xếp hạng người dùng"],
+] as const
+
+function ExploreList({ close, withRegister }: { close: () => void; withRegister: boolean }) {
+  const items = withRegister
+    ? [...EXPLORE, ["/join-recycler", "Đăng ký cơ sở thu mua"]]
+    : EXPLORE
+
+  return (
+    <div className="p-2 space-y-0.5">
+      <p className="px-3.5 pt-2 pb-1 text-xs font-semibold tracking-[0.08em] text-muted uppercase">
+        Khám phá
+      </p>
+      <div className="space-y-0.5">
+        {items.map(([to, label]) => (
+          <Link
+            key={to}
+            to={to}
+            onClick={close}
+            className="flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
+          >
+            {label}
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-4 text-muted">
+              <path d="m6 4 4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function AccountMenu() {
-  const user = useUser()
+  const session = useSession()
+  const user = session?.name ?? ""
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  const [confirmLogout, setConfirmLogout] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -81,106 +158,159 @@ function AccountMenu() {
     }
   }, [open])
 
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type === "AUTH_SUCCESS") {
+        const role = e.data.role as Role
+        navigate(role === "user" ? "/" : ROLE_HOME[role] || "/")
+      } else if (e.data?.type === "AUTH_LOGOUT") {
+        navigate("/")
+      }
+    }
+    window.addEventListener("message", onMessage)
+    return () => window.removeEventListener("message", onMessage)
+  }, [navigate])
+
   const logout = () => {
-    signOut()
     setOpen(false)
+    setConfirmLogout(true)
+  }
+
+  const handleConfirmLogout = () => {
+    signOut()
+    setConfirmLogout(false)
     navigate("/")
   }
 
   return (
     <div className="relative" ref={ref}>
-      {/* trigger: avatar + mũi tên trong một nút, hover chung */}
-      <button
-        type="button"
-        aria-label={user ? `Tài khoản: ${user}` : "Đăng nhập hoặc đăng ký"}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 rounded-full border border-line bg-white py-1 pr-2 pl-1 shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-colors hover:border-sage-line hover:bg-surface-2"
-      >
-        <Avatar user={user} size="size-9 md:size-10" />
-        <Chevron open={open} />
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute top-full right-0 mt-2 w-64 overflow-hidden rounded-2xl border border-line bg-white shadow-[0_18px_44px_-8px_rgba(15,31,21,0.16)]"
+        {/* trigger: avatar + mũi tên trong một nút, hover chung */}
+        <button
+          type="button"
+          aria-label={user ? `Tài khoản: ${user}` : "Đăng nhập hoặc đăng ký"}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="flex h-10 items-center gap-1 rounded-full border border-line bg-white px-1 shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-colors hover:border-sage-line hover:bg-surface-2"
         >
-          {user ? (
-            <>
-              <div className="flex items-center gap-3 border-b border-line-soft bg-surface-2/60 p-4">
-                <Avatar user={user} size="size-11" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-ink">{user}</p>
-                <p className="text-xs text-muted">Đang đăng nhập</p>
-                </div>
-              </div>
+          <Avatar user={user} size="size-8" />
+          <Chevron open={open} />
+        </button>
 
-              <div className="p-2">
-                <button
-                  type="button"
-                  onClick={logout}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="size-4 text-muted">
-                    <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  Đăng xuất
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="border-b border-line-soft p-4">
-                <p className="text-sm font-bold text-ink">Chào mừng đến EcoLink</p>
-                <p className="mt-0.5 text-xs text-muted">
-                  Đăng nhập để theo dõi lịch thu gom
-                </p>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <Link
-                    to="/register"
-                    onClick={() => setOpen(false)}
-                    className="grid h-10 place-items-center rounded-lg border border-brand/30 bg-brand/10 text-[13px] font-semibold text-brand transition-colors hover:bg-brand/16 hover:border-brand/50"
-                  >
-                    Tạo tài khoản
-                  </Link>
-                  <Link
-                    to="/login"
-                    onClick={() => setOpen(false)}
-                    className="grid h-10 place-items-center rounded-lg bg-brand text-[13px] font-semibold text-white transition-colors hover:bg-brand-deep"
-                  >
-                    Đăng nhập
-                  </Link>
+        {open && (
+          <div
+            role="menu"
+            className="absolute top-full right-0 mt-2.5 w-[360px] overflow-hidden rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)]"
+          >
+            {user ? (
+              <>
+                <div className="flex items-center gap-3.5 border-b border-line-soft bg-surface-2/60 px-4 py-3.5">
+                  <Avatar user={user} size="size-11" />
+                  <div className="min-w-0">
+                    <p className="truncate text-base font-bold text-ink">{user}</p>
+                    <p className="text-xs text-muted">{ROLE_LABEL[session!.role]}</p>
+                  </div>
                 </div>
-              </div>
 
-              <p className="px-4 pt-3 pb-1 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
-                Khám phá
-              </p>
-              <div className="p-2 pt-0">
-                {[
-                  ["/scanner", "Nhận diện rác bằng AI"],
-                  ["/map", "Tìm người thu gom"],
-                  ["/partners", "Đối tác tái chế"],
-                ].map(([to, label]) => (
-                  <Link
-                    key={to}
-                    to={to}
-                    onClick={() => setOpen(false)}
-                    className="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
+                {/* Nhóm 1: Trang cá nhân */}
+                <div className="p-2 space-y-0.5">
+                  <p className="px-3.5 pt-2 pb-1 text-xs font-semibold tracking-[0.08em] text-muted uppercase">
+                    Trang cá nhân
+                  </p>
+                  {ACCOUNT_ITEMS.map((item) => (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => setOpen(false)}
+                      className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
+                    >
+                      {item.icon}
+                      {item.label}
+                    </Link>
+                  ))}
+
+                  {/* Nút vào khu vực theo vai trò (chỉ hiện cho các vai trò vận hành, không hiện cho user) */}
+                  {session!.role !== "user" && (
+                    <Link
+                      to={ROLE_HOME[session!.role]}
+                      onClick={() => setOpen(false)}
+                      className="flex items-center justify-between rounded-xl bg-brand/10 px-3.5 py-2.5 text-sm font-semibold text-brand-deep transition-colors hover:bg-brand/16"
+                    >
+                      Khu vực {ROLE_LABEL[session!.role].toLowerCase()}
+                      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-4 text-muted">
+                        <path d="m6 4 4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </Link>
+                  )}
+                </div>
+
+                {/* Nhóm 2: Khám phá */}
+                <div className="border-t border-line-soft">
+                  <ExploreList close={() => setOpen(false)} withRegister />
+                </div>
+
+                {/* Nhóm 3: Khác */}
+                <div className="border-t border-line-soft p-2 space-y-0.5">
+                  <p className="px-3.5 pt-2 pb-1 text-xs font-semibold tracking-[0.08em] text-muted uppercase">
+                    Khác
+                  </p>
+                  <button
+                    type="button"
+                    onClick={logout}
+                    className="flex w-full items-center gap-3 rounded-xl bg-white px-3.5 py-2.5 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
                   >
-                    {label}
-                    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-3.5 text-muted">
-                      <path d="m6 4 4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="size-4 text-red-600">
+                      <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
-                  </Link>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
+                    Đăng xuất
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="border-b border-line-soft p-4">
+                  <p className="text-base font-bold text-ink">Chào mừng đến EcoLink</p>
+                  <p className="mt-1 text-xs text-muted">
+                    Đăng nhập để theo dõi lịch thu gom
+                  </p>
+                  <div className="mt-3.5 grid grid-cols-2 gap-2.5">
+                    <a
+                      href="/register"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setOpen(false)
+                        openAuthPopup("register")
+                      }}
+                      className="grid h-10 place-items-center rounded-xl border border-brand/30 bg-brand/10 text-sm font-semibold text-brand transition-[background-color,transform] duration-200 ease-out hover:bg-brand/18 hover:border-brand/50 active:scale-[0.97]"
+                    >
+                      Tạo tài khoản
+                    </a>
+                    <a
+                      href="/login"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setOpen(false)
+                        openAuthPopup("login")
+                      }}
+                      className="grid h-10 place-items-center rounded-xl bg-brand text-sm font-semibold text-white transition-[background-color,transform] duration-200 ease-out hover:bg-brand-deep active:scale-[0.97]"
+                    >
+                      Đăng nhập
+                    </a>
+                  </div>
+                </div>
+
+                <ExploreList close={() => setOpen(false)} withRegister={false} />
+              </>
+            )}
+          </div>
+        )}
+
+      <ConfirmLogoutDialog
+        open={confirmLogout}
+        onClose={() => setConfirmLogout(false)}
+        onConfirm={handleConfirmLogout}
+        userName={user}
+      />
     </div>
   )
 }
@@ -215,15 +345,15 @@ export default function Navbar() {
           ))}
         </nav>
 
-        {/* ponytail: one height (44/48) for every control here so the row reads as a single line */}
+        {/* ponytail: one height (40px) for every control here so the row reads as a single line */}
         <div className="ml-auto flex items-center gap-3">
-          <span className="hidden h-11 items-center gap-1.5 text-xs whitespace-nowrap text-body md:h-12 xl:flex">
+          <span className="hidden h-10 items-center gap-1.5 text-xs whitespace-nowrap text-body md:flex">
             <i className="size-1.5 rounded-full bg-brand-soft shadow-[0_0_0_3px_rgba(0,112,61,0.12)]" />
             TP. Hồ Chí Minh
           </span>
           <Link
             to="/map"
-            className="hidden h-11 items-center rounded-full bg-brand px-5 text-[13px] font-semibold whitespace-nowrap text-white shadow-[0_5px_14px_rgba(0,112,61,0.22)] transition-colors hover:bg-brand-deep md:h-12 xl:inline-flex"
+            className="hidden h-10 items-center rounded-full bg-brand px-4 text-sm font-semibold whitespace-nowrap text-white shadow-[0_5px_14px_rgba(0,112,61,0.22)] transition-colors hover:bg-brand-deep sm:inline-flex"
           >
             Tìm người thu gom
           </Link>

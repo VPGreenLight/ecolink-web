@@ -28,7 +28,7 @@ export type Reward = {
   cost: number
   /** còn lại bao nhiêu, null = không giới hạn */
   stock: number | null
-  kind: "discount" | "gift" | "service" | "tree"
+  kind: "discount" | "gift" | "tree"
   /** ảnh món quà, tải về local để không phụ thuộc mạng lúc chạy */
   img: string
 }
@@ -43,12 +43,12 @@ export const REWARDS: Reward[] = [
     kind: "gift",    img: "/assets/rewards/bag.jpg",
   },
   {
-    id: "ship",
-    name: "Miễn phí giao hàng 3 lần",
-    desc: "Dùng khi đặt lịch thu gom, tự động trừ điểm mỗi lần.",
+    id: "glasses",
+    name: "Bộ ly thuỷ tinh tái chế",
+    desc: "Ly thuỷ tinh tái sinh từ chai thu mua, đạt chuẩn tiếp xúc thực phẩm.",
     cost: 3_500,
-    stock: null,
-    kind: "service",    img: "/assets/rewards/ship.jpg",
+    stock: 150,
+    kind: "gift",    img: "/assets/rewards/glasses.jpg",
   },
   {
     id: "seedling",
@@ -75,12 +75,12 @@ export const REWARDS: Reward[] = [
     kind: "gift",    img: "/assets/rewards/kit.jpg",
   },
   {
-    id: "tour",
-    name: "Ghé tham quan nhà máy tái chế",
-    desc: "Cùng gia đình đi xem dây chuyền phân loại và tái sinh.",
+    id: "compactor",
+    name: "Máy ép rác gia đình 20 lít",
+    desc: "Ép chai và hộp cứng để giảm khoảng 3 lần thể tích, đặt được trong bếp.",
     cost: 18_000,
-    stock: 12,
-    kind: "service",    img: "/assets/rewards/tour.jpg",
+    stock: 24,
+    kind: "gift",    img: "/assets/rewards/compactor.jpg",
   },
 ]
 
@@ -108,7 +108,17 @@ export const REDEEMED = RANK_POINTS - SPEND_POINTS
 /** Quà lớn. Điểm cao gấp 4–13 lần quà thường nên hiển thị riêng, không
  *  nhét vào cùng danh sách: người dùng thấy 18.000 điểm "không lồ" thì mấy
  *  món này không có ý nghĩa gì. */
-export type GrandPrize = { id: string; name: string; desc: string; cost: number; img: string }
+/** `details` là phần nội dung mở rộng của một món quà đắt: mô tả một dòng
+ *  không đủ để người dùng biết mình nhận được gì, nên mấy món này kèm thêm
+ *  danh sách cụ thể. Món nào không có thì bỏ trống, không bắt buộc. */
+export type GrandPrize = {
+  id: string
+  name: string
+  desc: string
+  cost: number
+  img: string
+  details?: string[]
+}
 
 export const GRAND_PRIZES: GrandPrize[] = [
   {
@@ -124,13 +134,25 @@ export const GRAND_PRIZES: GrandPrize[] = [
     desc: "5 ngày đi thật các dây chuyền phân loại cùng đội ngũ kỹ thuật.",
     cost: 60_000,
     img: "/assets/rewards/grand-trip.jpg",
+    details: [
+      "Ngày 1: nhận sơ đồ dây chuyền, làm quen đội kỹ thuật và quy trình an toàn.",
+      "Ngày 2: đứng cạnh băng tải, xem rác được phân loại thành nhóm nào và vì sao.",
+      "Ngày 3: theo dây chuyền băm và nén thành bánh phế liệu để vận chuyển.",
+      "Ngày 4: tham quan khu chế biến, tận mắt xem phế liệu thành sản phẩm mới.",
+      "Ngày 5: chốt lại bằng buổi thử phân loại tại nhà, tự chấm điểm cùng đội ngũ.",
+    ],
   },
   {
-    id: "grand-scholar",
-    name: "Học bổng một năm học phần",
-    desc: "Hỗ trợ học phí ngành quản lý môi trường hoặc kỹ thuật tái chế.",
+    id: "grand-cookware",
+    name: "Bộ nồi chảo inox 304 cho cả nhà",
+    desc: "Nồi 3 lớp và chảo chiên, làm tại nhà máy đối tác, bảo hành 2 năm.",
     cost: 45_000,
-    img: "/assets/rewards/grand-scholar.jpg",
+    img: "/assets/rewards/grand-cookware.jpg",
+    details: [
+      "2 nồi 3 lớp, 2 chảo chiên, 1 nồi cà phê và 6 nắp kín.",
+      "Inox 304 nguyên liệu, đáy triện từ nên không dính và không cháy khét.",
+      "Bộ đồ dùng được trên cả bếp từ và bếp gas, đưa vào máy rửa bát được.",
+    ],
   },
 ]
 

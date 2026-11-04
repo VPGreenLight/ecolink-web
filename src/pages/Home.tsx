@@ -1,3 +1,4 @@
+import { useRef, useState } from "react"
 import { Link } from "react-router-dom"
 
 /** Ba việc app thật sự làm, mỗi việc trỏ tới một route có thật */
@@ -29,6 +30,20 @@ const STEPS = [
 ] as const
 
 export default function Home() {
+  const video = useRef<HTMLVideoElement>(null)
+  const [muted, setMuted] = useState(true)
+
+  /** Bật tiếng. `play()` phải gọi lại trong thao tác của người dùng: video đang
+   *  `autoplay muted`, nếu chỉ gỡ `muted` thì trình duyệt coi là phát tự động
+   *  có tiếng và từ chối. Chỉ sửa thuộc tính là không đủ. */
+  const toggleSound = () => {
+    const v = video.current
+    if (!v) return
+    v.muted = !v.muted
+    setMuted(v.muted)
+    if (!v.muted) void v.play()
+  }
+
   return (
     <div className="page flex flex-col">
       {/* Hero: video là ảnh chính, nằm cạnh chữ nên hiện ngay khi vừa vào,
@@ -59,8 +74,9 @@ export default function Home() {
           </div>
 
           {/* file do bạn bỏ vào public/assets/video/ */}
-          <div className="overflow-clip rounded-2xl border border-line bg-surface-2 shadow-[0_1px_2px_rgba(15,31,21,0.05)]">
+          <div className="relative overflow-clip rounded-2xl border border-line bg-surface-2 shadow-[0_1px_2px_rgba(15,31,21,0.05)]">
             <video
+              ref={video}
               className="aspect-video w-full object-cover"
               autoPlay
               muted
@@ -73,6 +89,20 @@ export default function Home() {
               <source src="/assets/video/intro.mp4" type="video/mp4" />
               Trình duyệt của bạn không hỗ trợ phát video.
             </video>
+
+            {/* `muted` là điều kiện bắt buộc để `autoplay` chạy — trình duyệt
+                chặn video có tiếng tự phát. Nên mặc định luôn tắt tiếng và
+                để người xem tự bật, thay vì đợi video cạn tiếng rồi mới nói. */}
+            <button
+              type="button"
+              onClick={toggleSound}
+              aria-pressed={!muted}
+              aria-label={muted ? "Bật tiếng video" : "Tắt tiếng video"}
+              title={muted ? "Bật tiếng" : "Tắt tiếng"}
+              className="absolute right-3 bottom-3 grid size-9 place-items-center rounded-full text-ink/75 ring-1 ring-ink/15 transition-colors hover:bg-ink/6 hover:text-ink focus-visible:ring-2 focus-visible:ring-brand"
+            >
+              {muted ? <MuteIcon /> : <SoundIcon />}
+            </button>
           </div>
         </div>
       </section>
@@ -131,5 +161,32 @@ export default function Home() {
         </div>
       </section>
     </div>
+  )
+}
+
+/** Hai icon cùng bộ kích thước: chỉ khác ở sóng âm, đổi trạng thái mà không
+ *  nhảy layout. */
+const stroke = {
+  stroke: "currentColor",
+  strokeWidth: 1.8,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+}
+
+function SoundIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="size-4">
+      <path d="M11 5 6.5 9H3v6h3.5L11 19V5Z" {...stroke} />
+      <path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.5 6.5a8 8 0 0 1 0 11" {...stroke} />
+    </svg>
+  )
+}
+
+function MuteIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="size-4">
+      <path d="M11 5 6.5 9H3v6h3.5L11 19V5Z" {...stroke} />
+      <path d="m15.5 9.5 5 5m0-5-5 5" {...stroke} />
+    </svg>
   )
 }

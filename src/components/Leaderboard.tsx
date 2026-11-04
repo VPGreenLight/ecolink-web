@@ -14,7 +14,7 @@ export default function Leaderboard() {
   const rest = LEADERBOARD.slice(3)
 
   return (
-    <section className="mt-10">
+    <section className="mt-10 first:mt-0">
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <h2 className="text-lg leading-7 font-bold tracking-tight text-ink">
           Xếp hạng người dùng

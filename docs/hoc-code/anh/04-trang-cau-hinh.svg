@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 660" font-family="Segoe UI, Arial, sans-serif">
+  <rect width="980" height="660" fill="#f7fbf8"/>
+  <text x="490" y="44" text-anchor="middle" font-size="23" font-weight="700" fill="#0f1f15">VÌ SAO CÁC TRANG “CẤU HÌNH” KHÔNG CẤU HÌNH ĐƯỢC GÌ</text>
+  <text x="490" y="72" text-anchor="middle" font-size="15" fill="#606d64">Ví dụ thật: trang /admin/fees (cấu hình phí giao dịch). Đọc kỹ 3 ô dưới đây.</text>
+
+  <rect x="60" y="104" width="270" height="300" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <text x="195" y="138" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">① “Tờ giấy” bạn đang sửa</text>
+  <rect x="90" y="158" width="210" height="60" rx="8" fill="#eff6f1"/>
+  <text x="195" y="182" text-anchor="middle" font-size="13" fill="#404b44">Ô nhập trên màn hình</text>
+  <text x="195" y="202" text-anchor="middle" font-size="13" font-family="Consolas, monospace" fill="#0f1f15">rate = 12 (%)</text>
+  <text x="195" y="252" text-anchor="middle" font-size="13.5" fill="#404b44">Bạn gõ 12 → nhãn đổi thành</text>
+  <text x="195" y="272" text-anchor="middle" font-size="13.5" fill="#404b44">“Phí nền tảng 12%” ✔</text>
+  <text x="195" y="308" text-anchor="middle" font-size="13.5" font-weight="600" fill="#a15c00">Đây chỉ là bản nháp trong bộ nhớ</text>
+  <text x="195" y="328" text-anchor="middle" font-size="13.5" font-weight="600" fill="#a15c00">tạm thời của trình duyệt</text>
+  <text x="195" y="362" text-anchor="middle" font-size="13" fill="#606d64">Bấm F5 → tờ giấy này bị xé,</text>
+  <text x="195" y="382" text-anchor="middle" font-size="13" fill="#606d64">quay về số cũ 8%</text>
+
+  <rect x="355" y="104" width="270" height="300" rx="12" fill="#ffffff" stroke="#c0341c" stroke-width="2"/>
+  <text x="490" y="138" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">② “Tờ giấy” máy thật sự đọc</text>
+  <rect x="385" y="158" width="210" height="60" rx="8" fill="#fdecea"/>
+  <text x="490" y="182" text-anchor="middle" font-size="13" fill="#404b44">File thật trong máy</text>
+  <text x="490" y="202" text-anchor="middle" font-size="13" font-family="Consolas, monospace" fill="#0f1f15">FEE_RATE = 0.08</text>
+  <text x="490" y="252" text-anchor="middle" font-size="13.5" fill="#404b44">Mọi phép tính tiền trong app</text>
+  <text x="490" y="272" text-anchor="middle" font-size="13.5" fill="#404b44">(giải ngân, biên nhận, ví dụ)</text>
+  <text x="490" y="292" text-anchor="middle" font-size="13.5" fill="#404b44">đều đọc tờ giấy NÀY</text>
+  <text x="490" y="328" text-anchor="middle" font-size="13.5" font-weight="700" fill="#c0341c">Trang fees KHÔNG có quyền</text>
+  <text x="490" y="348" text-anchor="middle" font-size="13.5" font-weight="700" fill="#c0341c">sửa tờ giấy này</text>
+  <text x="490" y="382" text-anchor="middle" font-size="13" fill="#606d64">Nên tiền phí vẫn luôn tính theo 8%</text>
+
+  <rect x="650" y="104" width="270" height="300" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <text x="785" y="138" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">③ Điều bạn mong sẽ xảy ra</text>
+  <text x="785" y="176" text-anchor="middle" font-size="13.5" fill="#404b44">Gõ 12% → bấm “Lưu” →</text>
+  <text x="785" y="196" text-anchor="middle" font-size="13.5" fill="#404b44">cả app tính phí 12%</text>
+  <text x="785" y="240" text-anchor="middle" font-size="14" font-weight="700" fill="#c0341c">✘ Điều này CHƯA xảy ra</text>
+  <text x="785" y="272" text-anchor="middle" font-size="13" fill="#606d64">app chưa có “người gác cửa”</text>
+  <text x="785" y="292" text-anchor="middle" font-size="13" fill="#606d64">(backend) để ghi thay đổi</text>
+  <text x="785" y="312" text-anchor="middle" font-size="13" fill="#606d64">xuống file thật</text>
+  <text x="785" y="354" text-anchor="middle" font-size="13" fill="#0f1f15">Muốn thật thì phải vào file</text>
+  <text x="785" y="374" text-anchor="middle" font-size="13" font-family="Consolas, monospace" fill="#0f1f15">src/data/waste.ts</text>
+
+  <path d="M 330 254 L 347 254" stroke="#c0341c" stroke-width="2.5" fill="none"/>
+  <path d="M 347 254 l -9 -5 l 0 10 z" fill="#c0341c"/>
+  <text x="338" y="240" text-anchor="middle" font-size="18" font-weight="700" fill="#c0341c">✘</text>
+  <path d="M 625 254 L 642 254" stroke="#c0341c" stroke-width="2.5" fill="none"/>
+  <path d="M 642 254 l -9 -5 l 0 10 z" fill="#c0341c"/>
+  <text x="633" y="240" text-anchor="middle" font-size="18" font-weight="700" fill="#c0341c">✘</text>
+
+  <rect x="60" y="440" width="860" height="190" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <text x="90" y="474" font-size="16" font-weight="700" fill="#0f1f15">Bài học chung — áp dụng cho NHIỀU trang cấu hình khác:</text>
+  <text x="90" y="504" font-size="14" fill="#404b44">Sửa cấu hình phí, điểm thưởng, chu kỳ bảng xếp hạng, danh mục rác, duyệt blog… — tất cả đều giống ví dụ trên:</text>
+  <text x="90" y="528" font-size="14" fill="#404b44">• Trang chỉ sửa được “bản nháp” trong bộ nhớ trình duyệt — bấm F5 là mất.</text>
+  <text x="90" y="552" font-size="14" fill="#404b44">• Muốn đổi thật và lâu dài → sửa thẳng FILE trong thư mục src/data/ (xem tài liệu 13, “Mức 1”).</text>
+  <text x="90" y="576" font-size="14" fill="#404b44">• Không phải app bị lỗi: app đang là BẢN MÔ PHỎNG. Ba trang cấu hình này chỉ để xem giao diện.</text>
+  <text x="90" y="604" font-size="14" font-weight="600" fill="#278733">Danh sách đầy đủ 12 chỗ “bấm mà không có tác dụng thật” nằm ở tài liệu 13, mục “Mức 0”.</text>
+</svg>

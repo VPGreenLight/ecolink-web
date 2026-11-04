@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 640" font-family="Segoe UI, Arial, sans-serif">
+  <rect width="980" height="640" fill="#f7fbf8"/>
+  <text x="490" y="44" text-anchor="middle" font-size="23" font-weight="700" fill="#0f1f15">“BACKEND” LÀ GÌ? — VÌ SAO NHIỀU THỨ TRONG APP CHƯA LƯU ĐƯỢC</text>
+  <text x="490" y="72" text-anchor="middle" font-size="15" fill="#606d64">Backend = “người thư ký ở phòng sau”: nhận yêu cầu, ghi vào sổ, trả lời lại. App hiện KHÔNG có người thư ký này.</text>
+
+  <rect x="50" y="104" width="420" height="380" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <text x="260" y="138" text-anchor="middle" font-size="17" font-weight="700" fill="#0f1f15">HIỆN TẠI — chỉ có mình trình duyệt</text>
+  <rect x="110" y="162" width="300" height="120" rx="10" fill="#eff6f1" stroke="#278733" stroke-width="2"/>
+  <text x="260" y="196" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">Trình duyệt (Chrome/Edge)</text>
+  <text x="260" y="222" text-anchor="middle" font-size="13.5" fill="#404b44">Chạy toàn bộ app: màn hình, nút bấm,</text>
+  <text x="260" y="242" text-anchor="middle" font-size="13.5" fill="#404b44">bảng màu, và cả “kho dữ liệu giấy”</text>
+  <text x="260" y="266" text-anchor="middle" font-size="13" fill="#606d64">(dữ liệu được đóng gói sẵn trong app)</text>
+
+  <rect x="110" y="306" width="300" height="100" rx="10" fill="#fdecea" stroke="#c0341c" stroke-width="2"/>
+  <text x="260" y="338" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">“Sổ tạm” của trình duyệt</text>
+  <text x="260" y="364" text-anchor="middle" font-size="13.5" fill="#404b44">Nhớ được vài thứ nhỏ: bạn đã đăng nhập</text>
+  <text x="260" y="384" text-anchor="middle" font-size="13.5" fill="#404b44">với vai trò gì (nhớ tới khi bạn tự đăng xuất)</text>
+
+  <text x="260" y="436" text-anchor="middle" font-size="14" font-weight="700" fill="#c0341c">Bấm F5 → mọi thay đổi bạn vừa làm mất hết</text>
+  <text x="260" y="460" text-anchor="middle" font-size="13.5" fill="#606d64">Vì không ai ghi chúng xuống “sổ thật” cả</text>
+
+  <rect x="510" y="104" width="420" height="380" rx="12" fill="#ffffff" stroke="#67dc99" stroke-width="2.5"/>
+  <text x="720" y="138" text-anchor="middle" font-size="17" font-weight="700" fill="#0f1f15">NẾU CÓ BACKEND — tương lai bạn tự thêm được</text>
+  <rect x="570" y="162" width="300" height="86" rx="10" fill="#eff6f1" stroke="#278733" stroke-width="2"/>
+  <text x="720" y="196" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">① Trình duyệt — mặt tiền cửa hàng</text>
+  <text x="720" y="222" text-anchor="middle" font-size="13" fill="#606d64">nơi khách bấm nút, xem màn hình</text>
+  <rect x="570" y="266" width="300" height="86" rx="10" fill="#eff6f1" stroke="#278733" stroke-width="2"/>
+  <text x="720" y="300" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">② Máy chủ (backend) — người thư ký</text>
+  <text x="720" y="326" text-anchor="middle" font-size="13" fill="#606d64">kiểm tra “ai đang gọi”, xử lý yêu cầu</text>
+  <rect x="570" y="370" width="300" height="86" rx="10" fill="#eff6f1" stroke="#278733" stroke-width="2"/>
+  <text x="720" y="404" text-anchor="middle" font-size="15" font-weight="700" fill="#0f1f15">③ Cơ sở dữ liệu — cuốn sổ cái</text>
+  <text x="720" y="430" text-anchor="middle" font-size="13" fill="#606d64">ghi thật, còn mãi, F5 không mất</text>
+  <path d="M 720 248 L 720 260 M 720 352 L 720 364" stroke="#278733" stroke-width="2.5"/>
+  <path d="M 720 260 l -5 -9 l 10 0 z M 720 364 l -5 -9 l 10 0 z" fill="#278733"/>
+  <text x="720" y="476" text-anchor="middle" font-size="13.5" fill="#278733">Cần học thêm: Node.js/API + SQL — lộ trình ở tài liệu 15</text>
+
+  <rect x="50" y="510" width="880" height="106" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <text x="80" y="542" font-size="15" font-weight="700" fill="#0f1f15">Nói một câu cho dễ nhớ:</text>
+  <text x="80" y="568" font-size="14" fill="#404b44">App hiện tại giống một <tspan font-weight="700">ngôi nhà mẫu</tspan> — đẹp, đầy đủ phòng ốc, ai vào cũng tham quan được. Nhưng nó chưa có <tspan font-weight="700">nhân viên trực</tspan> để ghi lại yêu cầu, nên mọi thứ chỉ “diễn ra trong chốc lát rồi thôi”.</text>
+  <text x="80" y="594" font-size="14" fill="#404b44">Điều này hoàn toàn bình thường với một dự án học tập — và là cơ hội tốt khi đi phỏng vấn: bạn biết chính xác mình còn thiếu gì.</text>
+</svg>

@@ -2,7 +2,7 @@ export const NAV_LINKS = [
   { to: "/", label: "Tổng quan" },
   { to: "/scanner", label: "Nhận diện AI" },
   { to: "/map", label: "Điểm thu gom" },
-  { to: "/partners", label: "Đối tác tái chế" },
+  // { to: "/partners", label: "Đối tác tái chế" },
   { to: "/rewards", label: "Đổi thưởng" },
   { to: "/blog", label: "Blog" },
 ] as const

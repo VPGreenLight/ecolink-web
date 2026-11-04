@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 620" font-family="Segoe UI, Arial, sans-serif">
+  <rect width="980" height="620" fill="#f7fbf8"/>
+  <text x="490" y="44" text-anchor="middle" font-size="23" font-weight="700" fill="#0f1f15">VÒNG LẶP KHI BẠN SỬA FILE — mọi thứ nằm ở 4 bước này</text>
+
+  <rect x="70" y="80" width="250" height="92" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <circle cx="104" cy="116" r="15" fill="#278733"/>
+  <text x="104" y="122" text-anchor="middle" font-size="16" font-weight="700" fill="#ffffff">1</text>
+  <text x="132" y="122" font-size="16" font-weight="700" fill="#0f1f15">Mở file bằng VS Code</text>
+  <text x="96" y="150" font-size="13" fill="#606d64">Ví dụ: src/data/waste.ts</text>
+
+  <rect x="380" y="80" width="250" height="92" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <circle cx="414" cy="116" r="15" fill="#278733"/>
+  <text x="414" y="122" text-anchor="middle" font-size="16" font-weight="700" fill="#ffffff">2</text>
+  <text x="442" y="122" font-size="16" font-weight="700" fill="#0f1f15">Sửa chữ / số</text>
+  <text x="406" y="150" font-size="13" fill="#606d64">rồi bấm Ctrl+S để lưu</text>
+
+  <rect x="690" y="80" width="250" height="92" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <circle cx="724" cy="116" r="15" fill="#278733"/>
+  <text x="724" y="122" text-anchor="middle" font-size="16" font-weight="700" fill="#ffffff">3</text>
+  <text x="752" y="122" font-size="16" font-weight="700" fill="#0f1f15">Trình duyệt TỰ cập nhật</text>
+  <text x="716" y="150" font-size="13" fill="#606d64">trong khoảng 0,1 giây — không</text>
+  <text x="716" y="166" font-size="13" fill="#606d64">cần tắt, không cần mở lại gì</text>
+
+  <path d="M 320 126 L 372 126" stroke="#278733" stroke-width="3" fill="none"/>
+  <path d="M 372 126 l -10 -6 l 0 12 z" fill="#278733"/>
+  <path d="M 630 126 L 682 126" stroke="#278733" stroke-width="3" fill="none"/>
+  <path d="M 682 126 l -10 -6 l 0 12 z" fill="#278733"/>
+
+  <rect x="170" y="260" width="280" height="150" rx="12" fill="#ffffff" stroke="#67dc99" stroke-width="2"/>
+  <text x="310" y="296" text-anchor="middle" font-size="17" font-weight="700" fill="#278733">4 · Đúng như ý bạn?</text>
+  <text x="310" y="330" text-anchor="middle" font-size="14" fill="#0f1f15">CÓ → chạy lệnh kiểm tra:</text>
+  <rect x="210" y="344" width="200" height="34" rx="8" fill="#eff6f1"/>
+  <text x="310" y="366" text-anchor="middle" font-size="14" font-family="Consolas, monospace" fill="#0f1f15">npm run check</text>
+  <text x="310" y="398" text-anchor="middle" font-size="13" fill="#606d64">thấy “all pages render” là xong ✔</text>
+
+  <rect x="530" y="260" width="280" height="150" rx="12" fill="#ffffff" stroke="#c0341c" stroke-width="2"/>
+  <text x="670" y="296" text-anchor="middle" font-size="17" font-weight="700" fill="#c0341c">KHÔNG (bị lỗi)?</text>
+  <text x="670" y="330" text-anchor="middle" font-size="14" fill="#0f1f15">Hoàn tác — mọi thứ về như cũ:</text>
+  <rect x="570" y="344" width="200" height="34" rx="8" fill="#fdecea"/>
+  <text x="670" y="366" text-anchor="middle" font-size="13" font-family="Consolas, monospace" fill="#0f1f15">git restore &lt;tên file&gt;</text>
+  <text x="670" y="398" text-anchor="middle" font-size="13" fill="#606d64">hoặc: VS Code → Source Control → Discard</text>
+
+  <path d="M 310 176 L 310 252" stroke="#67dc99" stroke-width="3" fill="none"/>
+  <path d="M 310 252 l -6 -10 l 12 0 z" fill="#67dc99"/>
+  <path d="M 670 176 L 670 252" stroke="#c0341c" stroke-width="3" fill="none"/>
+  <path d="M 670 252 l -6 -10 l 12 0 z" fill="#c0341c"/>
+  <path d="M 450 335 L 522 335" stroke="#cdded3" stroke-width="2" stroke-dasharray="6 6" fill="none"/>
+
+  <rect x="70" y="460" width="840" height="120" rx="12" fill="#ffffff" stroke="#cdded3" stroke-width="2"/>
+  <text x="100" y="494" font-size="16" font-weight="700" fill="#0f1f15">Mẹo không bao giờ mất bài: “chụp ảnh” trước khi nghịch</text>
+  <text x="100" y="522" font-size="14" fill="#404b44">Trước khi sửa nhiều, trong VS Code mở Source Control → gõ ghi chú → bấm Commit. Đó là “điểm lưu game”.</text>
+  <text x="100" y="546" font-size="14" fill="#404b44">Sau đó hỏng thế nào cũng quay lại được. Chưa quen thì mỗi lần chỉ sửa MỘT file, MỘT chỗ.</text>
+  <text x="100" y="570" font-size="14" fill="#606d64">Cách chạy app để xem: mở Terminal trong VS Code → gõ “npm run dev” → giữ Ctrl và bấm vào địa chỉ http://localhost:5173</text>
+</svg>
