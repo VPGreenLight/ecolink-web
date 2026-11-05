@@ -1,6 +1,6 @@
 import { ApiError, apiRequest } from "@/lib/api"
 import type { CollectionPartnerDto } from "@/lib/recyclerDiscoveryApi"
-import type { Role } from "@/lib/session"
+import { getSession, type Role } from "@/lib/session"
 import { APPLICATIONS, type Application } from "@/data/ops"
 
 /* ------------------------------------------------------------------ DTOs */
@@ -191,8 +191,15 @@ function writeSyncState(next: LocalWorkflowSyncState) {
 export async function ensureRoleJwt(role: Role): Promise<string | null> {
   if (typeof localStorage === "undefined") return null
 
+  const currentSession = getSession()
   const existingGlobal = localStorage.getItem("ecolink:token")
-  if (existingGlobal) return existingGlobal
+  if (
+    existingGlobal &&
+    currentSession &&
+    (currentSession.role === role || (role === "staff" && currentSession.role === "admin"))
+  ) {
+    return existingGlobal
+  }
 
   const roleTokenKey = `ecolink:jwt:${role}`
   const cachedRoleToken = localStorage.getItem(roleTokenKey)

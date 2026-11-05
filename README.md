@@ -35,13 +35,14 @@ src/
   pages/                  1 file = 1 route
   data/                   nội dung tĩnh & dữ liệu dự phòng khi chạy offline
   lib/
-    api.ts                HTTP client chuẩn hóa ApiResponse<T> & tự dò cổng Backend
+    api.ts                HTTP client chuẩn hóa ApiResponse<T>, tự dò cổng & xoay vòng Refresh Token (401)
+    authApi.ts            API client Module Authentication & RBAC (/api/v1/auth/*, Google OAuth, Khôi phục MK)
     wasteScanApi.ts       API client Module AI Waste Classification & Rule Engine
     recyclerDiscoveryApi.ts API client Module Location-Based Recycler Discovery (U-05)
     recyclerWorkflowApi.ts Liên thông 4 mắt xích vai trò (đăng ký, duyệt KYB, bật/tắt vựa, đặt lịch)
     geocodingApi.ts       Tìm kiếm địa danh 2 tầng & làm mờ toạ độ ~500m (BR-MTH-05)
     vietnamMapSovereignty.ts Lớp phủ chuẩn hoá danh xưng Biển Đông, Hoàng Sa & Trường Sa (Việt Nam)
-    session.ts            đăng nhập giả lập bằng localStorage
+    session.ts            Quản lý phiên đăng nhập JWT, Refresh Token & RBAC ổn định tham chiếu React
   check.tsx               smoke test, không dùng framework test
 ```
 
@@ -54,7 +55,7 @@ src/
 | `/guidance`, `/waste` | Tra cứu quy tắc xử lý rác từ Rule Engine & báo cáo nhãn sai |
 | `/map` | Bản đồ tương tác CARTO Voyager tìm cơ sở thu mua, tra cứu địa danh 2 tầng & làm mờ vị trí `~500m` (`/api/v1/recyclers/*`, `/api/v1/geocoding/search`) |
 | `/partners` | Đối tác tái chế & cơ sở thu mua trực tuyến |
-| `/login`, `/register` | Đăng nhập / đăng ký |
+| `/login`, `/register`, `/reset-password` | Đăng nhập, đăng ký, Google OAuth & khôi phục mật khẩu (`/api/v1/auth/*`) |
 | `*` | 404 |
 
 ## Sửa nội dung
@@ -69,11 +70,11 @@ export const PARTNERS: Partner[] = [{ name: "...", logo: "/assets/...", ... }]
 
 Đổi màu / font / class dùng lại → `src/index.css` (khối `@theme`).
 
-## Còn thiếu (có chủ đích)
+## Lưu ý khi triển khai (Deployment)
 
-- **Đăng nhập là giả lập.** `lib/session.ts` chỉ lưu tên vào `localStorage`, chưa nối JWT thật (`/api/v1/auth/*`). `lib/api.ts` đã hỗ trợ tự đính kèm Bearer token ngay khi nối auth.
 - **Deploy cần SPA fallback.** Vite dev đã có sẵn; khi deploy static phải trỏ
   mọi path về `index.html`, nếu không refresh `/scanner` sẽ 404.
+- **Google OAuth 2.0:** Khi triển khai chính thức, cấu hình `VITE_GOOGLE_CLIENT_ID` trong `.env.local` và `GoogleAuth:ClientId` ở Backend; ở chế độ chạy đồ án cục bộ không cần tạo project Google Cloud vẫn có thể kiểm thử trực tiếp luồng `POST /api/v1/auth/google` xuống PostgreSQL.
 
 ## Nhật ký làm việc & Minh chứng đồ án
 

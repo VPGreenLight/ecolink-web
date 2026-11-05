@@ -1,47 +1,69 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { PageHead, Field, Status } from "@/components/admin/ui"
 import { ROLE_LABEL, useSession } from "@/lib/session"
+import {
+  fetchCurrentUserProfile,
+  formatAuthError,
+  updateCurrentUserProfile,
+} from "@/lib/authApi"
 import { AI_CASES, APPLICATIONS, COMPLAINTS, PERMS, POSTS, STAFF } from "@/data/ops"
 
-/** Hồ sơ và thông báo cho STAFF và ADMIN.
- *
- *  TÁCH khỏi `/account/profile` của người dân, dù đều gọi là "hồ sơ": hai bên
- *  không có gì giống nhau. Người dân có điểm cây ảo, xếp hạng, lịch thu gom —
- *  nhân viên không có. Nhân viên có mã nhân viên, bộ phận, quyền được cấp —
- *  người dân không có. Để chung một trang thì phải nhồi hai bảng chồng lên nhau
- *  và 3/4 nội dung là thừa với một trong hai bên.
- *
- *  Thông báo cũng khác: của người dân là "cô Ba đã nhận yêu cầu của bạn", của
- *  nhân viên là việc đang chờ trong hàng đợi vận hành. Số đếm thẳng từ bảng
- *  dữ liệu nên không bao giờ lệch với trang đếm chi tiết bên cạnh. */
+/** Hồ sơ và thông báo cho STAFF và ADMIN — đồng bộ trực tiếp với
+ *  `GET /api/v1/auth/me` và `PUT /api/v1/auth/profile`. */
 export default function AccountProfile() {
   const session = useSession()
   const role = session?.role === "admin" ? "admin" : "staff"
   const me = STAFF.find((s) => s.name === session?.name)
 
   const [name, setName] = useState(session?.name ?? "")
-  const [phone, setPhone] = useState("0901 234 567")
-  const [saved, setSaved] = useState(false)
+  const [phone, setPhone] = useState(session?.phoneNumber ?? "0901 234 567")
+  const [submitting, setSubmitting] = useState(false)
+  const [savedMsg, setSavedMsg] = useState("")
   const [err, setErr] = useState("")
 
-  const submit = (e: React.FormEvent) => {
+  useEffect(() => {
+    let active = true
+    void fetchCurrentUserProfile().then((profile) => {
+      if (!active || !profile) return
+      setName(profile.fullName || profile.username)
+      if (profile.phoneNumber) {
+        setPhone(profile.phoneNumber)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Kiểm tra ở ranh giới tin cậy: dữ liệu sau này về từ API, không tin ô
-    // nhập là hợp lệ.
+    if (submitting) return
     if (name.trim().length < 2) {
       setErr("Tên hiển thị phải có ít nhất 2 ký tự.")
-      setSaved(false)
+      setSavedMsg("")
       return
     }
     if (!/^(?:\+84|0)\d{9,10}$/.test(phone.replace(/[\s.\-()]/g, ""))) {
       setErr("Số điện thoại chưa đúng định dạng Việt Nam.")
-      setSaved(false)
+      setSavedMsg("")
       return
     }
+
     setErr("")
-    // ponytail: chưa có backend. Nối API thì thay đúng dòng này.
-    setSaved(true)
+    setSubmitting(true)
+    try {
+      const res = await updateCurrentUserProfile({
+        fullName: name,
+        phoneNumber: phone,
+      })
+      setSavedMsg(res.message)
+    } catch (error) {
+      setErr(formatAuthError(error))
+      setSavedMsg("")
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -64,7 +86,7 @@ export default function AccountProfile() {
               value={name}
               onChange={(e) => {
                 setName(e.target.value)
-                setSaved(false)
+                setSavedMsg("")
               }}
             />
           </Field>
@@ -80,13 +102,18 @@ export default function AccountProfile() {
               value={phone}
               onChange={(e) => {
                 setPhone(e.target.value)
-                setSaved(false)
+                setSavedMsg("")
               }}
             />
           </Field>
 
           <Field label="Email công việc">
-            <input className="input" value={me?.email ?? "quantri@ecolink.vn"} readOnly disabled />
+            <input
+              className="input"
+              value={session?.email ?? me?.email ?? "quantri@ecolink.vn"}
+              readOnly
+              disabled
+            />
             <span className="text-[12px] text-muted">
               Email là định danh đăng nhập, đổi ở phòng IT chứ không sửa trên web.
             </span>
@@ -95,12 +122,16 @@ export default function AccountProfile() {
           {err && <p className="text-[13px] text-warn">{err}</p>}
 
           <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
-            <button type="submit" className="btn-primary h-11 px-6">
-              Lưu hồ sơ
+            <button
+              type="submit"
+              disabled={submitting}
+              className="btn-primary h-11 px-6 disabled:opacity-60"
+            >
+              {submitting ? "Đang lưu..." : "Lưu hồ sơ"}
             </button>
-            {saved && (
+            {savedMsg && (
               <p role="status" className="text-[13px] font-semibold text-brand">
-                Đã lưu hồ sơ.
+                {savedMsg}
               </p>
             )}
           </div>
@@ -111,11 +142,11 @@ export default function AccountProfile() {
             <h2 className="text-[15px] font-bold text-ink">Thông tin được cấp</h2>
             <dl className="mt-3 flex flex-col gap-2 text-[13px]">
               {[
-                ["Mã nhân viên", me?.id ?? "QT-01"],
+                ["Mã nhân viên", me?.id ?? (session?.username ? session.username.toUpperCase() : "QT-01")],
                 ["Vai trò", ROLE_LABEL[role]],
                 ["Bộ phận", me ? "Vận hành nền tảng" : "Ban quản trị"],
                 ["Ngày bắt đầu", "12/03/2025"],
-                ["Trạng thái", me?.status === "locked" ? "Đang khoá" : "Đang hoạt động"],
+                ["Trạng thái", me?.status === "locked" || session?.status === "Suspended" ? "Đang khoá" : "Đang hoạt động"],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-3 border-b border-line-soft pb-2">
                   <dt className="text-muted">{k}</dt>
@@ -131,7 +162,7 @@ export default function AccountProfile() {
               {role === "admin" ? (
                 <Status tone="ok">Toàn quyền hệ thống</Status>
               ) : (
-                (me?.perms ?? []).map((id) => (
+                (me?.perms ?? ["ai", "kyb", "dispute", "blog"]).map((id) => (
                   <Status key={id} tone="wait">
                     {PERMS.find((p) => p.id === id)?.label ?? id}
                   </Status>
@@ -151,11 +182,6 @@ export default function AccountProfile() {
   )
 }
 
-/** Việc đang chờ, đếm thẳng từ bảng dữ liệu vận hành.
- *
- *  Liệt kê RIÊNG theo vai trò, không dùng `/${role}/...` chung: staff và admin
- *  không có cùng bộ màn hình. Admin không có `/admin/applications` và
- *  `/admin/complaints` — dựng link bằng cách ghép chuỗi sẽ dẫn tới trang 404. */
 function Queue({ role }: { role: "staff" | "admin" }) {
   const rows: { to: string; label: string; count: number }[] =
     role === "staff"
