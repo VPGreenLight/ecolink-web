@@ -1,6 +1,15 @@
-import { useEffect, useMemo, useState } from "react"
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
+import LeafletRecyclerMap, {
+  type SearchCoordinateSource,
+} from "@/components/LeafletRecyclerMap"
 import { ApiError } from "@/lib/api"
+import {
+  filterAreaPresets,
+  resolveSearchCoordinates,
+  searchPlacesOnSubmit,
+  type GeocodingSuggestionDto,
+} from "@/lib/geocodingApi"
 import {
   DISCOVERY_CATEGORIES,
   formatDistance,
@@ -8,7 +17,6 @@ import {
   getRecyclerPublicDetail,
   isDiscoverableCategory,
   LOCATION_PRESETS,
-  projectPartnerPinPosition,
   RADIUS_OPTIONS,
   searchNearbyRecyclers,
   type CollectionPartnerDto,
@@ -17,9 +25,10 @@ import {
   type RecyclerSortBy,
 } from "@/lib/recyclerDiscoveryApi"
 import { getCategoryMeta, parsePreparationSteps } from "@/lib/wasteScanApi"
+import { applyOfflineWorkflowToPartners } from "@/lib/recyclerWorkflowApi"
 
 /** Dữ liệu dự phòng chỉ dùng khi máy chủ Backend chưa được bật để người xem giao diện
- *  vẫn kiểm tra được luồng chọn pin, xem bảng giá và chuyển sang đặt lịch bàn giao. */
+ *  vẫn kiểm tra được bản đồ tương tác, chọn pin, xem bảng giá và đặt lịch bàn giao. */
 const OFFLINE_PARTNERS: CollectionPartnerDto[] = [
   {
     id: "22222222-2222-2222-2222-222222222222",
@@ -64,7 +73,7 @@ const OFFLINE_PARTNERS: CollectionPartnerDto[] = [
     ],
   },
   {
-    id: "11111111-1111-1111-1111-111111111111",
+    id: "44444444-4444-4444-4444-444444444444",
     facilityName: "Vựa Phế Liệu Xanh Quận 1",
     representativeName: "Nguyễn Văn Minh",
     address: "123 Nguyễn Thị Minh Khai, P. Bến Thành, Quận 1, TP.HCM",
@@ -84,20 +93,58 @@ const OFFLINE_PARTNERS: CollectionPartnerDto[] = [
       {
         categoryCode: "glass",
         categoryName: "Chai lọ thủy tinh",
-        pricePerKg: 2000,
+        pricePerKg: 2200,
         minimumQuantityKg: 5,
         collectionConditions: "Không lẫn mảnh kính cường lực",
       },
     ],
   },
+  {
+    id: "55555555-5555-5555-5555-555555555555",
+    facilityName: "Trạm Thu Gom Tái Chế Tân Bình",
+    representativeName: "Lê Hoàng Phúc",
+    address: "88 Cộng Hòa, Phường 4, Quận Tân Bình, TP.HCM",
+    latitude: 10.7995,
+    longitude: 106.657,
+    distanceKm: 5.4,
+    contactPhone: "0934567890",
+    operatingHours: "08:00 - 17:30",
+    materials: [
+      {
+        categoryCode: "metal",
+        categoryName: "Kim loại & Vỏ lon (Metal)",
+        pricePerKg: 26500,
+        minimumQuantityKg: 1,
+        collectionConditions: "Nhôm lon, đồng, sắt vụn phân loại riêng",
+      },
+      {
+        categoryCode: "cardboard",
+        categoryName: "Bìa Carton (Cardboard)",
+        pricePerKg: 4000,
+        minimumQuantityKg: 2.5,
+        collectionConditions: "Thùng giấy gập gọn",
+      },
+    ],
+  },
 ]
 
-/** U-05 Tìm kiếm cơ sở thu gom theo vị trí địa lý GPS (Location-Based Recycler Discovery).
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return Number((6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(2))
+}
+
+/** U-05 Tìm kiếm cơ sở thu gom theo vị trí địa lý trên bản đồ tương tác (Privacy-First Geocoding).
  *
  *  Kết nối trực tiếp với:
- *   - `GET /api/v1/recyclers/nearby` (lọc theo toạ độ GPS, bán kính, loại rác từ AI, từ khoá, giá)
- *   - `GET /api/v1/recyclers/{recyclerId}` (xem hồ sơ công khai & bảng giá Active từ Module R-01/R-02)
- *   - Hiển thị phương án dự phòng 3 tầng `FallbackSuggestion` (`MSG-MTH-01`) khi bán kính không có người mua. */
+ *   - Bản đồ tương tác `Leaflet 1.9.4` + `CARTO Voyager` (`VITE_CARTO_API_KEY`)
+ *   - Tìm kiếm 2 tầng: gợi ý tức thì bằng `LOCATION_PRESETS` khi gõ + `GET /api/v1/geocoding/search` khi nhấn Enter
+ *   - Bảo mật vị trí `BR-MTH-05`: làm mờ toạ độ sang lưới `~500m` (`0.005°`) cho cả GPS, Click-to-Pin và địa chỉ tìm kiếm
+ *   - `GET /api/v1/recyclers/nearby` & `GET /api/v1/recyclers/{recyclerId}` */
 export default function MapPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const initialCatParam = searchParams.get("category")
@@ -105,15 +152,32 @@ export default function MapPage() {
     ? (initialCatParam.trim().toLowerCase() as DiscoverableCategory)
     : ""
 
-  const [coords, setCoords] = useState({
-    lat: LOCATION_PRESETS[0].lat,
-    lng: LOCATION_PRESETS[0].lng,
+  // Tâm neo gốc trước khi qua bộ lọc làm mờ vị trí ~500m (BR-MTH-05)
+  const [rawAnchor, setRawAnchor] = useState<{
+    rawLat: number
+    rawLng: number
+    label: string
+    source: SearchCoordinateSource
+  }>({
+    rawLat: LOCATION_PRESETS[0].lat,
+    rawLng: LOCATION_PRESETS[0].lng,
     label: LOCATION_PRESETS[0].address,
-    source: "preset" as "gps" | "preset",
+    source: "preset",
   })
-  const [showLocationPicker, setShowLocationPicker] = useState(false)
+
+  // Mặc định BẬT ẩn vị trí chính xác (~500m) theo nguyên tắc Privacy-by-Design
+  const [privacyMode, setPrivacyMode] = useState<boolean>(true)
+  const [showLocationPicker, setShowLocationPicker] = useState<boolean>(false)
+
+  // Trạng thái ô tìm kiếm khu vực 2 tầng (Tầng 1: Presets 0ms | Tầng 2: Nominatim Proxy khi Submit)
+  const [placeQuery, setPlaceQuery] = useState<string>("")
+  const [searchingPlaces, setSearchingPlaces] = useState<boolean>(false)
+  const [remoteSuggestions, setRemoteSuggestions] = useState<GeocodingSuggestionDto[]>([])
+  const [placeAttribution, setPlaceAttribution] = useState<string>("")
+  const [placeSearchNotice, setPlaceSearchNotice] = useState<string>("")
+
   const [gpsStatusMsg, setGpsStatusMsg] = useState<string>("")
-  const [locatingGps, setLocatingGps] = useState(false)
+  const [locatingGps, setLocatingGps] = useState<boolean>(false)
 
   const [category, setCategory] = useState<"" | DiscoverableCategory>(initialCat)
   const [radiusKm, setRadiusKm] = useState<number>(10)
@@ -131,6 +195,26 @@ export default function MapPage() {
   const [selectedDetail, setSelectedDetail] = useState<CollectionPartnerDto | null>(null)
   const [loadingDetail, setLoadingDetail] = useState<boolean>(false)
 
+  // Toạ độ thực sự dùng để vẽ tâm & gửi lên Backend (đã làm mờ lưới ~500m cho GPS, Click-to-Pin và Tìm kiếm)
+  const coords = useMemo(() => {
+    const shouldFuzz = privacyMode && rawAnchor.source !== "preset"
+    const resolved = resolveSearchCoordinates(
+      rawAnchor.rawLat,
+      rawAnchor.rawLng,
+      shouldFuzz,
+    )
+    return {
+      lat: resolved.lat,
+      lng: resolved.lng,
+      isFuzzed: resolved.isFuzzed,
+      label: rawAnchor.label,
+      source: rawAnchor.source,
+    }
+  }, [rawAnchor, privacyMode])
+
+  // Tầng 1: Lọc tức thì bộ địa danh nội bộ (0ms, không gọi mạng khi gõ phím)
+  const instantPresets = useMemo(() => filterAreaPresets(placeQuery, 6), [placeQuery])
+
   // Đồng bộ nếu URL ?category=... thay đổi từ điều hướng bên ngoài
   useEffect(() => {
     const p = searchParams.get("category")
@@ -140,17 +224,29 @@ export default function MapPage() {
     setCategory(next)
   }, [searchParams])
 
-  // Debounce từ khoá tìm kiếm 280ms để không bắn request liên tục mỗi phím gõ
+  // Debounce từ khoá lọc danh sách cơ sở bên phải 280ms
   useEffect(() => {
     const t = setTimeout(() => setDebouncedKeyword(keyword.trim()), 280)
     return () => clearTimeout(t)
   }, [keyword])
 
-  // Thử lấy vị trí GPS thật của trình duyệt ở lần mở đầu tiên (nếu người dùng đã cấp quyền)
-  const requestBrowserGps = () => {
+  // Thao tác Lớp 2: Chấm điểm bất kỳ trên bản đồ (Click-to-Pin) — tự động áp dụng làm mờ ~500m
+  const handleMapPinClick = useCallback((clickedLat: number, clickedLng: number) => {
+    setRawAnchor({
+      rawLat: clickedLat,
+      rawLng: clickedLng,
+      label: "Tâm vùng quét đã chọn trên bản đồ",
+      source: "pin",
+    })
+    setGpsStatusMsg("")
+    setShowLocationPicker(false)
+  }, [])
+
+  // Thao tác Lớp 3: Người dùng chủ động bấm lấy vị trí GPS trình duyệt
+  const requestBrowserGps = useCallback(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setGpsStatusMsg(
-        "Trình duyệt không hỗ trợ định vị GPS (MSG-MTH-02). Đang dùng vị trí khu vực đã chọn.",
+        "Trình duyệt không hỗ trợ định vị GPS. Bạn có thể chọn khu vực hoặc bấm trực tiếp lên bản đồ.",
       )
       return
     }
@@ -158,12 +254,12 @@ export default function MapPage() {
     setGpsStatusMsg("")
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const lat = Number(pos.coords.latitude.toFixed(6))
-        const lng = Number(pos.coords.longitude.toFixed(6))
-        setCoords({
-          lat,
-          lng,
-          label: `Vị trí GPS của bạn (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+        const rawLat = Number(pos.coords.latitude.toFixed(6))
+        const rawLng = Number(pos.coords.longitude.toFixed(6))
+        setRawAnchor({
+          rawLat,
+          rawLng,
+          label: "Khu vực quanh vị trí hiện tại của bạn",
           source: "gps",
         })
         setLocatingGps(false)
@@ -172,14 +268,41 @@ export default function MapPage() {
       () => {
         setLocatingGps(false)
         setGpsStatusMsg(
-          "Cần quyền truy cập vị trí để tự động định vị (MSG-MTH-02). Bạn vẫn có thể chọn nhanh quận/khu vực bên cạnh.",
+          "Chưa cấp quyền vị trí GPS. Bạn có thể nhập tên Phường/Quận/Chợ hoặc bấm chọn điểm trên bản đồ.",
         )
       },
       { enableHighAccuracy: true, timeout: 7000, maximumAge: 60000 },
     )
+  }, [])
+
+  // Tầng 2: Chỉ gọi Backend Geocoding Proxy (Nominatim) khi nhấn Enter / nút "Tìm khu vực"
+  const handlePlaceSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    const trimmed = placeQuery.trim()
+    if (trimmed.length < 2) {
+      setPlaceSearchNotice("Vui lòng nhập ít nhất 2 ký tự (ví dụ: Bình Thạnh, Chợ Bến Thành, Cầu Giấy).")
+      return
+    }
+
+    setSearchingPlaces(true)
+    setPlaceSearchNotice("")
+    try {
+      const result = await searchPlacesOnSubmit(trimmed, 5)
+      setRemoteSuggestions(result.items)
+      setPlaceAttribution(result.attribution)
+      if (result.items.length === 0) {
+        setPlaceSearchNotice(
+          "Không tìm thấy địa danh khớp. Hãy thử nhập tên Phường, Quận hoặc Chợ lớn gần bạn.",
+        )
+      }
+    } catch {
+      setPlaceSearchNotice("Không thể tra cứu địa danh lúc này. Bạn có thể chọn nhanh khu vực bên dưới.")
+    } finally {
+      setSearchingPlaces(false)
+    }
   }
 
-  // Truy vấn danh sách cơ sở thu mua gần vị trí GPS từ Backend
+  // Truy vấn danh sách cơ sở thu mua gần toạ độ (đã làm mờ nếu bật bảo mật)
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
@@ -211,26 +334,34 @@ export default function MapPage() {
           return
         }
         if (err instanceof ApiError && err.isNetworkError) {
-          // Dự phòng khi Backend chưa khởi động
+          // Dự phòng khi Backend chưa khởi động: đồng bộ trạng thái Online/Offline & hồ sơ vừa duyệt rồi tính Haversine
           setIsOfflineDemo(true)
-          const filteredOffline = OFFLINE_PARTNERS.filter((p) => {
-            const hitCat =
-              !category ||
-              p.materials.some((m) => m.categoryCode.toLowerCase() === category)
-            const kw = debouncedKeyword.toLowerCase()
-            const hitKw =
-              !kw ||
-              p.facilityName.toLowerCase().includes(kw) ||
-              p.address.toLowerCase().includes(kw)
-            return hitCat && hitKw
-          })
+          const filteredOffline = applyOfflineWorkflowToPartners(OFFLINE_PARTNERS)
+            .map((p) => ({
+              ...p,
+              distanceKm: haversineKm(coords.lat, coords.lng, p.latitude, p.longitude),
+            }))
+            .filter((p) => {
+              const withinRadius = p.distanceKm <= radiusKm
+              const hitCat =
+                !category ||
+                p.materials.some((m) => m.categoryCode.toLowerCase() === category)
+              const kw = debouncedKeyword.toLowerCase()
+              const hitKw =
+                !kw ||
+                p.facilityName.toLowerCase().includes(kw) ||
+                p.address.toLowerCase().includes(kw)
+              return withinRadius && hitCat && hitKw
+            })
+            .sort((a, b) => a.distanceKm - b.distanceKm)
+
           setPartners(filteredOffline)
           setFallback(
             filteredOffline.length === 0
               ? {
                   suggestedExpandedRadiusKm: Math.min(50, Math.round(radiusKm * 2.5)),
                   guidanceMessage:
-                    "Không tìm thấy cơ sở thu mua phù hợp trong bộ lọc hiện tại.",
+                    "Không tìm thấy cơ sở thu mua phù hợp trong bán kính hiện tại.",
                   allowCommunityPickupPost: true,
                 }
               : null,
@@ -326,93 +457,74 @@ export default function MapPage() {
     return `/chat?${p.toString()}`
   }, [activePartner])
 
+  const coordinateSourceLabel = useMemo(() => {
+    if (coords.isFuzzed) {
+      return "Đã làm mờ vị trí (~500m)"
+    }
+    if (coords.source === "gps") return "Định vị GPS chính xác"
+    if (coords.source === "pin") return "Điểm chấm trên bản đồ"
+    return "Toạ độ khu vực chung"
+  }, [coords.isFuzzed, coords.source])
+
   return (
     <div className="flex flex-col gap-4 p-4 xl:h-[calc(100dvh-76px)] xl:flex-row">
-      {/* Cột trái: Khung bản đồ định vị & các ghim cơ sở thu mua theo toạ độ GPS */}
-      <section className="relative flex min-h-[480px] flex-1 flex-col overflow-clip rounded-2xl border border-line bg-surface-3">
+      {/* Cột trái: Khung bản đồ tương tác CARTO Voyager + Tìm kiếm 2 tầng + Bảo mật vị trí ~500m */}
+      <section className="relative flex min-h-[500px] flex-1 flex-col overflow-clip rounded-2xl border border-line bg-surface-3">
         <div className="relative flex-1">
-          <img
-            src="/assets/map/078b8.png"
-            alt="Bản đồ khu vực cơ sở thu mua phế liệu"
-            className="absolute inset-0 size-full object-cover"
+          <LeafletRecyclerMap
+            centerLat={coords.lat}
+            centerLng={coords.lng}
+            radiusKm={radiusKm}
+            privacyMode={privacyMode}
+            source={coords.source}
+            partners={partners}
+            selectedPartnerId={activePartner?.id ?? null}
+            locatingGps={locatingGps}
+            onSelectPartner={(id) => setSelectedId(id)}
+            onMapPinClick={handleMapPinClick}
+            onRequestGps={requestBrowserGps}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-white/35 via-white/5 to-white/25" />
 
-          {/* Vòng radar trực quan thể hiện bán kính tìm kiếm quanh tâm người dùng */}
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 left-1/2 size-64 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-brand/35 bg-brand/5 md:size-88"
-          />
-
-          {/* Tâm vị trí hiện tại của người dân */}
-          <div
-            className="absolute top-1/2 left-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
-          >
-            <span className="flex items-center gap-1.5 rounded-full border border-brand/30 bg-white px-3 py-1 text-[11px] font-semibold text-ink shadow-[0_4px_10px_rgba(0,0,0,0.12)]">
-              <span className="size-2 rounded-full bg-brand" />
-              Bạn ở đây
-            </span>
-          </div>
-
-          {/* Các ghim cơ sở thu mua thật từ API chiếu theo hướng & khoảng cách địa lý */}
-          {partners.map((partner, idx) => {
-            const pos = projectPartnerPinPosition(
-              coords.lat,
-              coords.lng,
-              partner.latitude,
-              partner.longitude,
-              radiusKm,
-              idx,
-            )
-            const isSelected = partner.id === activePartner?.id
-            return (
-              <button
-                key={partner.id}
-                type="button"
-                onClick={() => setSelectedId(partner.id)}
-                style={pos}
-                className={`absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center transition-transform focus:outline-none ${
-                  isSelected ? "z-20 scale-105" : "z-10 hover:scale-105"
-                }`}
-              >
-                {isSelected ? (
-                  <ActivePin
-                    label={`${partner.facilityName} (${formatDistance(partner.distanceKm)})`}
-                  />
-                ) : (
-                  <SimplePin
-                    label={`${partner.facilityName} (${formatDistance(partner.distanceKm)})`}
-                  />
-                )}
-              </button>
-            )
-          })}
-
-          {/* Thanh địa chỉ + chọn bán kính ở cạnh trên bản đồ */}
-          <div className="absolute inset-x-3.5 top-3.5 z-30 flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex min-w-[240px] flex-1 items-center gap-2 rounded-xl border border-line bg-white/95 px-3.5 py-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.06)] backdrop-blur-md">
+          {/* Thanh địa chỉ + Công tắc ẩn vị trí (~500m) + Chọn bán kính ở cạnh trên bản đồ */}
+          <div className="pointer-events-none absolute inset-x-3.5 top-3.5 z-30 flex flex-col gap-2">
+            <div className="pointer-events-auto flex flex-wrap items-center gap-2">
+              <div className="flex min-w-[240px] flex-1 items-center gap-2 rounded-xl border border-line bg-white/95 px-3.5 py-2 shadow-[0_2px_6px_rgba(0,0,0,0.08)] backdrop-blur-md">
                 <PinIcon />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-semibold text-ink">{coords.label}</p>
-                  <p className="text-[11px] text-muted">
-                    {coords.source === "gps" ? "Định vị GPS trực tiếp" : "Toạ độ khu vực"} •{" "}
-                    {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
+                  <p className="truncate text-[11px] text-muted">
+                    {coordinateSourceLabel} • {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
                   </p>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => setPrivacyMode((v) => !v)}
+                  data-message-code="BR-MTH-05"
+                  title="Khi bật, toạ độ GPS và điểm bấm bản đồ được làm tròn sang lưới ~500m trước khi gửi đi"
+                  className={`hidden shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors sm:inline-flex ${
+                    privacyMode
+                      ? "border-brand/35 bg-brand/10 text-brand-deep"
+                      : "border-line bg-surface text-muted hover:bg-surface-2"
+                  }`}
+                >
+                  <ShieldIcon />
+                  {privacyMode ? "Ẩn vị trí ~500m" : "Vị trí chính xác"}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setShowLocationPicker((v) => !v)}
-                  className="shrink-0 rounded-lg bg-surface-2 px-2.5 py-1 text-[11px] font-semibold text-brand-deep hover:bg-surface-3"
+                  className="shrink-0 rounded-lg bg-brand-deep px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-brand"
                 >
-                  {showLocationPicker ? "Đóng" : "Đổi vị trí"}
+                  {showLocationPicker ? "Đóng" : "Tìm khu vực"}
                 </button>
               </div>
 
               <div
                 role="group"
                 aria-label="Bán kính tìm kiếm"
-                className="flex shrink-0 items-center gap-1 rounded-xl border border-line bg-white/95 p-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.06)] backdrop-blur-md"
+                className="flex shrink-0 items-center gap-1 rounded-xl border border-line bg-white/95 p-1.5 shadow-[0_2px_6px_rgba(0,0,0,0.08)] backdrop-blur-md"
               >
                 {radiusChoices.map((r) => (
                   <button
@@ -431,60 +543,167 @@ export default function MapPage() {
               </div>
             </div>
 
-            {/* Menu chọn nhanh khu vực hoặc bật GPS */}
+            {/* Hộp thoại Tìm kiếm khu vực 2 tầng (Presets tức thì + Nominatim Proxy khi Submit) */}
             {showLocationPicker && (
-              <div className="rounded-xl border border-line bg-white/98 p-3 shadow-lg backdrop-blur-md">
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-                  <span className="text-xs font-semibold text-ink">
-                    Chọn vị trí tìm kiếm (bảo mật vị trí theo BR-MTH-05)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={requestBrowserGps}
-                    disabled={locatingGps}
-                    className="btn-primary h-8 px-3 text-xs"
-                  >
-                    {locatingGps ? "Đang lấy GPS..." : "Dùng GPS hiện tại"}
-                  </button>
+              <div className="pointer-events-auto max-h-[380px] overflow-y-auto rounded-xl border border-line bg-white/98 p-3.5 shadow-lg backdrop-blur-md">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5">
+                  <div>
+                    <p className="text-xs font-bold text-ink">
+                      Tra cứu theo khu vực (Không cần nhập số nhà riêng)
+                    </p>
+                    <p className="text-[11px] text-muted">
+                      Gõ tên Quận/Phường để chọn ngay, hoặc nhấn Enter để tìm chợ/đường bất kỳ trên toàn quốc
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPrivacyMode((v) => !v)}
+                      className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
+                        privacyMode
+                          ? "border-brand/40 bg-brand/10 text-brand-deep"
+                          : "border-line bg-surface text-body hover:bg-surface-2"
+                      }`}
+                    >
+                      <ShieldIcon />
+                      {privacyMode ? "Đang bật làm mờ ~500m" : "Tắt làm mờ vị trí"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={requestBrowserGps}
+                      disabled={locatingGps}
+                      className="btn-primary h-8 px-3 text-xs"
+                    >
+                      {locatingGps ? "Đang lấy GPS..." : "Dùng GPS hiện tại"}
+                    </button>
+                  </div>
                 </div>
-                <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-                  {LOCATION_PRESETS.map((preset) => {
-                    const active =
-                      Math.abs(coords.lat - preset.lat) < 0.001 &&
-                      Math.abs(coords.lng - preset.lng) < 0.001
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => {
-                          setCoords({
-                            lat: preset.lat,
-                            lng: preset.lng,
-                            label: preset.address,
-                            source: "preset",
-                          })
-                          setGpsStatusMsg("")
-                          setShowLocationPicker(false)
-                        }}
-                        className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
-                          active
-                            ? "border-brand bg-brand/10 font-semibold text-brand-deep"
-                            : "border-line-soft bg-surface hover:bg-surface-2 text-ink"
-                        }`}
-                      >
-                        <span className="block font-semibold">{preset.label}</span>
-                        <span className="block truncate text-[11px] text-muted">
-                          {preset.address}
-                        </span>
-                      </button>
-                    )
-                  })}
+
+                {/* Ô tìm kiếm địa danh (Submit-only cho Nominatim) */}
+                <form onSubmit={handlePlaceSubmit} className="flex gap-2 pb-2.5">
+                  <input
+                    type="search"
+                    value={placeQuery}
+                    onChange={(e) => {
+                      setPlaceQuery(e.target.value)
+                      if (placeSearchNotice) setPlaceSearchNotice("")
+                    }}
+                    placeholder="Nhập Phường, Quận, Chợ hoặc Ngã tư... rồi nhấn Enter"
+                    aria-label="Nhập tên phường, quận, chợ hoặc ngã tư"
+                    className="h-9 min-w-0 flex-1 rounded-lg border border-sage-line bg-surface px-3 text-xs text-ink placeholder:text-muted focus:border-brand focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={searchingPlaces}
+                    className="btn-outline h-9 shrink-0 px-3 text-xs"
+                  >
+                    {searchingPlaces ? "Đang tìm..." : "Tìm địa danh"}
+                  </button>
+                </form>
+
+                {placeSearchNotice && (
+                  <p className="mb-2 rounded-lg border border-line bg-surface-2 px-3 py-1.5 text-xs text-body">
+                    {placeSearchNotice}
+                  </p>
+                )}
+
+                {/* Kết quả từ Backend Geocoding Proxy (Nominatim / LocationIQ) sau khi nhấn Enter */}
+                {remoteSuggestions.length > 0 && (
+                  <div className="mb-3 rounded-xl border border-brand/25 bg-brand/5 p-2.5">
+                    <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px]">
+                      <span className="font-semibold text-brand-deep">
+                        Kết quả tra cứu địa danh mở rộng
+                      </span>
+                      {placeAttribution && (
+                        <span className="text-[10px] text-muted">{placeAttribution}</span>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {remoteSuggestions.map((item) => (
+                        <button
+                          key={item.placeId}
+                          type="button"
+                          onClick={() => {
+                            setRawAnchor({
+                              rawLat: item.latitude,
+                              rawLng: item.longitude,
+                              label: item.shortLabel || item.displayName,
+                              source: "search",
+                            })
+                            setGpsStatusMsg("")
+                            setShowLocationPicker(false)
+                          }}
+                          className="rounded-lg border border-line-soft bg-white px-3 py-2 text-left text-xs transition-colors hover:border-brand hover:bg-surface-2"
+                        >
+                          <span className="block font-semibold text-ink">
+                            {item.shortLabel}
+                          </span>
+                          <span className="block truncate text-[11px] text-muted">
+                            {item.displayName}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Tầng 1: Gợi ý khu vực tức thì (0 HTTP request) */}
+                <div>
+                  <span className="mb-1.5 block text-[11px] font-semibold text-muted">
+                    {placeQuery.trim()
+                      ? `Khu vực gợi ý nhanh (${instantPresets.length})`
+                      : "Chọn nhanh khu vực phổ biến"}
+                  </span>
+                  {instantPresets.length === 0 ? (
+                    <p className="rounded-lg border border-dashed border-line px-3 py-2 text-xs text-muted">
+                      Không khớp khu vực có sẵn — bấm nút <b>Tìm địa danh</b> hoặc nhấn{" "}
+                      <b>Enter</b> để tra cứu trên toàn quốc.
+                    </p>
+                  ) : (
+                    <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                      {instantPresets.map((preset) => {
+                        const active =
+                          Math.abs(rawAnchor.rawLat - preset.lat) < 0.001 &&
+                          Math.abs(rawAnchor.rawLng - preset.lng) < 0.001
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => {
+                              setRawAnchor({
+                                rawLat: preset.lat,
+                                rawLng: preset.lng,
+                                label: preset.address,
+                                source: "preset",
+                              })
+                              setGpsStatusMsg("")
+                              setShowLocationPicker(false)
+                            }}
+                            className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                              active
+                                ? "border-brand bg-brand/10 font-semibold text-brand-deep"
+                                : "border-line-soft bg-surface text-ink hover:bg-surface-2"
+                            }`}
+                          >
+                            <span className="block truncate font-semibold">
+                              {preset.label}
+                            </span>
+                            <span className="block truncate text-[11px] text-muted">
+                              {preset.address}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
             {/* Thanh lọc nhanh theo loại phế liệu (nhận trực tiếp từ bước Quét AI) */}
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
               {DISCOVERY_CATEGORIES.map((c) => {
                 const on = category === c.value
                 return (
@@ -507,23 +726,13 @@ export default function MapPage() {
             {gpsStatusMsg && (
               <p
                 role="status"
-                className="rounded-xl border border-warn/30 bg-white/95 px-3 py-2 text-xs text-warn shadow-xs"
+                data-message-code="MSG-MTH-02"
+                className="pointer-events-auto rounded-xl border border-warn/30 bg-white/95 px-3 py-2 text-xs text-warn shadow-xs"
               >
                 {gpsStatusMsg}
               </p>
             )}
           </div>
-
-          <button
-            type="button"
-            onClick={requestBrowserGps}
-            disabled={locatingGps}
-            title="Lấy vị trí GPS hiện tại"
-            aria-label="Về lại vị trí hiện tại"
-            className="absolute right-3.5 bottom-3.5 z-20 grid size-10 place-items-center rounded-xl border border-line bg-white/95 shadow-[0_1px_3px_rgba(0,0,0,0.12)] transition hover:bg-white disabled:opacity-60"
-          >
-            <CrosshairIcon />
-          </button>
         </div>
       </section>
 
@@ -562,8 +771,8 @@ export default function MapPage() {
               type="search"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              placeholder="Tìm tên cơ sở hoặc đường, quận..."
-              aria-label="Tìm tên cơ sở hoặc địa chỉ"
+              placeholder="Lọc theo tên cơ sở hoặc đường, quận..."
+              aria-label="Lọc tên cơ sở hoặc địa chỉ"
               className="h-9 min-w-0 flex-1 rounded-lg border border-sage-line bg-surface px-3 text-xs text-ink placeholder:text-muted focus:border-brand focus:outline-none"
             />
             <select
@@ -651,7 +860,10 @@ export default function MapPage() {
 
                       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
                         <span className="text-muted">
-                          Giờ mở cửa: <b className="text-body">{p.operatingHours || "08:00 - 18:00"}</b>
+                          Giờ mở cửa:{" "}
+                          <b className="text-body">
+                            {p.operatingHours || "08:00 - 18:00"}
+                          </b>
                         </span>
                         {matchedMat && (
                           <span className="font-semibold text-brand-deep">
@@ -821,10 +1033,13 @@ function FallbackPanel({
   const prepSteps = parsePreparationSteps(guide?.preparationSteps)
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-line bg-surface-2/70 p-4">
+    <div
+      data-message-code="MSG-MTH-01"
+      className="flex flex-col gap-3 rounded-2xl border border-line bg-surface-2/70 p-4"
+    >
       <div>
         <span className="inline-block rounded-full bg-warn/12 px-2.5 py-0.5 text-[11px] font-semibold text-warn">
-          MSG-MTH-01 • Chưa có cơ sở mở cửa trong {radiusKm} km
+          Chưa có cơ sở mở cửa trong {radiusKm} km
         </span>
         <p className="mt-2 text-sm leading-6 text-ink">
           {fallback?.guidanceMessage ||
@@ -894,29 +1109,7 @@ function FallbackPanel({
   )
 }
 
-/* ---------------------------------------------------------------- Pins & Icons */
-
-function ActivePin({ label }: { label: string }) {
-  return (
-    <>
-      <span className="-mb-1.5 flex max-w-[220px] items-center gap-1.5 rounded-full border border-white/25 bg-brand-deep px-3 py-1.5 text-[11px] font-semibold tracking-[0.2px] text-white shadow-[0_10px_15px_-3px_rgba(0,0,0,0.18)]">
-        <TruckIcon />
-        <span className="truncate">{label}</span>
-        <i className="size-1.5 shrink-0 rounded-full bg-mint-bright" />
-      </span>
-      <span className="size-2.5 rotate-45 bg-brand-deep" />
-    </>
-  )
-}
-
-function SimplePin({ label }: { label: string }) {
-  return (
-    <span className="flex max-w-[200px] items-center gap-1 rounded-full border border-line bg-white px-2.5 py-1 text-[11px] font-medium text-ink shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1)]">
-      <PinIcon />
-      <span className="truncate">{label}</span>
-    </span>
-  )
-}
+/* ---------------------------------------------------------------- Icons */
 
 const stroke = {
   stroke: "currentColor",
@@ -934,21 +1127,11 @@ function PinIcon() {
   )
 }
 
-function CrosshairIcon() {
+function ShieldIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="text-ink">
-      <circle cx="7" cy="7" r="3.4" {...stroke} />
-      <path d="M7 1v1.8M7 11.2V13M1 7h1.8M11.2 7H13" {...stroke} />
-    </svg>
-  )
-}
-
-function TruckIcon() {
-  return (
-    <svg width="15" height="10" viewBox="0 0 16 11" fill="none" aria-hidden="true" className="shrink-0">
-      <path d="M1 1h8.5v8H1V1zM9.5 3.6H13l2 2.4v3H9.5V3.6z" {...stroke} />
-      <circle cx="4.2" cy="9.6" r="1.4" {...stroke} />
-      <circle cx="11.8" cy="9.6" r="1.4" {...stroke} />
+    <svg width="13" height="14" viewBox="0 0 14 15" fill="none" aria-hidden="true" className="shrink-0">
+      <path d="M7 1.5L2 3.6v3.7c0 3.2 2.1 5.6 5 6.4 2.9-.8 5-3.2 5-6.4V3.6L7 1.5z" {...stroke} />
+      <path d="M5.1 7.6l1.3 1.3 2.6-2.7" {...stroke} />
     </svg>
   )
 }

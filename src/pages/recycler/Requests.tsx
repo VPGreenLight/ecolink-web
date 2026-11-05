@@ -1,21 +1,62 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
+import LocationPinPickerMap from "@/components/LocationPinPickerMap"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
-import { INCOMING, STATUS_LABEL, TIME_SLOTS, TONE, calc } from "@/data/handover"
+import {
+  INCOMING,
+  STATUS_LABEL,
+  TIME_SLOTS,
+  TONE,
+  calc,
+  type Handover as HandoverItem,
+} from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
+import { fetchSyncedHandoverOrders } from "@/lib/recyclerWorkflowApi"
 
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
 
-/** R-03 Tiếp nhận / Từ chối yêu cầu.
+type IncomingView = HandoverItem & {
+  pickupLat?: number
+  pickupLng?: number
+}
+
+/** R-03 Tiếp nhận / Từ chối yêu cầu bàn giao (kèm xem ghim điểm hẹn đầu ngõ của Người dân).
  *
  *  Nhận = chốt luôn khung giờ User đề xuất, nên bấm Nhận là một cam kết thời
  *  gian. Đã cam kết rồi mà đổi lịch thì phải qua R-04 (huỷ kèm lý do) chứ
- *  không sửa lặng lẽ — nếu không, người dùng không biết mình còn phải chờ
- *  hay không. */
+ *  không sửa lặng lẽ. */
 export default function Requests() {
-  const [list, setList] = useState(INCOMING)
+  const [list, setList] = useState<IncomingView[]>(INCOMING)
   const [busy, setBusy] = useState("")
+  const [openMapId, setOpenMapId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void fetchSyncedHandoverOrders("recycler").then((synced) => {
+      if (!active || synced.length === 0) return
+      const existingIds = new Set(INCOMING.map((x) => x.id))
+      const fresh: IncomingView[] = synced
+        .filter((s) => !existingIds.has(s.id))
+        .map((s) => ({
+          id: s.id,
+          recycler: s.recycler,
+          address: s.address,
+          date: s.date,
+          slot: s.slot,
+          lines: s.lines,
+          status: s.status === "accepted" ? "accepted" : "pending",
+          pickupLat: s.pickupLat,
+          pickupLng: s.pickupLng,
+        }))
+      if (fresh.length > 0) {
+        setList([...fresh, ...INCOMING])
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const act = (id: string, next: "accepted" | "declined") => {
     setList((ls) => ls.map((l) => (l.id === id ? { ...l, status: next } : l)))
@@ -38,7 +79,7 @@ export default function Requests() {
       <PageHead
         eyebrow="YÊU CẦU ĐẾN"
         title="Tiếp nhận yêu cầu bàn giao"
-        body="Nhận yêu cầu nghĩa là bạn cam kết tới đúng khung giờ người dân đã chọn. Không tới được thì huỷ kèm lý do, họ sẽ tìm người khác."
+        body="Nhận yêu cầu nghĩa là bạn cam kết tới đúng khung giờ và điểm hẹn người dân đã ghim. Không tới được thì huỷ kèm lý do, họ sẽ tìm người khác."
       />
 
       <section>
@@ -51,55 +92,84 @@ export default function Requests() {
           </p>
         ) : (
           <ul className="mt-3 flex flex-col gap-4">
-            {pending.map((h) => (
-              <li key={h.id} className="card flex flex-col gap-4 p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-bold text-ink">{h.address}</p>
-                    <p className="mt-0.5 text-[13px] text-muted">
-                      {h.id} · {h.date} · Khung giờ đề xuất:{" "}
-                      <b className="text-ink">{h.slot}</b>
+            {pending.map((h) => {
+              const hasPin = typeof h.pickupLat === "number" && typeof h.pickupLng === "number"
+              const mapExpanded = openMapId === h.id
+
+              return (
+                <li key={h.id} className="card flex flex-col gap-4 p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-bold text-ink">{h.address}</p>
+                      <p className="mt-0.5 text-[13px] text-muted">
+                        {h.id} · {h.date} · Khung giờ đề xuất:{" "}
+                        <b className="text-ink">{h.slot}</b>
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-base font-bold tabular-nums text-brand">
+                      {VND(calc(h, priceOf).gross)}
                     </p>
                   </div>
-                  <p className="shrink-0 text-base font-bold tabular-nums text-brand">
-                    {VND(calc(h, priceOf).gross)}
-                  </p>
-                </div>
 
-                <ul className="flex flex-wrap gap-2">
-                  {h.lines.map((l) => (
-                    <li
-                      key={l.wasteId}
-                      className="rounded-full bg-surface-2 px-3 py-1 text-xs text-body"
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <ul className="flex flex-wrap gap-2">
+                      {h.lines.map((l) => (
+                        <li
+                          key={l.wasteId}
+                          className="rounded-full bg-surface-2 px-3 py-1 text-xs text-body"
+                        >
+                          {nameOf(l.wasteId)} · {l.kg} kg
+                        </li>
+                      ))}
+                    </ul>
+
+                    {hasPin && (
+                      <button
+                        type="button"
+                        onClick={() => setOpenMapId(mapExpanded ? null : h.id)}
+                        className="btn-outline h-8 px-3 text-xs"
+                      >
+                        {mapExpanded
+                          ? "Ẩn bản đồ điểm hẹn"
+                          : `Xem ghim điểm hẹn (${h.pickupLat!.toFixed(4)}, ${h.pickupLng!.toFixed(4)})`}
+                      </button>
+                    )}
+                  </div>
+
+                  {hasPin && mapExpanded && (
+                    <LocationPinPickerMap
+                      lat={h.pickupLat!}
+                      lng={h.pickupLng!}
+                      readOnly
+                      pinTitle={`Điểm hẹn ${h.id}`}
+                      heightClass="h-[200px]"
+                    />
+                  )}
+
+                  <div className="flex flex-wrap gap-3 border-t border-line-soft pt-4">
+                    <button
+                      type="button"
+                      disabled={busy === h.id}
+                      onClick={() => {
+                        setBusy(h.id)
+                        act(h.id, "accepted")
+                      }}
+                      className="btn-primary h-11 px-6"
                     >
-                      {nameOf(l.wasteId)} · {l.kg} kg
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="flex flex-wrap gap-3 border-t border-line-soft pt-4">
-                  <button
-                    type="button"
-                    disabled={busy === h.id}
-                    onClick={() => {
-                      setBusy(h.id)
-                      act(h.id, "accepted")
-                    }}
-                    className="btn-primary h-11 px-6"
-                  >
-                    Nhận và chốt khung giờ
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy === h.id}
-                    onClick={() => act(h.id, "declined")}
-                    className="btn-ghost h-11 px-5"
-                  >
-                    Từ chối
-                  </button>
-                </div>
-              </li>
-            ))}
+                      Nhận và chốt khung giờ
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy === h.id}
+                      onClick={() => act(h.id, "declined")}
+                      className="btn-ghost h-11 px-5"
+                    >
+                      Từ chối
+                    </button>
+                  </div>
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>

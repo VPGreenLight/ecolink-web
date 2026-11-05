@@ -91,4 +91,5 @@ Khi bắt đầu một buổi làm việc mới, tạo file `docs/YYYY-MM-DD.md`
 - [`docs/2026-10-31.md`](2026-10-31.md): Thiết lập quy chuẩn lưu trữ nhật ký làm việc và minh chứng quá trình phát triển mã nguồn gửi giảng viên.
 - [`docs/2026-11-02.md`](2026-11-02.md): Tối ưu đăng xuất — Chuyển đổi đăng xuất sang Confirmation Dialog nội bộ, đồng bộ điều hướng về trang chủ.
 - [`docs/2026-11-03.md`](2026-11-03.md): Kết nối Module AI Waste Classification & Rule Engine và Module Location-Based Recycler Discovery (`U-05`) lên Frontend.
-- [`docs/2026-11-04.md`](2026-11-04.md): Mở cấu hình Host Vite (`allowedHosts`) và tích hợp script Cloudflare Quick Tunnel cho Frontend.
+- [`docs/2026-11-04.md`](2026-11-04.md): Mở cấu hình Host Vite, tích hợp Cloudflare Quick Tunnel và nâng cấp AI Multi-Object Bounding Box + Khung ngắm Camera trên `/scanner`.
+- [`docs/2026-11-05.md`](2026-11-05.md): Tích hợp Bản đồ tương tác CARTO Voyager, Backend Geocoding Proxy, bảo mật vị trí `~500m`, liên thông không gian 4 vai trò (`U-17`, `R-02`, `S-04`, `U-07`) và truy vấn chỉ mục PostGIS `ST_DWithin`.

@@ -336,3 +336,28 @@
       hover:border-brand-deep;
   }
 }
+
+/* Chuẩn hoá khung bản đồ tương tác Leaflet đồng bộ phông chữ & bảng màu EcoLink */
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: var(--color-surface-3);
+}
+
+.ecolink-leaflet-div-icon {
+  background: transparent;
+  border: 0;
+}
+
+.leaflet-control-attribution {
+  font-size: 10px !important;
+  line-height: 1.35 !important;
+  color: var(--color-muted) !important;
+  background: rgba(252, 254, 253, 0.86) !important;
+  backdrop-filter: blur(4px);
+  border-top-left-radius: 8px;
+  padding: 2px 6px !important;
+}
+
+.leaflet-control-attribution a {
+  color: var(--color-brand-deep) !important;
+}
