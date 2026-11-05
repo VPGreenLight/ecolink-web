@@ -75,8 +75,65 @@ export interface LocationPreset {
 }
 
 /** Các toạ độ khu vực thực tế để gợi ý tức thì (0 HTTP request) khi người dùng đang gõ
- *  hoặc chọn nhanh mà không cần chia sẻ vị trí nhà riêng (BR-MTH-05, MSG-MTH-02). */
+ *  hoặc chọn nhanh mà không cần chia sẻ vị trí nhà riêng (BR-MTH-05, MSG-MTH-02).
+ *  Mặc định ưu tiên khu vực Hà Nội (Hòa Lạc & các quận nội thành) lên đầu danh sách. */
 export const LOCATION_PRESETS: readonly LocationPreset[] = [
+  {
+    id: "hn-hl-cnc",
+    label: "Hòa Lạc — Khu CNC & ĐH FPT, Hà Nội",
+    address: "Khu Công nghệ cao Hòa Lạc, Xã Thạch Hòa, Thạch Thất, Hà Nội",
+    lat: 21.0124,
+    lng: 105.5253,
+  },
+  {
+    id: "hn-hl-ngatu",
+    label: "Thạch Thất — Ngã tư Hòa Lạc & Tân Xã, Hà Nội",
+    address: "Khu vực Ngã tư Hòa Lạc - Tân Xã, Huyện Thạch Thất, Hà Nội",
+    lat: 21.0045,
+    lng: 105.5238,
+  },
+  {
+    id: "hn-cg",
+    label: "Cầu Giấy — Xuân Thủy, Hà Nội",
+    address: "Khu vực Dịch Vọng Hậu, Quận Cầu Giấy, Hà Nội",
+    lat: 21.0368,
+    lng: 105.7825,
+  },
+  {
+    id: "hn-dd",
+    label: "Đống Đa — Tây Sơn & Ngã Tư Sở, Hà Nội",
+    address: "Khu vực Tây Sơn - Ngã Tư Sở, Quận Đống Đa, Hà Nội",
+    lat: 21.0065,
+    lng: 105.8225,
+  },
+  {
+    id: "hn-hbt",
+    label: "Hai Bà Trưng — Bách Khoa, Hà Nội",
+    address: "Khu vực Bách Khoa - Giải Phóng, Quận Hai Bà Trưng, Hà Nội",
+    lat: 21.0045,
+    lng: 105.8465,
+  },
+  {
+    id: "hn-hk",
+    label: "Hoàn Kiếm — Hồ Gươm, Hà Nội",
+    address: "Khu vực Tràng Tiền - Hồ Hoàn Kiếm, Quận Hoàn Kiếm, Hà Nội",
+    lat: 21.0285,
+    lng: 105.8542,
+  },
+  {
+    id: "hn-ntl",
+    label: "Nam Từ Liêm — Mỹ Đình, Hà Nội",
+    address: "Khu vực Bến xe Mỹ Đình - Đại lộ Thăng Long, Nam Từ Liêm, Hà Nội",
+    lat: 21.0288,
+    lng: 105.7785,
+  },
+  {
+    id: "dn-hc",
+    label: "Hải Châu — Cầu Rồng, Đà Nẵng",
+    address: "Khu vực Phước Ninh, Quận Hải Châu, Đà Nẵng",
+    lat: 16.0611,
+    lng: 108.2232,
+  },
   {
     id: "hcm-q1",
     label: "Quận 1 — Chợ Bến Thành, TP.HCM",
@@ -106,53 +163,11 @@ export const LOCATION_PRESETS: readonly LocationPreset[] = [
     lng: 106.7215,
   },
   {
-    id: "hn-cg",
-    label: "Cầu Giấy — Xuân Thủy, Hà Nội",
-    address: "Khu vực Dịch Vọng Hậu, Quận Cầu Giấy, Hà Nội",
-    lat: 21.0368,
-    lng: 105.7825,
-  },
-  {
     id: "hcm-td",
     label: "TP. Thủ Đức — Ngã tư Thủ Đức, TP.HCM",
     address: "Khu vực Hiệp Phú & Làng Đại học, TP. Thủ Đức, TP.HCM",
     lat: 10.8505,
     lng: 106.7717,
-  },
-  {
-    id: "hcm-gv",
-    label: "Gò Vấp — Quang Trung, TP.HCM",
-    address: "Khu vực Chợ Hạnh Thông Tây, Quận Gò Vấp, TP.HCM",
-    lat: 10.8382,
-    lng: 106.6653,
-  },
-  {
-    id: "hcm-q3",
-    label: "Quận 3 — Công trường Dân Chủ, TP.HCM",
-    address: "Vòng xoay Dân Chủ, Phường Võ Thị Sáu, Quận 3, TP.HCM",
-    lat: 10.7776,
-    lng: 106.6816,
-  },
-  {
-    id: "hn-dd",
-    label: "Đống Đa — Ngã Tư Sở, Hà Nội",
-    address: "Khu vực Ngã Tư Sở, Quận Đống Đa, Hà Nội",
-    lat: 21.0031,
-    lng: 105.8201,
-  },
-  {
-    id: "hn-hbt",
-    label: "Hai Bà Trưng — Bách Khoa, Hà Nội",
-    address: "Khu vực Bách Khoa - Giải Phóng, Quận Hai Bà Trưng, Hà Nội",
-    lat: 21.0045,
-    lng: 105.8465,
-  },
-  {
-    id: "dn-hc",
-    label: "Hải Châu — Cầu Rồng, Đà Nẵng",
-    address: "Khu vực Phước Ninh, Quận Hải Châu, Đà Nẵng",
-    lat: 16.0611,
-    lng: 108.2232,
   },
   {
     id: "ct-nk",

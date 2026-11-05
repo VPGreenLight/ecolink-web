@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import type * as LeafletTypes from "leaflet"
 import { formatDistance, type CollectionPartnerDto } from "@/lib/recyclerDiscoveryApi"
+import { attachVietnamSovereigntyOverlay } from "@/lib/vietnamMapSovereignty"
 
 export type SearchCoordinateSource = "preset" | "search" | "gps" | "pin"
 
@@ -73,6 +74,7 @@ export default function LeafletRecyclerMap({
   useEffect(() => {
     let cancelled = false
     let resizeObserver: ResizeObserver | null = null
+    let detachSovereignty: (() => void) | null = null
 
     void import("leaflet").then((mod) => {
       if (cancelled || !containerRef.current) return
@@ -102,6 +104,8 @@ export default function LeafletRecyclerMap({
         maxZoom: cartoKey ? 20 : 19,
       }).addTo(map)
 
+      detachSovereignty = attachVietnamSovereigntyOverlay(L, map, Boolean(cartoKey))
+
       const layerGroup = L.layerGroup().addTo(map)
       overlayLayerRef.current = layerGroup
       mapRef.current = map
@@ -123,6 +127,7 @@ export default function LeafletRecyclerMap({
     return () => {
       cancelled = true
       resizeObserver?.disconnect()
+      detachSovereignty?.()
       if (mapRef.current) {
         mapRef.current.remove()
         mapRef.current = null

@@ -6,6 +6,7 @@ import {
   searchPlacesOnSubmit,
   type GeocodingSuggestionDto,
 } from "@/lib/geocodingApi"
+import { attachVietnamSovereigntyOverlay } from "@/lib/vietnamMapSovereignty"
 
 interface LocationPinPickerMapProps {
   lat: number
@@ -89,6 +90,7 @@ export default function LocationPinPickerMap({
   useEffect(() => {
     let cancelled = false
     let resizeObserver: ResizeObserver | null = null
+    let detachSovereignty: (() => void) | null = null
 
     void import("leaflet").then((mod) => {
       if (cancelled || !containerRef.current) return
@@ -118,6 +120,8 @@ export default function LocationPinPickerMap({
         maxZoom: cartoKey ? 20 : 19,
       }).addTo(map)
 
+      detachSovereignty = attachVietnamSovereigntyOverlay(L, map, Boolean(cartoKey))
+
       const group = L.layerGroup().addTo(map)
       layerRef.current = group
       mapRef.current = map
@@ -141,6 +145,7 @@ export default function LocationPinPickerMap({
     return () => {
       cancelled = true
       resizeObserver?.disconnect()
+      detachSovereignty?.()
       if (mapRef.current) {
         mapRef.current.remove()
         mapRef.current = null

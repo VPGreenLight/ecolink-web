@@ -40,6 +40,7 @@ src/
     recyclerDiscoveryApi.ts API client Module Location-Based Recycler Discovery (U-05)
     recyclerWorkflowApi.ts Liên thông 4 mắt xích vai trò (đăng ký, duyệt KYB, bật/tắt vựa, đặt lịch)
     geocodingApi.ts       Tìm kiếm địa danh 2 tầng & làm mờ toạ độ ~500m (BR-MTH-05)
+    vietnamMapSovereignty.ts Lớp phủ chuẩn hoá danh xưng Biển Đông, Hoàng Sa & Trường Sa (Việt Nam)
     session.ts            đăng nhập giả lập bằng localStorage
   check.tsx               smoke test, không dùng framework test
 ```

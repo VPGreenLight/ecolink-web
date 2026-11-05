@@ -349,7 +349,7 @@ export default function Navbar() {
         <div className="ml-auto flex items-center gap-3">
           <span className="hidden h-10 items-center gap-1.5 text-xs whitespace-nowrap text-body md:flex">
             <i className="size-1.5 rounded-full bg-brand-soft shadow-[0_0_0_3px_rgba(0,112,61,0.12)]" />
-            TP. Hồ Chí Minh
+            Hà Nội
           </span>
           <Link
             to="/map"

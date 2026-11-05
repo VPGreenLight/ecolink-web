@@ -28,8 +28,157 @@ import { getCategoryMeta, parsePreparationSteps } from "@/lib/wasteScanApi"
 import { applyOfflineWorkflowToPartners } from "@/lib/recyclerWorkflowApi"
 
 /** Dữ liệu dự phòng chỉ dùng khi máy chủ Backend chưa được bật để người xem giao diện
- *  vẫn kiểm tra được bản đồ tương tác, chọn pin, xem bảng giá và đặt lịch bàn giao. */
+ *  vẫn kiểm tra được bản đồ tương tác tại Hòa Lạc - Hà Nội & toàn quốc. */
 const OFFLINE_PARTNERS: CollectionPartnerDto[] = [
+  {
+    id: "99999991-9999-9999-9999-999999999991",
+    facilityName: "Trạm Thu Gom Tái Chế Xanh Hòa Lạc",
+    representativeName: "Đỗ Văn Hùng",
+    address: "Thôn 3, Xã Tân Xã (Gần Khu CNC Hòa Lạc & ĐH FPT), Thạch Thất, Hà Nội",
+    latitude: 21.0182,
+    longitude: 105.5345,
+    distanceKm: 1.15,
+    contactPhone: "0968112233",
+    operatingHours: "07:30 - 19:00",
+    description:
+      "Chuyên thu mua chai nhựa, vỏ lon, bìa carton và giáo trình cũ tại khu KTX sinh viên, nhà trọ Tân Xã - Khu CNC Hòa Lạc.",
+    materials: [
+      {
+        categoryCode: "plastic",
+        categoryName: "Nhựa tái chế (Plastic)",
+        pricePerKg: 7200,
+        minimumQuantityKg: 1,
+        collectionConditions: "Chai nhựa PET/HDPE đã tráng sạch, bẹp chai",
+      },
+      {
+        categoryCode: "paper",
+        categoryName: "Giấy báo & Tài liệu (Paper)",
+        pricePerKg: 4800,
+        minimumQuantityKg: 1.5,
+        collectionConditions: "Giấy vở, tài liệu in ấn, sách báo khô ráo",
+      },
+      {
+        categoryCode: "cardboard",
+        categoryName: "Bìa Carton (Cardboard)",
+        pricePerKg: 4100,
+        minimumQuantityKg: 2,
+        collectionConditions: "Thùng carton chuyển trọ gập phẳng",
+      },
+      {
+        categoryCode: "metal",
+        categoryName: "Kim loại & Vỏ lon (Metal)",
+        pricePerKg: 26000,
+        minimumQuantityKg: 0.5,
+        collectionConditions: "Vỏ lon nước ngọt, lon nhôm sinh hoạt đã dốc sạch",
+      },
+    ],
+  },
+  {
+    id: "99999992-9999-9999-9999-999999999992",
+    facilityName: "Cơ Sở Phế Liệu Minh Tâm — Ngã Tư Hòa Lạc",
+    representativeName: "Nguyễn Thị Tâm",
+    address: "Km28 Quốc lộ 21A, Xã Thạch Hòa, Huyện Thạch Thất, Hà Nội",
+    latitude: 20.9986,
+    longitude: 105.5184,
+    distanceKm: 1.69,
+    contactPhone: "0973445566",
+    operatingHours: "07:00 - 18:30",
+    description:
+      "Điểm cân điện tử minh bạch ngay trục Quốc lộ 21A - Ngã tư Hòa Lạc, nhận thu gom tận sảnh tòa nhà & khu trọ.",
+    materials: [
+      {
+        categoryCode: "plastic",
+        categoryName: "Nhựa tái chế (Plastic)",
+        pricePerKg: 7000,
+        minimumQuantityKg: 1,
+        collectionConditions: "Bóc nhãn rời nếu có, không lẫn rác thực phẩm",
+      },
+      {
+        categoryCode: "glass",
+        categoryName: "Chai lọ thủy tinh",
+        pricePerKg: 2400,
+        minimumQuantityKg: 4,
+        collectionConditions: "Chai lọ thủy tinh nguyên vẹn, không vỡ vụn",
+      },
+      {
+        categoryCode: "metal",
+        categoryName: "Kim loại & Vỏ lon (Metal)",
+        pricePerKg: 25500,
+        minimumQuantityKg: 1,
+        collectionConditions: "Nhôm lon, sắt vụn, thiết bị gia dụng kim loại",
+      },
+      {
+        categoryCode: "cardboard",
+        categoryName: "Bìa Carton (Cardboard)",
+        pricePerKg: 3900,
+        minimumQuantityKg: 2.5,
+        collectionConditions: "Bìa carton khô, buộc gọn",
+      },
+    ],
+  },
+  {
+    id: "99999993-9999-9999-9999-999999999993",
+    facilityName: "Vựa Tái Chế Bình Yên — Hòa Lạc",
+    representativeName: "Chu Văn Khánh",
+    address: "Đường Tỉnh lộ 420, Xã Bình Yên, Huyện Thạch Thất, Hà Nội",
+    latitude: 21.0345,
+    longitude: 105.5468,
+    distanceKm: 3.31,
+    contactPhone: "0915889900",
+    operatingHours: "07:30 - 18:00",
+    description:
+      "Cơ sở thu mua kim loại màu, sắt vụn, giấy báo và thùng carton khu vực Bình Yên - Khu CNC Hòa Lạc - Liên Quan.",
+    materials: [
+      {
+        categoryCode: "metal",
+        categoryName: "Kim loại & Vỏ lon (Metal)",
+        pricePerKg: 27000,
+        minimumQuantityKg: 1,
+        collectionConditions: "Đồng, nhôm lon, sắt thép phân loại riêng",
+      },
+      {
+        categoryCode: "paper",
+        categoryName: "Giấy báo & Tài liệu (Paper)",
+        pricePerKg: 4900,
+        minimumQuantityKg: 2,
+        collectionConditions: "Hồ sơ văn phòng, báo chí, sách vở khô sạch",
+      },
+      {
+        categoryCode: "cardboard",
+        categoryName: "Bìa Carton (Cardboard)",
+        pricePerKg: 4200,
+        minimumQuantityKg: 3,
+        collectionConditions: "Thùng carton số lượng từ hộ gia đình & cửa hàng",
+      },
+    ],
+  },
+  {
+    id: "77777777-7777-7777-7777-777777777777",
+    facilityName: "Trạm Tái Chế Xanh Cầu Giấy",
+    representativeName: "Hoàng Minh Tuấn",
+    address: "68 Xuân Thủy, Dịch Vọng Hậu, Cầu Giấy, Hà Nội",
+    latitude: 21.0368,
+    longitude: 105.7825,
+    distanceKm: 26.8,
+    contactPhone: "0944556677",
+    operatingHours: "08:00 - 18:30",
+    materials: [
+      {
+        categoryCode: "plastic",
+        categoryName: "Nhựa tái chế (Plastic)",
+        pricePerKg: 6900,
+        minimumQuantityKg: 1,
+        collectionConditions: "Chai nhựa sạch, đã tháo nắp",
+      },
+      {
+        categoryCode: "paper",
+        categoryName: "Giấy báo & Tài liệu (Paper)",
+        pricePerKg: 4700,
+        minimumQuantityKg: 2,
+        collectionConditions: "Giấy báo, vở học sinh cũ khô ráo",
+      },
+    ],
+  },
   {
     id: "22222222-2222-2222-2222-222222222222",
     facilityName: "Vựa phế liệu EcoGreen",
@@ -50,79 +199,11 @@ const OFFLINE_PARTNERS: CollectionPartnerDto[] = [
         collectionConditions: "Chai nhựa PET/HDPE đã tráng sạch, bẹp chai",
       },
       {
-        categoryCode: "paper",
-        categoryName: "Giấy báo & Tài liệu (Paper)",
-        pricePerKg: 4500,
-        minimumQuantityKg: 2,
-        collectionConditions: "Giấy báo, tài liệu khô ráo, không dính dầu mỡ",
-      },
-      {
-        categoryCode: "metal",
-        categoryName: "Kim loại & Vỏ lon (Metal)",
-        pricePerKg: 25000,
-        minimumQuantityKg: 0.5,
-        collectionConditions: "Vỏ lon nhôm, sắt vụn đã dốc sạch nước",
-      },
-      {
         categoryCode: "cardboard",
         categoryName: "Bìa Carton (Cardboard)",
         pricePerKg: 3800,
         minimumQuantityKg: 3,
         collectionConditions: "Thùng carton gập phẳng, khô ráo",
-      },
-    ],
-  },
-  {
-    id: "44444444-4444-4444-4444-444444444444",
-    facilityName: "Vựa Phế Liệu Xanh Quận 1",
-    representativeName: "Nguyễn Văn Minh",
-    address: "123 Nguyễn Thị Minh Khai, P. Bến Thành, Quận 1, TP.HCM",
-    latitude: 10.7725,
-    longitude: 106.692,
-    distanceKm: 1.18,
-    contactPhone: "0901234567",
-    operatingHours: "08:00 - 18:00",
-    materials: [
-      {
-        categoryCode: "plastic",
-        categoryName: "Nhựa tái chế (Plastic)",
-        pricePerKg: 6800,
-        minimumQuantityKg: 1.5,
-        collectionConditions: "Bóc nhãn rời nếu có",
-      },
-      {
-        categoryCode: "glass",
-        categoryName: "Chai lọ thủy tinh",
-        pricePerKg: 2200,
-        minimumQuantityKg: 5,
-        collectionConditions: "Không lẫn mảnh kính cường lực",
-      },
-    ],
-  },
-  {
-    id: "55555555-5555-5555-5555-555555555555",
-    facilityName: "Trạm Thu Gom Tái Chế Tân Bình",
-    representativeName: "Lê Hoàng Phúc",
-    address: "88 Cộng Hòa, Phường 4, Quận Tân Bình, TP.HCM",
-    latitude: 10.7995,
-    longitude: 106.657,
-    distanceKm: 5.4,
-    contactPhone: "0934567890",
-    operatingHours: "08:00 - 17:30",
-    materials: [
-      {
-        categoryCode: "metal",
-        categoryName: "Kim loại & Vỏ lon (Metal)",
-        pricePerKg: 26500,
-        minimumQuantityKg: 1,
-        collectionConditions: "Nhôm lon, đồng, sắt vụn phân loại riêng",
-      },
-      {
-        categoryCode: "cardboard",
-        categoryName: "Bìa Carton (Cardboard)",
-        pricePerKg: 4000,
-        minimumQuantityKg: 2.5,
-        collectionConditions: "Thùng giấy gập gọn",
       },
     ],
   },
@@ -280,7 +361,7 @@ export default function MapPage() {
     e.preventDefault()
     const trimmed = placeQuery.trim()
     if (trimmed.length < 2) {
-      setPlaceSearchNotice("Vui lòng nhập ít nhất 2 ký tự (ví dụ: Bình Thạnh, Chợ Bến Thành, Cầu Giấy).")
+      setPlaceSearchNotice("Vui lòng nhập ít nhất 2 ký tự (ví dụ: Hòa Lạc, Thạch Thất, Cầu Giấy, Bách Khoa).")
       return
     }
 

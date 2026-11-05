@@ -441,15 +441,16 @@ export async function fetchRecyclerStatus(): Promise<{
     const state = readSyncState()
     return {
       profile: {
-        recyclerId: "22222222-2222-2222-2222-222222222222",
-        facilityName: "Vựa phế liệu EcoGreen",
-        representativeName: "Trần Thu Gom",
+        recyclerId: "99999991-9999-9999-9999-999999999991",
+        facilityName: "Trạm Thu Gom Tái Chế Xanh Hòa Lạc",
+        representativeName: "Đỗ Văn Hùng",
         businessAddress:
-          state.demoRecyclerAddress ?? "123 Đường Nguyễn Hữu Cảnh, P. 22, Bình Thạnh, TP.HCM",
-        latitude: state.demoRecyclerLat ?? 10.7938,
-        longitude: state.demoRecyclerLng ?? 106.7182,
-        operatingHours: "07:30 - 18:30",
-        contactPhone: "0988776655",
+          state.demoRecyclerAddress ??
+          "Thôn 3, Xã Tân Xã (Gần Khu CNC Hòa Lạc & ĐH FPT), Thạch Thất, Hà Nội",
+        latitude: state.demoRecyclerLat ?? 21.0182,
+        longitude: state.demoRecyclerLng ?? 105.5345,
+        operatingHours: "07:30 - 19:00",
+        contactPhone: "0968112233",
         verificationStatus: "Verified",
         activeStatus: state.demoRecyclerOnline ? "Online" : "Offline",
         activePriceCount: 4,
@@ -574,7 +575,7 @@ const FALLBACK_COORDS_BY_ID: Record<string, { lat: number; lng: number }> = {
 
 export function getInitialStaffApplications(): StaffApplicationView[] {
   return APPLICATIONS.map((a) => {
-    const coords = FALLBACK_COORDS_BY_ID[a.id] ?? { lat: 10.7725, lng: 106.698 }
+    const coords = FALLBACK_COORDS_BY_ID[a.id] ?? { lat: 21.0124, lng: 105.5253 }
     return {
       ...a,
       latitude: coords.lat,
@@ -620,8 +621,8 @@ function mapDtoToStaffView(dto: RecyclerApplicationDetailDto): StaffApplicationV
     date: formatDateVi(dto.submittedAt),
     status,
     note: dto.rejectionReason ?? undefined,
-    latitude: Number(dto.latitude) || 10.7725,
-    longitude: Number(dto.longitude) || 106.698,
+    latitude: Number(dto.latitude) || 21.0124,
+    longitude: Number(dto.longitude) || 105.5253,
     legalPermitUrl: dto.legalPermitUrl ?? undefined,
     businessPhotoUrl: dto.businessPhotoUrl ?? undefined,
     fromBackend: true,
