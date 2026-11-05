@@ -90,3 +90,5 @@ Khi bắt đầu một buổi làm việc mới, tạo file `docs/YYYY-MM-DD.md`
 - [`docs/2026-09-28.md`](2026-09-28.md): Tái cấu trúc Navbar, thiết kế lại bảng màu theo hue sinh thái, đo đạc tương phản WCAG, sửa 56 màn hình và smoke test.
 - [`docs/2026-10-31.md`](2026-10-31.md): Thiết lập quy chuẩn lưu trữ nhật ký làm việc và minh chứng quá trình phát triển mã nguồn gửi giảng viên.
 - [`docs/2026-11-02.md`](2026-11-02.md): Tối ưu đăng xuất — Chuyển đổi đăng xuất sang Confirmation Dialog nội bộ, đồng bộ điều hướng về trang chủ.
+- [`docs/2026-11-03.md`](2026-11-03.md): Kết nối Module AI Waste Classification & Rule Engine và Module Location-Based Recycler Discovery (`U-05`) lên Frontend.
+- [`docs/2026-11-04.md`](2026-11-04.md): Mở cấu hình Host Vite (`allowedHosts`) và tích hợp script Cloudflare Quick Tunnel cho Frontend.

@@ -7,56 +7,276 @@ import {
   AI_MSG,
   AI_SCANNING,
   HOW_TO,
-  SCAN_MS,
   SCAN_RESULT as r,
 } from "@/data/scanner"
+import { ApiError } from "@/lib/api"
+import {
+  AI_CLASS_OPTIONS,
+  classifyWasteImage,
+  DEFAULT_AI_MODELS,
+  fetchAiModels,
+  getCategoryMeta,
+  loadSampleImageAsFile,
+  parsePreparationSteps,
+  submitAiFeedback,
+  type AiModelOption,
+  type WasteScanResponseDto,
+} from "@/lib/wasteScanApi"
+import { isDiscoverableCategory } from "@/lib/recyclerDiscoveryApi"
 
-/** Trang này phải vừa một màn hình 1440x900, không cuộn (trừ footer).
- *  Ba chỗ ăn nhiều chiều cao nhất, xử lý theo thứ tự:
- *   1. ảnh aspect-4/3 trong cột 7/12 = 660px rộng x 495px cao, đổi sang
- *      aspect-video cắt còn 371px. Tiết kiệm lớn nhất, mất gì? chỉ chiều cao ảnh.
- *   2. mỗi khối có padding 6-8 và gap 4-6, cộng lại ~120px. Giảm còn gap-3/p-4.
- *   3. thanh 3 nút xếp dọc ở đáy cột phải, 2 nút 48px + 44px. Xuống 44/40.
- *
- *  Ba trạng thái: idle -> scanning -> done. Chưa quét gì thì cột phải hiện
- *  hướng dẫn dùng và "hướng dẫn xử lý nhanh" ẩn hẳn. Tất cả giả lập, không
- *  có backend. */
+/** Trang này giữ bố cục gọn 2 cột (6/6) vừa màn hình 1440x900 và kết nối trực tiếp
+ *  với API phân loại rác đa mô hình `/api/v1/waste-scan/classify` + Rule Engine. */
 type Phase = "idle" | "scanning" | "done"
+
+interface ViewModelResult {
+  isOfflineDemo?: boolean
+  isOod: boolean
+  messageCode?: string | null
+  message: string
+  categoryCode: string
+  material: string
+  tag: string
+  badge: string
+  description: string
+  binColor?: string
+  hazardWarning?: string | null
+  steps: string[]
+  price: { label: string; value: string; unit: string }
+  confidencePct: number
+  rawConfidence: number
+  modelLabel: string
+  breakdown: { label: string; value: number; color: string }[]
+  recyclable: boolean
+}
+
+const BAR_COLORS = [
+  "var(--color-brand)",
+  "var(--color-mint)",
+  "var(--color-sage-line)",
+] as const
+
+function mapApiToViewModel(
+  payload: WasteScanResponseDto,
+  messageCode: string | null | undefined,
+  selectedModelName: string,
+): ViewModelResult {
+  const { aiResult, sortingGuide } = payload
+  const top = aiResult.topPrediction
+  const rawConf = top?.confidence ?? 0
+  const confPct = Math.round(rawConf * 1000) / 10
+  const isOod =
+    messageCode === "MSG-CLS-02" ||
+    aiResult.isOutOfDistribution ||
+    !top ||
+    rawConf < (aiResult.confidenceThreshold || 0.6)
+
+  const code = (sortingGuide?.categoryCode || top?.label || "unknown").toLowerCase()
+  const meta = getCategoryMeta(code)
+
+  const preds =
+    aiResult.predictions && aiResult.predictions.length > 0
+      ? aiResult.predictions.slice(0, 3)
+      : top
+        ? [top]
+        : []
+
+  const breakdown = preds.map((p, idx) => ({
+    label: p.displayName || p.label,
+    value: Math.max(0, Math.min(100, Math.round(p.confidence * 100))),
+    color: BAR_COLORS[idx] ?? BAR_COLORS[2],
+  }))
+
+  const steps = parsePreparationSteps(sortingGuide?.preparationSteps)
+  const latencyText =
+    aiResult.inferenceTimeMs > 0 ? ` • ${aiResult.inferenceTimeMs.toFixed(1)} ms` : ""
+  const resolvedModelName =
+    aiResult.modelName || selectedModelName || aiResult.modelUsed || "YOLOv8 Detection"
+
+  return {
+    isOod,
+    messageCode,
+    message: payload.message,
+    categoryCode: code,
+    material: sortingGuide?.categoryName || top?.displayName || meta.shortName,
+    tag: top?.displayName || meta.shortName,
+    badge: isOod ? "Độ tin cậy thấp (< 60%) — Cần chụp rõ hơn" : meta.badge,
+    description: isOod
+      ? payload.message
+      : sortingGuide?.handlingAction ||
+        "Phân loại đúng quy định giúp tăng giá trị thu mua và tích Điểm Xanh.",
+    binColor: sortingGuide?.standardBinColor,
+    hazardWarning: sortingGuide?.hazardWarning,
+    steps: steps.length > 0 ? steps : r.steps,
+    price: {
+      label: meta.recyclable ? "ĐƠN GIÁ THAM KHẢO" : "PHƯƠNG ÁN XỬ LÝ",
+      value: meta.priceRange,
+      unit: meta.priceUnit,
+    },
+    confidencePct: Math.round(confPct),
+    rawConfidence: rawConf,
+    modelLabel: `${resolvedModelName}${latencyText}`,
+    breakdown,
+    recyclable: !isOod && meta.recyclable,
+  }
+}
+
+function buildOfflineDemoViewModel(): ViewModelResult {
+  return {
+    isOfflineDemo: true,
+    isOod: false,
+    messageCode: "MSG-CLS-01",
+    message: "Đang hiển thị kết quả mẫu nội bộ (Dịch vụ AI chưa kết nối).",
+    categoryCode: "plastic",
+    material: r.material,
+    tag: r.tag,
+    badge: `${r.badge} (Mô phỏng Offline)`,
+    description: r.description,
+    binColor: "Cam",
+    hazardWarning: "Không trộn lẫn chai nhựa từng chứa hóa chất độc hại.",
+    steps: r.steps,
+    price: r.price,
+    confidencePct: r.confidence,
+    rawConfidence: r.confidence / 100,
+    modelLabel: `${r.model} (Offline Preview)`,
+    breakdown: r.breakdown,
+    recyclable: true,
+  }
+}
 
 export default function Scanner() {
   const [phase, setPhase] = useState<Phase>("idle")
   const [file, setFile] = useState<File | null>(null)
   const [useSample, setUseSample] = useState(false)
   const [camera, setCamera] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-  // Đổi ảnh trong lúc đang quét thì huỷ lượt đó, tránh kết quả của ảnh cũ
-  useEffect(() => () => clearTimeout(timer.current), [])
+  const [models, setModels] = useState<AiModelOption[]>(DEFAULT_AI_MODELS)
+  const [selectedModel, setSelectedModel] = useState<string>("yolov8_detect")
+  const [apiOnline, setApiOnline] = useState<boolean | null>(null)
+
+  const [scanResult, setScanResult] = useState<ViewModelResult | null>(null)
+  const [scanError, setScanError] = useState<{
+    message: string
+    code?: string
+    canPreviewOffline: boolean
+  } | null>(null)
+
+  const abortRef = useRef<AbortController | null>(null)
+
+  // Nạp danh sách mô hình AI thực tế từ Backend khi mở trang
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchAiModels(controller.signal)
+      .then((payload) => {
+        if (payload.models.length > 0) {
+          setModels(payload.models)
+        }
+        if (payload.default_model) {
+          // Ưu tiên giữ yolov8_detect nếu có trong danh sách vì hỗ trợ cắt nền tốt nhất
+          const hasDetect = payload.models.some((m) => m.id === "yolov8_detect" && m.is_ready !== false)
+          setSelectedModel(hasDetect ? "yolov8_detect" : payload.default_model)
+        }
+        setApiOnline(true)
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setApiOnline(false)
+        }
+      })
+
+    return () => {
+      controller.abort()
+      abortRef.current?.abort()
+    }
+  }, [])
 
   const pick = (f: File | null) => {
+    abortRef.current?.abort()
     setFile(f)
     setUseSample(false)
+    setScanError(null)
+    setScanResult(null)
     setPhase("idle")
   }
 
-  const scan = () => {
-    setPhase("scanning")
-    clearTimeout(timer.current)
-    timer.current = setTimeout(() => setPhase("done"), SCAN_MS)
+  const pickSample = () => {
+    abortRef.current?.abort()
+    setFile(null)
+    setUseSample(true)
+    setScanError(null)
+    setScanResult(null)
+    setPhase("idle")
   }
 
   const reset = () => {
-    clearTimeout(timer.current)
+    abortRef.current?.abort()
     setFile(null)
     setUseSample(false)
+    setScanError(null)
+    setScanResult(null)
     setPhase("idle")
+  }
+
+  const scan = async () => {
+    const hasInput = Boolean(file || useSample)
+    if (!hasInput) return
+
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    setScanError(null)
+    setPhase("scanning")
+
+    const startedAt = Date.now()
+    try {
+      const targetFile = file ?? (await loadSampleImageAsFile(r.image, "sample-pet-bottle.png"))
+      const res = await classifyWasteImage(targetFile, selectedModel, controller.signal)
+
+      // Giữ hiệu ứng tia quét tối thiểu 550ms để mắt người dùng kịp quan sát nhịp quét
+      const elapsed = Date.now() - startedAt
+      if (elapsed < 550) {
+        await new Promise((resolve) => setTimeout(resolve, 550 - elapsed))
+      }
+      if (controller.signal.aborted) return
+
+      const modelMeta = models.find((m) => m.id === selectedModel)
+      const vm = mapApiToViewModel(res.data, res.messageCode, modelMeta?.name ?? selectedModel)
+      setApiOnline(true)
+      setScanResult(vm)
+      setPhase("done")
+    } catch (err) {
+      if (controller.signal.aborted || (err as { name?: string })?.name === "AbortError") {
+        return
+      }
+      if (err instanceof ApiError) {
+        const isServiceDown = err.isNetworkError || err.messageCode === "MSG-CLS-03"
+        if (err.isNetworkError) setApiOnline(false)
+        setScanError({
+          message: err.message,
+          code: err.messageCode,
+          canPreviewOffline: isServiceDown,
+        })
+      } else {
+        setScanError({
+          message: err instanceof Error ? err.message : "Đã xảy ra lỗi khi phân tích hình ảnh.",
+          canPreviewOffline: true,
+        })
+      }
+      setPhase("idle")
+    }
+  }
+
+  const previewOfflineDemo = () => {
+    setScanError(null)
+    setScanResult(buildOfflineDemoViewModel())
+    setPhase("done")
   }
 
   const preview = file ?? (useSample || phase !== "idle" ? sampleShot : null)
 
   return (
     <div className="page flex flex-col py-5 md:py-6">
-      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div>
           <p className="flex items-center gap-1.5 text-[13px] text-body">
             Hệ sinh thái
@@ -67,20 +287,41 @@ export default function Scanner() {
             Phân loại &amp; Định giá rác tái chế
           </h1>
         </div>
-        <p className="chip bg-surface-2 text-body">
-          <i className="size-1.5 rounded-full bg-brand" />
-          Hệ thống sẵn sàng tại các tỉnh thành
-        </p>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <label className="flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-body">
+            <span className="font-semibold text-ink">Mô hình AI:</span>
+            <select
+              aria-label="Chọn mô hình nhận diện AI"
+              value={selectedModel}
+              disabled={phase === "scanning"}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="max-w-[230px] truncate bg-transparent font-medium text-brand-deep focus:outline-none disabled:opacity-60"
+            >
+              {models.map((m) => (
+                <option key={m.id} value={m.id} disabled={m.is_ready === false}>
+                  {m.name}
+                  {m.is_ready === false ? " (Chưa nạp)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <p className="chip bg-surface-2 text-body">
+            <i
+              className={`size-1.5 rounded-full ${
+                apiOnline === false ? "bg-warn" : "bg-brand"
+              }`}
+            />
+            {apiOnline === false
+              ? "Chưa kết nối AI Server"
+              : "AI Vision & Rule Engine sẵn sàng"}
+          </p>
+        </div>
       </header>
 
       <div className="mt-4 grid gap-5 md:grid-cols-12">
-        {/* 6/6 chứ không 7/5: cột trái là cột cao hơn (ảnh + hướng dẫn), cho
-            nó hẹp lại một chút thì ảnh bớt cao và cột phải dư chỗ trống,
-            tổng chiều cao trang giảm ~21px. */}
         <section className="flex flex-col gap-3 md:col-span-6">
-          {/* Camera được kiểm TRƯỚC mọi nhánh khác, kể cả khi đã có ảnh. Đặt
-              sau `preview` thì nút "Chụp trực tiếp" trên ảnh sẽ không mở được
-              camera — đúng lỗi đã gặp: nút bấm mà không có gì xảy ra. */}
           {camera ? (
             <CameraPanel
               onShoot={(f) => {
@@ -92,7 +333,7 @@ export default function Scanner() {
           ) : phase === "idle" && !preview ? (
             <UploadZone
               onPick={pick}
-              onSample={() => setUseSample(true)}
+              onSample={pickSample}
               onCamera={() => setCamera(true)}
             />
           ) : preview ? (
@@ -100,26 +341,30 @@ export default function Scanner() {
               file={preview}
               scanning={phase === "scanning"}
               done={phase === "done"}
+              result={scanResult}
               onReset={reset}
               onPick={pick}
               onCamera={() => setCamera(true)}
             />
           ) : null}
 
-          {/* Chỉ hiện khi đã có kết quả: chưa quét thì chưa có gì để hướng dẫn.
-              Ẩn luôn lúc đang mở camera — hướng dẫn xử lý rác không liên quan
-              gì tới việc chụp ảnh mới. */}
-          {phase === "done" && !camera && (
-            <div>
-              <h2 className="text-base leading-6 font-bold tracking-tight text-ink">
-                Hướng dẫn xử lý nhanh
-              </h2>
-              {/* 2 bước đứng cạnh nhau từ sm trở lên: xếp dọc tốn 2 hàng, đặt
-                  cạnh nhau gọn bằng 1 hàng và đọc cân đối hơn. */}
-              <ol className="mt-2 grid gap-2 sm:grid-cols-2">
-                {r.steps.map((step, i) => (
+          {phase === "done" && !camera && scanResult && !scanResult.isOod && (
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base leading-6 font-bold tracking-tight text-ink">
+                  Hướng dẫn xử lý nhanh (Rule Engine)
+                </h2>
+                {scanResult.binColor && (
+                  <span className="rounded-full border border-brand/25 bg-brand/8 px-3 py-1 text-xs font-semibold text-brand-deep">
+                    Thùng rác chuẩn: {scanResult.binColor}
+                  </span>
+                )}
+              </div>
+
+              <ol className="grid gap-2 sm:grid-cols-2">
+                {scanResult.steps.map((step, i) => (
                   <li
-                    key={step}
+                    key={`${i}-${step}`}
                     className="flex items-start gap-2.5 rounded-lg border border-line-soft bg-surface-2/60 px-3 py-2"
                   >
                     <span className="grid size-5 shrink-0 place-items-center rounded-full bg-brand/10 text-[11px] font-bold text-brand-deep">
@@ -129,12 +374,25 @@ export default function Scanner() {
                   </li>
                 ))}
               </ol>
+
+              {scanResult.hazardWarning && (
+                <p className="rounded-lg border border-warn/25 bg-warn/5 px-3 py-2 text-xs leading-5 text-body">
+                  <b className="text-warn">Lưu ý an toàn:</b> {scanResult.hazardWarning}
+                </p>
+              )}
             </div>
           )}
         </section>
 
         <section className="md:col-span-6">
-          <AiPanel phase={phase} canScan={!!preview} onScan={scan} />
+          <AiPanel
+            phase={phase}
+            canScan={!!preview}
+            result={scanResult}
+            error={scanError}
+            onScan={scan}
+            onPreviewOffline={previewOfflineDemo}
+          />
         </section>
       </div>
     </div>
@@ -149,6 +407,7 @@ function Preview({
   file,
   scanning,
   done,
+  result,
   onReset,
   onPick,
   onCamera,
@@ -156,14 +415,11 @@ function Preview({
   file: File | typeof sampleShot
   scanning: boolean
   done: boolean
+  result: ViewModelResult | null
   onReset: () => void
   onPick: (f: File | null) => void
   onCamera: () => void
 }) {
-  // Tạo objectURL TRONG effect chứ không dùng useMemo. StrictMode ở dev gọi
-  // effect 2 lần (setup -> cleanup -> setup): nếu tạo ở useMemo thì cleanup lần
-  // một huỷ URL, setup lần hai lấy lại URL đã chết và ảnh vỡ. Tạo trong effect
-  // thì lần setup sau sinh URL mới còn sống.
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     if (file === sampleShot) {
@@ -189,12 +445,9 @@ function Preview({
         {scanning ? (
           <span className="absolute top-3 left-3 inline-flex items-center gap-1.5 rounded-full bg-ink/85 px-3 py-1.5 text-[11px] font-semibold text-white">
             <span className="pulse-bar size-1.5 rounded-full bg-mint-bright" />
-            AI đang quét
+            AI đang phân tích
           </span>
         ) : (
-          /* Phải là <button> thật. Trước đây để <span> — nhìn như nút nhưng
-             bấm không có gì xảy ra, không có onClick, không bấm được bằng
-             bàn phím, không cho trình đọc màn hình biết đây là thao tác. */
           <button
             type="button"
             onClick={onCamera}
@@ -205,13 +458,6 @@ function Preview({
           </button>
         )}
 
-        {/* Bỏ ảnh: dấu X đỏ ở góc trái, đối xứng với "Chụp trực tiếp" ở góc
-            phải. Không dùng pill dài như bên kia vì chỉ có một ký hiệu, không
-            cần chữ.
-            size-8 = 32px, bằng chiều cao pill kia (~28px) + chút để bấm
-            trên điện thoại không chệch.
-            CHỈ ẩn lúc đang quét. Đã có kết quả rồi vẫn phải bấm được — đó là
-            đường duy nhất quay về "Sẵn sàng quét" để chọn ảnh khác. */}
         {!scanning && (
           <button
             type="button"
@@ -224,12 +470,22 @@ function Preview({
           </button>
         )}
 
-        {done && (
+        {done && result && (
           <span className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full border border-line-soft bg-white/90 px-3.5 py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.05)] backdrop-blur-md">
-            <i className="size-2 rounded-full bg-brand-deep" />
-            <b className="text-xs font-semibold text-brand-deep">{r.tag}</b>
+            <i
+              className={`size-2 rounded-full ${
+                result.isOod ? "bg-warn" : "bg-brand-deep"
+              }`}
+            />
+            <b
+              className={`text-xs font-semibold ${
+                result.isOod ? "text-warn" : "text-brand-deep"
+              }`}
+            >
+              {result.isOod ? "Chưa xác định rõ" : result.tag}
+            </b>
             <em className="text-[11px] font-medium text-muted not-italic">
-              • {r.confidence}% độ tin cậy
+              • {result.confidencePct}% độ tin cậy
             </em>
           </span>
         )}
@@ -243,7 +499,7 @@ function Preview({
           Đổi ảnh
           <input
             type="file"
-            accept="image/*"
+            accept=".jpg,.jpeg,.png,.webp,.bmp,image/*"
             className="sr-only"
             onChange={(e) => onPick(e.target.files?.[0] ?? null)}
           />
@@ -275,15 +531,11 @@ function UploadZone({
       <div>
         <p className="text-base font-bold text-ink">Đưa ảnh vật rác vào để bắt đầu</p>
         <p className="mt-1.5 text-[13px] leading-5 text-muted">
-          Ảnh nên rõ, có nền đơn giản để AI nhận diện vật liệu chính xác.
+          Hỗ trợ JPG, PNG, WEBP. Ảnh rõ, nền thoáng giúp AI phân loại và định giá chuẩn xác.
         </p>
       </div>
 
       <div className="flex flex-wrap justify-center gap-2">
-        {/* Chụp ảnh: mở camera thật qua getUserMedia (xem CameraPanel).
-            Không dùng <input capture> vì thuộc tính đó chỉ có tác dụng trên
-            điện thoại — trên desktop nó rơi về hộp thoại chọn file, y hệt
-            nút bên cạnh nên thành hai nút giống hệt nhau. */}
         <button type="button" onClick={onCamera} className="btn-primary h-11 px-5">
           <CameraIcon />
           Chụp ảnh
@@ -292,7 +544,7 @@ function UploadZone({
           Tải ảnh lên
           <input
             type="file"
-            accept="image/*"
+            accept=".jpg,.jpeg,.png,.webp,.bmp,image/*"
             className="sr-only"
             onChange={(e) => e.target.files?.[0] && onPick(e.target.files[0])}
           />
@@ -304,7 +556,7 @@ function UploadZone({
         onClick={onSample}
         className="text-[13px] font-semibold text-brand-deep underline underline-offset-4 hover:text-brand"
       >
-        Dùng luôn ảnh mẫu để xem thử
+        Dùng luôn ảnh mẫu để quét thử AI
       </button>
     </div>
   )
@@ -312,45 +564,35 @@ function UploadZone({
 
 /* ---------------------------------------------------------------- AI panel */
 
-/** Cột phải — MỘT component, MỘT cấu trúc, ba trạng thái.
- *
- *  Cấu trúc CỐ ĐỊNH cho cả ba trạng thái:
- *
- *      [robot] Sẵn sàng quét            [ Quét AI ]   ← nút CÙNG HÀNG, căn phải
- *              Đưa ảnh vật rác vào…
- *              Chọn hoặc chụp một ảnh…                ← chỉ hiện khi chưa có ảnh
- *      ─────────────────────────
- *      vùng nội dung  key={phase}                    ← đổi theo trạng thái
- *        idle     → hướng dẫn dùng
- *        scanning → skeleton
- *        done     → kết quả "Vật liệu có giá trị"
- *
- *  QUAN TRỌNG — vì sao không được tách thành ba nhánh `return`:
- *  React so khớp phần tử theo vị trí, mà ba nhánh trả về ba kiểu gốc khác nhau
- *  (`div` / `div` / `ScanResult`). Đổi trạng thái là React **xoá hẳn thẻ cũ, dựng
- *  thẻ mới** — viền nền vẽ lại, `AiFace` bên trong cũng mount lại nên animation
- *  chạy lại từ đầu. Người dùng thấy "AI reload cùng lúc với nội dung".
- *
- *  Cách sửa: **một thẻ duy nhất, mount đúng một lần.** Chỉ vùng nội dung bên
- *  dưới có `key={phase}`. Nhịp: robot đổi trước (260ms), nội dung tới sau
- *  (từ 320ms) — hai nhịp tách bạch. */
 function AiPanel({
   phase,
   canScan,
+  result,
+  error,
   onScan,
+  onPreviewOffline,
 }: {
   phase: Phase
   canScan: boolean
+  result: ViewModelResult | null
+  error: { message: string; code?: string; canPreviewOffline: boolean } | null
   onScan: () => void
+  onPreviewOffline: () => void
 }) {
+  const faceMeta =
+    phase === "done" && result?.isOod
+      ? {
+          src: AI_IDLE,
+          alt: "AI cần góc chụp rõ hơn",
+          title: "Độ tin cậy chưa đạt 60%",
+          note: "Vật thể lạ hoặc góc chụp mờ, bạn có thể chụp lại hoặc báo nhãn đúng.",
+        }
+      : FACE[phase]
+
   return (
     <div className="card flex flex-col gap-3 p-5 shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
-      {/* Nút nằm TRONG hàng robot (cùng một flex row) chứ không phải hàng riêng
-          bên dưới. Truyền vào qua prop `action` để `AiFace` giữ được một hàng
-          duy nhất — tách ra ngoài thì phải lồng thêm một div, và hàng robot
-          mất chiều cao cố định khi chữ dài/ngắn. */}
       <AiFace
-        {...FACE[phase]}
+        {...faceMeta}
         action={
           <button
             type="button"
@@ -364,17 +606,42 @@ function AiPanel({
         }
       />
 
-      {/* Dòng gợi ý CHỈ còn một trường hợp có ý nghĩa: chưa có ảnh thì bấm nút
-          không được, phải nói rõ làm gì tiếp. Có ảnh rồi thì nút tự nói lý do
-          (CTA = Quét AI / Đang phân tích / Quét lại), thêm dòng dưới chỉ là
-          chữ lặp. */}
-      {!canScan && phase === "idle" && (
+      {!canScan && phase === "idle" && !error && (
         <p className="reveal -mt-1 text-[13px] text-muted" style={{ animationDelay: `${T.gap}ms` }}>
           Chọn hoặc chụp một ảnh để bắt đầu quét
         </p>
       )}
 
-      {/* Vùng duy nhất đổi theo trạng thái. */}
+      {error && phase === "idle" && (
+        <div
+          role="alert"
+          className="reveal rounded-xl border border-warn/30 bg-warn/5 p-3.5 text-[13px] leading-5 text-ink"
+        >
+          <p className="font-semibold text-warn">
+            Không thể hoàn tất quét AI {error.code ? `(${error.code})` : ""}
+          </p>
+          <p className="mt-1 text-body">{error.message}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onScan}
+              className="btn-primary h-9 px-3.5 text-xs"
+            >
+              Thử quét lại
+            </button>
+            {error.canPreviewOffline && (
+              <button
+                type="button"
+                onClick={onPreviewOffline}
+                className="btn-ghost h-9 px-3.5 text-xs"
+              >
+                Xem kết quả mẫu (Offline)
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div key={phase}>
         {phase === "idle" && (
           <div
@@ -386,7 +653,6 @@ function AiPanel({
         )}
 
         {phase === "scanning" && (
-          // skeleton giữ đúng hình dáng thẻ kết quả nên khi xong không nhảy bố cục
           <div
             className="reveal mt-2 space-y-3"
             style={{ animationDelay: `${T.gap}ms` }}
@@ -398,22 +664,20 @@ function AiPanel({
           </div>
         )}
 
-        {phase === "done" && <ScanResult />}
+        {phase === "done" && result && (
+          result.isOod ? <OodResult result={result} /> : <ScanResult result={result} />
+        )}
       </div>
     </div>
   )
 }
 
-/** Chữ trên nút, đổi theo trạng thái. Nút tự nói lý do nên không cần dòng gợi ý
- *  riêng cho từng trạng thái. */
 const CTA = {
   idle: "Quét AI",
   scanning: "Đang phân tích",
   done: "Quét lại",
 } as const satisfies Record<Phase, string>
 
-/** Nội dung robot + câu thoại của từng trạng thái. Tách ra để `AiPanel` đổi
- *  trạng thái chỉ bằng cách tra bảng, không phải rẽ nhánh JSX. */
 const FACE = {
   idle: {
     src: AI_IDLE,
@@ -431,24 +695,10 @@ const FACE = {
     src: AI_DONE,
     alt: "AI đã nhận diện xong",
     title: "AI đã nhận diện xong",
-    note: "Đã tìm ra vật liệu và tính đơn giá tham khảo bên dưới.",
+    note: "Đã khớp vật liệu với Rule Engine và tính đơn giá tham khảo.",
   },
 } as const satisfies Record<Phase, { src: string; alt: string; title: string; note?: string }>
 
-/** Hàng robot dùng chung cho cả ba trạng thái — một component duy nhất.
- *
- *  `<img>` CỐ TÌNH không có `key`: giữ nguyên phần tử đó qua các lần đổi
- *  trạng thái, nếu không GIF động sẽ nhảy về frame 0 và trông như bị reload
- *  dù trạng thái đã đổi xong. Chỉ chữ mới có `key` để chạy lại hiệu ứng
- *  `reveal` ngắn — nhịp "AI đổi trước" là ở đây.
- *
- *  `animationDuration` đặt cứng 260ms (thay vì 420ms mặc định của `.reveal`) vì
- *  đây là thay đổi trạng thái, cần xong sớm để nhịp nội dung phía dưới kịp
- *  nối tiếp.
- *
- *  `action` là chỗ trống bên phải của hàng — nút thao tác. Truyền qua prop thay
- *  vì đặt nút ở `AiPanel` sẽ phải lồng thêm một `div` bao quanh, mà `div` bao
- *  quanh chính là thứ phá vỡ yêu cầu "nút cùng hàng robot, căn phải". */
 function AiFace({
   src,
   alt,
@@ -463,10 +713,6 @@ function AiFace({
   action?: ReactNode
 }) {
   return (
-    // items-start: khối chữ 2 dòng cao hơn nút, canh đỉnh cho thẳng hàng với
-    // mép trên robot. flex-1 + min-w-0 trên khối chữ để nó chiếm hết khoảng
-    // giữa và đẩy nút sang hẳn bên phải, đồng thời chữ dài vẫn xuống dòng
-    // thay vì đè lên nút.
     <div className="flex items-start gap-3">
       <img src={src} alt={alt} className="size-11 shrink-0 object-contain" loading="lazy" />
       <div className="min-w-0 flex-1">
@@ -492,50 +738,35 @@ function AiFace({
   )
 }
 
-/* ---------------------------------------------------------------- kết quả */
+/* ---------------------------------------------------------------- kết quả chuẩn & OOD */
 
-/** Nội dung KẾT QUẢ — tách riêng khỏi `AiPanel`.
- *
- *  `AiPanel` lo "AI đang ở trạng thái nào" (hàng robot `AiFace`) và đã cấp sẵn
- *  thẻ bao ngoài. Khối này chỉ lo "quét xong thì hiện gì": vật liệu, đơn giá,
- *  độ tin cậy, nút. Hai việc khác nhau — sau này đổi nội dung kết quả không
- *  đụng phần điều khiển trạng thái, và ngược lại.
- *
- *  Cố tình KHÔNG có `AiFace` ở đây: hàng robot phải nằm ở `AiPanel` để giữ
- *  nguyên phần tử `<img>` qua các lần đổi trạng thái. Nếu đặt ở đây, mỗi lần
- *  vào trạng thái `done` là GIF robot nhảy về frame 0 — thấy như bị reload.
- *
- *  Cũng cố tình KHÔNG có nút "Quét lại" ở đây: nút cùng hàng robot đã đổi chữ
- *  thành "Quét lại" ở trạng thái `done` và gọi đúng `scan()` — giữ lại thì hai
- *  nút làm cùng một việc. Muốn quét lại thì bấm nút đó, muốn đổi ảnh thì bấm
- *  "Đổi ảnh" ở thanh dưới ảnh, muốn bỏ hẳn thì bấm "Bỏ ảnh". */
-function ScanResult() {
+function ScanResult({ result }: { result: ViewModelResult }) {
+  const mapUrl =
+    result.recyclable && isDiscoverableCategory(result.categoryCode)
+      ? `/map?category=${encodeURIComponent(result.categoryCode)}`
+      : "/map"
+
   return (
     <div className="flex flex-col gap-3">
-      {/* viền xanh hiện trước, chữ hiện sau — chip tách 2 lớp: khung .draw-frame,
-          chữ bên trong .resolve với delay muộn hơn.
-          KHÔNG dùng class .chip ở đây: .chip là inline-flex, sẽ biến mỗi từ
-          thành một flex item và xếp thành cột. Dùng khối thường + text-center,
-          nowrap để câu luôn nằm trên một dòng. */}
       <span
         className="draw-frame block w-full rounded-full border border-mint/40 bg-mint/25 px-3.5 py-1.5 text-center text-[11px] leading-4 font-semibold whitespace-nowrap text-brand-deep"
         style={{ animationDelay: `${T.chipFrame}ms` }}
       >
-        <Words text={r.badge} from={T.chipWord} />
+        <Words text={result.badge} from={T.chipWord} />
       </span>
 
       <div>
         <h2
-          className="text-[26px] leading-8 font-bold tracking-tight text-ink"
+          className="text-[24px] leading-8 font-bold tracking-tight text-ink"
           style={{ animationDelay: `${T.title}ms` }}
         >
-          <Words text={r.material} from={T.title} />
+          <Words text={result.material} from={T.title} />
         </h2>
         <p
           className="reveal mt-1 text-[13px] leading-5 text-body"
           style={{ animationDelay: `${T.desc}ms` }}
         >
-          {r.description}
+          {result.description}
         </p>
       </div>
 
@@ -545,13 +776,13 @@ function ScanResult() {
       >
         <div>
           <p className="text-[10px] font-semibold tracking-[0.5px] text-body uppercase">
-            {r.price.label}
+            {result.price.label}
           </p>
-          <p className="mt-0.5 flex items-baseline gap-1">
+          <p className="mt-0.5 flex items-baseline gap-1.5">
             <b className="text-xl leading-7 font-bold tracking-tight text-brand-deep">
-              {r.price.value}
+              {result.price.value}
             </b>
-            <span className="text-xs font-semibold text-body">{r.price.unit}</span>
+            <span className="text-xs font-semibold text-body">{result.price.unit}</span>
           </p>
         </div>
         <PriceIcon />
@@ -567,13 +798,13 @@ function ScanResult() {
             Độ tin cậy nhận diện AI
           </p>
           <span className="rounded-full border border-brand/20 bg-mint/25 px-2.5 py-1 text-[11px] font-semibold text-brand-deep">
-            Chính xác {r.confidence}%
+            Chính xác {result.confidencePct}%
           </span>
         </div>
 
         <ul className="mt-3 flex flex-col gap-2.5">
-          {r.breakdown.map((b, i) => (
-            <li key={b.label}>
+          {result.breakdown.map((b, i) => (
+            <li key={`${b.label}-${i}`}>
               <p className="flex items-center justify-between text-[13px]">
                 <span className="flex items-center gap-1.5 font-semibold text-ink">
                   <i className="size-2 rounded-full" style={{ background: b.color }} />
@@ -597,33 +828,196 @@ function ScanResult() {
           ))}
         </ul>
 
-        <p className="mt-3 flex items-center gap-1.5 border-t border-line-soft pt-2.5 text-[11px] text-muted">
-          <InfoIcon />
-          {r.model}
+        <p className="mt-3 flex items-center justify-between gap-2 border-t border-line-soft pt-2.5 text-[11px] text-muted">
+          <span className="flex items-center gap-1.5 truncate">
+            <InfoIcon />
+            {result.modelLabel}
+          </span>
+          {result.messageCode && (
+            <span className="shrink-0 font-mono text-[10px] text-muted/80">
+              {result.messageCode}
+            </span>
+          )}
         </p>
       </div>
 
-      {/* Chỉ còn một nút: quét lại đã lên hàng robot. */}
-      <div className="reveal" style={{ animationDelay: `${T.actions}ms` }}>
-        <Link to="/map" className="btn-primary h-11 w-full rounded-xl px-4">
-          Tìm người thu gom ngay
-        </Link>
+      <div className="reveal flex flex-col gap-2" style={{ animationDelay: `${T.actions}ms` }}>
+        {result.recyclable ? (
+          <Link to={mapUrl} className="btn-primary h-11 w-full rounded-xl px-4">
+            Tìm cơ sở thu mua loại rác này
+          </Link>
+        ) : (
+          <Link to="/guidance" className="btn-outline h-11 w-full rounded-xl px-4">
+            Xem hướng dẫn xử lý rác sinh hoạt
+          </Link>
+        )}
+
+        <InlineFeedbackReport
+          predictedLabel={result.categoryCode}
+          confidenceScore={result.rawConfidence}
+        />
       </div>
+    </div>
+  )
+}
+
+/** Hiển thị cảnh báo Out-of-Distribution (MSG-CLS-02) khi độ tin cậy < 60%. */
+function OodResult({ result }: { result: ViewModelResult }) {
+  return (
+    <div className="reveal flex flex-col gap-3 pt-1">
+      <div className="rounded-xl border border-warn/30 bg-warn/5 p-4">
+        <p className="flex items-center justify-between gap-2 text-xs font-semibold text-warn">
+          <span>Cảnh báo ngưỡng an toàn AI (MSG-CLS-02)</span>
+          <span>Độ tin cậy: {result.confidencePct}% (&lt; 60%)</span>
+        </p>
+        <p className="mt-1.5 text-[13px] leading-5 text-ink">{result.message}</p>
+        {result.breakdown.length > 0 && (
+          <p className="mt-2 text-xs text-muted">
+            Dự đoán gần nhất: <b className="text-ink">{result.breakdown[0].label}</b> (
+            {result.breakdown[0].value}%) • {result.modelLabel}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-line-soft bg-surface-2 p-3.5 text-[13px] leading-5 text-body">
+        <p className="font-semibold text-ink">Mẹo chụp lại để đạt độ chính xác cao:</p>
+        <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-body">
+          <li>Đặt món rác ở giữa khung hình, cách camera khoảng 20–40 cm.</li>
+          <li>Tránh chụp ngược sáng hoặc để nhiều đồ vật khác lọt vào nền.</li>
+          <li>Hoặc thử chuyển sang mô hình <b>EfficientNet-B0</b> ở góc phải phía trên.</li>
+        </ul>
+      </div>
+
+      <InlineFeedbackReport
+        predictedLabel={result.categoryCode}
+        confidenceScore={result.rawConfidence}
+        defaultOpen
+      />
+    </div>
+  )
+}
+
+/** Gửi phản hồi AI nhận diện sai ngay tại màn hình quét (POST /api/v1/waste-scan/feedback). */
+function InlineFeedbackReport({
+  predictedLabel,
+  confidenceScore,
+  defaultOpen = false,
+}: {
+  predictedLabel: string
+  confidenceScore: number
+  defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  const [reportedLabel, setReportedLabel] = useState("")
+  const [note, setNote] = useState("")
+  const [sending, setSending] = useState(false)
+  const [doneMsg, setDoneMsg] = useState("")
+  const [errMsg, setErrMsg] = useState("")
+
+  const handleSubmit = async () => {
+    if (!reportedLabel || sending) return
+    setSending(true)
+    setErrMsg("")
+    try {
+      const res = await submitAiFeedback({
+        predictedLabel,
+        confidenceScore,
+        userReportedLabel: reportedLabel,
+        note: note.trim() || undefined,
+      })
+      setDoneMsg(res.message)
+    } catch (err) {
+      setErrMsg(
+        err instanceof Error
+          ? err.message
+          : "Chưa gửi được phản hồi. Vui lòng thử lại sau.",
+      )
+    } finally {
+      setSending(false)
+    }
+  }
+
+  if (doneMsg) {
+    return (
+      <p role="status" className="rounded-lg border border-brand/25 bg-brand/8 px-3 py-2 text-xs font-medium text-brand-deep">
+        {doneMsg}
+      </p>
+    )
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="self-center text-xs font-medium text-muted underline underline-offset-4 hover:text-brand-deep"
+      >
+        AI nhận diện chưa đúng? Báo nhãn đúng tại đây
+      </button>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-line bg-surface p-3 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold text-ink">Báo cáo nhãn rác đúng (cải thiện AI)</span>
+        {!defaultOpen && (
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="text-muted hover:text-ink"
+          >
+            Đóng
+          </button>
+        )}
+      </div>
+
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <select
+          aria-label="Chọn loại rác đúng"
+          value={reportedLabel}
+          onChange={(e) => setReportedLabel(e.target.value)}
+          className="h-9 rounded-lg border border-sage-line bg-white px-2.5 text-xs text-ink focus:border-brand focus:outline-none"
+        >
+          <option value="">-- Chọn loại rác đúng --</option>
+          {AI_CLASS_OPTIONS.map((opt) => (
+            <option key={opt.code} value={opt.code}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <input
+          type="text"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Ghi chú thêm (tuỳ chọn)"
+          className="h-9 rounded-lg border border-sage-line bg-white px-2.5 text-xs text-ink placeholder:text-muted focus:border-brand focus:outline-none"
+        />
+      </div>
+
+      {errMsg && <p className="mt-1.5 text-warn">{errMsg}</p>}
+
+      <button
+        type="button"
+        disabled={!reportedLabel || sending}
+        onClick={handleSubmit}
+        className="btn-outline mt-2 h-8 px-3 text-xs disabled:opacity-50"
+      >
+        {sending ? "Đang gửi..." : "Gửi phản hồi"}
+      </button>
     </div>
   )
 }
 
 function HowTo() {
   return (
-    // Không dùng class `card` ở đây: `AiPanel` đã cấp sẵn thẻ bao ngoài, thêm
-    // card nữa là card-trong-card — nặng và sai thang độ sâu.
     <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-lg leading-7 font-bold tracking-tight text-ink">
           Dùng trang này thế nào
         </h2>
         <p className="mt-1 text-[13px] leading-5 text-muted">
-          Ba bước, chưa đến một phút là có đơn giá tham khảo.
+          Ba bước, chưa đến một phút là có đơn giá tham khảo và điểm thu mua.
         </p>
       </div>
 
@@ -644,14 +1038,6 @@ function HowTo() {
   )
 }
 
-/** Tách chuỗi thành từng từ, mỗi từ hiện lệch nhau `step` ms — vẫn là MỘT câu
- *  liền mạch, không xuống dòng.
- *
- *  Hai điều dễ sai ở đây:
- *  1. Khoảng trắng phải là text node GIỮA các span, không nằm trong span.
- *     Nằm trong span thì mỗi từ là một khối khép kín, trông như danh sách.
- *  2. Cha PHẢI là khối thường (block), không phải flex. Đặt vào .chip là
- *     `inline-flex` thì mọi từ thành flex item, bị đẩy thành cột. */
 function Words({
   text,
   from,
@@ -679,14 +1065,6 @@ function Words({
   )
 }
 
-/** Mốc thời gian các bước hiện nội dung (ms).
- *
- *  `gap` là ranh giới hai nhịp: robot đổi trạng thái xong ở 260ms, nội dung bắt
- *  đầu từ 320ms. Trước đây nội dung hiện ở 200ms — chồng lên robot đang mờ
- *  dần, đúng cảm giác "AI reload cùng lúc với nội dung".
- *
- *  Thứ tự từ trên xuống: nội dung → viền chip → chữ trong chip → tên vật liệu
- *  → mô tả → đơn giá → độ tin cậy → từng thanh → nút. */
 const T = {
   gap: 320,
   chipFrame: 340,
@@ -702,16 +1080,6 @@ const T = {
 
 /* ---------------------------------------------------------------- camera */
 
-/** Camera thật, hiện ngay tại chỗ vùng tải ảnh — không dùng modal.
- *
- *  Ba thứ dễ sai và đều đã xử lý ở đây:
- *  1. **Phải tắt track khi đóng.** Quên thì đèn camera sáng và camera bị khoá
- *     tới khi đóng trang.
- *  2. **StrictMode ở dev gọi effect 2 lần.** getUserMedia là promise bất đồng
- *     bộ; lần gọi đầu có thể resolve SAU khi đã cleanup → phải có cờ `alive`
- *     để tắt luôn stream mồ côi, không thì hai camera cùng mở.
- *  3. **Quyền bị từ chối là chuyện thường**, phải có lời nhắc + đường về
- *     nút tải ảnh, không để người dùng kẹt ở màn hình đen. */
 function CameraPanel({
   onShoot,
   onClose,
@@ -769,8 +1137,6 @@ function CameraPanel({
   const shoot = () => {
     const v = video.current
     if (!v || !v.videoWidth) return
-    // vẽ ở kích thước gốc của camera, không phải kích thước hiển thị, để ảnh
-    // chụp đủ nét cho AI nhận diện
     const c = document.createElement("canvas")
     c.width = v.videoWidth
     c.height = v.videoHeight
