@@ -92,3 +92,4 @@ Khi bắt đầu một buổi làm việc mới, tạo file `docs/YYYY-MM-DD.md`
 - [`docs/2026-11-02.md`](2026-11-02.md): Tối ưu đăng xuất — Chuyển đổi đăng xuất sang Confirmation Dialog nội bộ, đồng bộ điều hướng về trang chủ.
 - [`docs/2026-11-03.md`](2026-11-03.md): Kết nối Module AI Waste Classification & Rule Engine và Module Location-Based Recycler Discovery (`U-05`) lên Frontend.
 - [`docs/2026-11-04.md`](2026-11-04.md): Mở cấu hình Host Vite (`allowedHosts`) và tích hợp script Cloudflare Quick Tunnel cho Frontend.
+- [`docs/2026-11-05.md`](2026-11-05.md): Tích hợp Module Kết Nối AI & Khám Phá Cơ Sở Thu Gom từ nhánh thang (True Merge).
