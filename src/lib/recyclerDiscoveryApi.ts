@@ -74,43 +74,107 @@ export interface LocationPreset {
   lng: number
 }
 
-/** Các toạ độ khu vực thực tế để người dùng chọn nhanh khi dùng máy tính để bàn
- *  hoặc khi trình duyệt từ chối cấp quyền định vị GPS (MSG-MTH-02). */
+/** Các toạ độ khu vực thực tế để gợi ý tức thì (0 HTTP request) khi người dùng đang gõ
+ *  hoặc chọn nhanh mà không cần chia sẻ vị trí nhà riêng (BR-MTH-05, MSG-MTH-02).
+ *  Mặc định ưu tiên khu vực Hà Nội (Hòa Lạc & các quận nội thành) lên đầu danh sách. */
 export const LOCATION_PRESETS: readonly LocationPreset[] = [
   {
+    id: "hn-hl-cnc",
+    label: "Hòa Lạc — Khu CNC & ĐH FPT, Hà Nội",
+    address: "Khu Công nghệ cao Hòa Lạc, Xã Thạch Hòa, Thạch Thất, Hà Nội",
+    lat: 21.0124,
+    lng: 105.5253,
+  },
+  {
+    id: "hn-hl-ngatu",
+    label: "Thạch Thất — Ngã tư Hòa Lạc & Tân Xã, Hà Nội",
+    address: "Khu vực Ngã tư Hòa Lạc - Tân Xã, Huyện Thạch Thất, Hà Nội",
+    lat: 21.0045,
+    lng: 105.5238,
+  },
+  {
+    id: "hn-cg",
+    label: "Cầu Giấy — Xuân Thủy, Hà Nội",
+    address: "Khu vực Dịch Vọng Hậu, Quận Cầu Giấy, Hà Nội",
+    lat: 21.0368,
+    lng: 105.7825,
+  },
+  {
+    id: "hn-dd",
+    label: "Đống Đa — Tây Sơn & Ngã Tư Sở, Hà Nội",
+    address: "Khu vực Tây Sơn - Ngã Tư Sở, Quận Đống Đa, Hà Nội",
+    lat: 21.0065,
+    lng: 105.8225,
+  },
+  {
+    id: "hn-hbt",
+    label: "Hai Bà Trưng — Bách Khoa, Hà Nội",
+    address: "Khu vực Bách Khoa - Giải Phóng, Quận Hai Bà Trưng, Hà Nội",
+    lat: 21.0045,
+    lng: 105.8465,
+  },
+  {
+    id: "hn-hk",
+    label: "Hoàn Kiếm — Hồ Gươm, Hà Nội",
+    address: "Khu vực Tràng Tiền - Hồ Hoàn Kiếm, Quận Hoàn Kiếm, Hà Nội",
+    lat: 21.0285,
+    lng: 105.8542,
+  },
+  {
+    id: "hn-ntl",
+    label: "Nam Từ Liêm — Mỹ Đình, Hà Nội",
+    address: "Khu vực Bến xe Mỹ Đình - Đại lộ Thăng Long, Nam Từ Liêm, Hà Nội",
+    lat: 21.0288,
+    lng: 105.7785,
+  },
+  {
+    id: "dn-hc",
+    label: "Hải Châu — Cầu Rồng, Đà Nẵng",
+    address: "Khu vực Phước Ninh, Quận Hải Châu, Đà Nẵng",
+    lat: 16.0611,
+    lng: 108.2232,
+  },
+  {
     id: "hcm-q1",
-    label: "Quận 1, TP.HCM",
-    address: "Ngõ 24 Lý Tự Trọng, P. Bến Nghé, Quận 1, TP.HCM",
-    lat: 10.7785,
-    lng: 106.7009,
+    label: "Quận 1 — Chợ Bến Thành, TP.HCM",
+    address: "Khu vực Chợ Bến Thành, P. Bến Thành, Quận 1, TP.HCM",
+    lat: 10.7725,
+    lng: 106.698,
   },
   {
     id: "hcm-bt",
-    label: "Bình Thạnh, TP.HCM",
-    address: "120 Nguyễn Hữu Cảnh, P. 22, Quận Bình Thạnh, TP.HCM",
+    label: "Bình Thạnh — Nguyễn Hữu Cảnh, TP.HCM",
+    address: "Khu vực P. 22 & Cầu Sài Gòn, Quận Bình Thạnh, TP.HCM",
     lat: 10.7938,
     lng: 106.7182,
   },
   {
     id: "hcm-tb",
-    label: "Tân Bình, TP.HCM",
-    address: "88 Cộng Hòa, Phường 4, Quận Tân Bình, TP.HCM",
+    label: "Tân Bình — Cộng Hòa, TP.HCM",
+    address: "Ngã tư Cộng Hòa - Hoàng Hoa Thám, Quận Tân Bình, TP.HCM",
     lat: 10.7995,
     lng: 106.657,
   },
   {
     id: "hcm-q7",
-    label: "Quận 7, TP.HCM",
-    address: "Nguyễn Thị Thập, P. Tân Phú, Quận 7, TP.HCM",
+    label: "Quận 7 — Nguyễn Thị Thập, TP.HCM",
+    address: "Khu vực P. Tân Phú & Phú Mỹ Hưng, Quận 7, TP.HCM",
     lat: 10.7324,
     lng: 106.7215,
   },
   {
-    id: "hn-cg",
-    label: "Cầu Giấy, Hà Nội",
-    address: "Đường Xuân Thủy, Quận Cầu Giấy, Hà Nội",
-    lat: 21.0368,
-    lng: 105.7825,
+    id: "hcm-td",
+    label: "TP. Thủ Đức — Ngã tư Thủ Đức, TP.HCM",
+    address: "Khu vực Hiệp Phú & Làng Đại học, TP. Thủ Đức, TP.HCM",
+    lat: 10.8505,
+    lng: 106.7717,
+  },
+  {
+    id: "ct-nk",
+    label: "Ninh Kiều — Bến Ninh Kiều, Cần Thơ",
+    address: "Khu vực Tân An, Quận Ninh Kiều, Cần Thơ",
+    lat: 10.0341,
+    lng: 105.7875,
   },
 ]
 
@@ -177,7 +241,7 @@ export async function getRecyclerPublicDetail(
 
 /**
  * Chiếu toạ độ GPS thật (lat, lng) của cơ sở thu mua sang vị trí phần trăm (left%, top%)
- * trên khung bản đồ xung quanh tâm người dùng (50%, 50%) theo bán kính tìm kiếm.
+ * dự phòng cho môi trường SSR chưa nạp DOM trình duyệt.
  */
 export function projectPartnerPinPosition(
   userLat: number,
@@ -194,7 +258,6 @@ export function projectPartnerPinPosition(
   const dNorthKm = (partnerLat - userLat) * kmPerDegLat
   const dEastKm = (partnerLng - userLng) * kmPerDegLng
 
-  // Nếu cơ sở trùng sát tâm (< 80m), tách nhẹ theo góc để không đè lên pin "Bạn ở đây"
   const dist = Math.hypot(dEastKm, dNorthKm)
   if (dist < 0.08) {
     const angle = ((indexFallback + 1) * Math.PI) / 3
@@ -204,7 +267,6 @@ export function projectPartnerPinPosition(
     }
   }
 
-  // Bán kính hiển thị tối đa ~36% tính từ tâm 50% (tức nằm trong khoảng 14%..86%)
   const scale = Math.min(1, dist / safeRadius)
   const ux = dEastKm / dist
   const uy = dNorthKm / dist
@@ -230,4 +292,3 @@ export function formatDistance(distanceKm: number): string {
 export function formatVnd(amount: number): string {
   return `${Math.round(amount).toLocaleString("vi-VN")} đ`
 }
-

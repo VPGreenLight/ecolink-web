@@ -1,22 +1,30 @@
 import { useState } from "react"
+import { Link } from "react-router-dom"
+import LocationPinPickerMap from "@/components/LocationPinPickerMap"
 import { PageHead } from "@/components/Portal"
+import { LOCATION_PRESETS } from "@/lib/recyclerDiscoveryApi"
+import {
+  submitRecyclerOnboarding,
+  type SubmitRecyclerOnboardingResult,
+} from "@/lib/recyclerWorkflowApi"
 
-/** U-05 Đăng ký tài khoản thu mua.
+/** U-17 Đăng ký cơ sở thu mua (kèm chấm ghim toạ độ kho bãi PostGIS & tải chứng từ lên R2).
  *
- *  Tách khỏi `/register` vì đây là quy trình khác hẳn: có giấy phép phải
- *  thẩm định, không có thì không được đứng trong nhà người dân và nhận tiền
- *  mặt của họ. Nhồi vào form đăng ký chung thì form dài gấp đôi và người
- *  dân phải đọc qua mấy ô không liên quan tới mình.
- *
- *  Chưa có backend: bấm gửi thì chỉ hiện mã hồ sơ để người dùng mang đi. */
+ *  Tách khỏi `/register` vì đây là quy trình thẩm định KYB: có giấy phép pháp lý,
+ *  ảnh mặt tiền kho bãi và toạ độ thu gom cố định trên bản đồ (`BR-MTH-01`).
+ *  Chỉ sau khi Nhân viên EcoLink (`S-04`) phê duyệt, ghim kho bãi mới hiển thị trên `/map`. */
 export default function JoinRecycler() {
   const [docs, setDocs] = useState<File[]>([])
   const [name, setName] = useState("")
   const [owner, setOwner] = useState("")
   const [phone, setPhone] = useState("")
+  const [email, setEmail] = useState("")
   const [address, setAddress] = useState("")
+  const [lat, setLat] = useState<number>(LOCATION_PRESETS[0].lat)
+  const [lng, setLng] = useState<number>(LOCATION_PRESETS[0].lng)
   const [mats, setMats] = useState<string[]>([])
-  const [ref, setRef] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [doneResult, setDoneResult] = useState<SubmitRecyclerOnboardingResult | null>(null)
   const [err, setErr] = useState("")
 
   const MATERIALS = [
@@ -28,7 +36,7 @@ export default function JoinRecycler() {
     "Rác hữu cơ",
   ]
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (name.trim().length < 3) {
       setErr("Cần tên cơ sở để thẩm định hồ sơ.")
@@ -42,6 +50,10 @@ export default function JoinRecycler() {
       setErr("Cần địa chỉ nơi thu gom thực tế.")
       return
     }
+    if (lat === 0 && lng === 0) {
+      setErr("Vui lòng chấm vị trí kho bãi trên bản đồ.")
+      return
+    }
     if (mats.length === 0) {
       setErr("Chọn ít nhất một loại rác bạn thu mua.")
       return
@@ -50,23 +62,54 @@ export default function JoinRecycler() {
       setErr("Tải ít nhất một giấy tờ để hồ sơ được thẩm định.")
       return
     }
+
     setErr("")
-    // ponytail: chưa có backend, sinh mã hồ sơ tại chỗ. Nối API thì thay dòng
-    // này và giữ nguyên phần hiển thị mã bên dưới.
-    setRef(`HS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`)
+    setSubmitting(true)
+    try {
+      const result = await submitRecyclerOnboarding({
+        facilityName: name,
+        representativeName: owner,
+        phone,
+        email,
+        businessAddress: address,
+        latitude: lat,
+        longitude: lng,
+        materials: mats,
+        documents: docs,
+      })
+      setDoneResult(result)
+    } catch (submitErr) {
+      setErr(
+        submitErr instanceof Error
+          ? submitErr.message
+          : "Không thể gửi hồ sơ lúc này. Vui lòng thử lại.",
+      )
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  if (ref) return <Done id={ref} name={name} />
+  if (doneResult) {
+    return (
+      <Done
+        id={doneResult.referenceCode}
+        name={name}
+        lat={lat}
+        lng={lng}
+        syncedWithBackend={doneResult.syncedWithBackend}
+      />
+    )
+  }
 
   return (
     <div className="page flex flex-col gap-6">
       <PageHead
         eyebrow="ĐỐI TÁC THU MUA"
         title="Đăng ký cơ sở thu mua"
-        body="Điền hồ sơ và tải giấy tờ lên. Hồ sơ được thẩm định trong 3 ngày làm việc, trước khi điểm của bạn hiện trên bản đồ GPS."
+        body="Điền hồ sơ, chấm vị trí kho bãi trên bản đồ và tải giấy tờ pháp lý lên. Hồ sơ được thẩm định trước khi điểm thu mua của bạn xuất hiện trên bản đồ GPS."
       />
 
-      <form onSubmit={submit} noValidate className="card flex flex-col gap-6 p-5 md:p-6">
+      <form onSubmit={(e) => void submit(e)} noValidate className="card flex flex-col gap-6 p-5 md:p-6">
         <div className="grid gap-5 sm:grid-cols-2">
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
             Tên cơ sở
@@ -99,13 +142,19 @@ export default function JoinRecycler() {
             />
           </label>
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Email
-            <input className="input" type="email" placeholder="ten@thugom.vn" />
+            Email nhận kết quả thẩm định
+            <input
+              className="input"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="ten@thugom.vn"
+            />
           </label>
         </div>
 
         <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-          Địa chỉ thu gom
+          Địa chỉ kho bãi thu gom thực tế
           <input
             className={`input ${err.startsWith("Cần địa chỉ") ? "border-warn" : ""}`}
             value={address}
@@ -113,6 +162,29 @@ export default function JoinRecycler() {
             placeholder="512 Hai Bà Trưng, Quận 5"
           />
         </label>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-[13px] font-semibold text-ink">
+            Ghim vị trí kho bãi trên bản đồ
+          </span>
+          <span className="text-[12px] text-muted">
+            Nhân viên thẩm định sẽ đối chiếu ghim này với địa chỉ trên giấy phép kinh doanh.
+            Sau khi duyệt, đây là toạ độ hiển thị cho người dân trên trang Bản đồ.
+          </span>
+          <LocationPinPickerMap
+            lat={lat}
+            lng={lng}
+            pinTitle={name.trim() || "Kho bãi thu mua"}
+            helperText="Toạ độ chính xác của kho bãi (SRID 4326)"
+            onChange={(nextLat, nextLng, addressHint) => {
+              setLat(nextLat)
+              setLng(nextLng)
+              if (addressHint && !address.trim()) {
+                setAddress(addressHint)
+              }
+            }}
+          />
+        </div>
 
         <fieldset>
           <legend className="text-[13px] font-semibold text-ink">
@@ -150,12 +222,14 @@ export default function JoinRecycler() {
             Giấy tờ bắt buộc
           </span>
           <span className="text-[12px] text-muted">
-            Giấy đăng ký doanh nghiệp hoặc hộ kinh doanh, và giấy phép thu gom
-            chất thải rắn. Ảnh chụp rõ chữ, không cắt mép giấy. Tối đa 5 tệp.
+            Giấy đăng ký doanh nghiệp hoặc hộ kinh doanh, giấy phép thu gom chất thải rắn
+            và ảnh chụp mặt tiền kho bãi. Ảnh rõ chữ, tối đa 5 tệp.
           </span>
           <label
             className={`mt-1 flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-6 text-center transition-colors ${
-              err.startsWith("Tải ít nhất") ? "border-warn bg-surface-2" : "border-sage-line bg-surface-2 hover:bg-surface-3"
+              err.startsWith("Tải ít nhất")
+                ? "border-warn bg-surface-2"
+                : "border-sage-line bg-surface-2 hover:bg-surface-3"
             }`}
           >
             <input
@@ -166,10 +240,10 @@ export default function JoinRecycler() {
               onChange={(e) => setDocs(Array.from(e.target.files ?? []).slice(0, 5))}
             />
             <span className="text-sm font-semibold text-brand">
-              {docs.length === 0 ? "Chọn giấy tờ" : docs.map((d) => d.name).join(" · ")}
+              {docs.length === 0 ? "Chọn giấy tờ & ảnh kho bãi" : docs.map((d) => d.name).join(" · ")}
             </span>
             {docs.length === 0 && (
-              <span className="text-[12px] text-muted">Chấp nhận ảnh và PDF</span>
+              <span className="text-[12px] text-muted">Chấp nhận ảnh (.jpg, .png, .webp) và PDF</span>
             )}
           </label>
         </div>
@@ -177,8 +251,12 @@ export default function JoinRecycler() {
         {err && <p className="text-[13px] text-warn">{err}</p>}
 
         <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
-          <button type="submit" className="btn-primary h-11 px-6">
-            Gửi hồ sơ thẩm định
+          <button
+            type="submit"
+            disabled={submitting}
+            className="btn-primary h-11 px-6"
+          >
+            {submitting ? "Đang gửi hồ sơ..." : "Gửi hồ sơ thẩm định"}
           </button>
           <p className="text-[13px] text-muted">
             Chờ duyệt thì bạn vẫn dùng được tài khoản người dân như thường.
@@ -189,13 +267,25 @@ export default function JoinRecycler() {
   )
 }
 
-function Done({ id, name }: { id: string; name: string }) {
+function Done({
+  id,
+  name,
+  lat,
+  lng,
+  syncedWithBackend,
+}: {
+  id: string
+  name: string
+  lat: number
+  lng: number
+  syncedWithBackend: boolean
+}) {
   return (
-    <div className="flex flex-col gap-6">
+    <div className="page flex flex-col gap-6">
       <PageHead
         eyebrow="ĐỐI TÁC THU MUA"
         title="Đã nhận hồ sơ"
-        body={`${name} đã gửi hồ sơ. Nhân viên EcoLink thẩm định trong 3 ngày làm việc và liên hệ qua số điện thoại bạn đăng ký.`}
+        body={`${name} đã gửi hồ sơ kèm toạ độ kho bãi (${lat.toFixed(4)}, ${lng.toFixed(4)}). Nhân viên EcoLink sẽ thẩm định giấy phép và đối chiếu vị trí trước khi kích hoạt ghim trên bản đồ.`}
       />
 
       <div className="card flex flex-wrap items-center gap-4 px-5 py-4">
@@ -207,16 +297,23 @@ function Done({ id, name }: { id: string; name: string }) {
             {id}
           </p>
         </div>
-        <p className="ml-auto text-sm text-body">
-          Mang mã này khi gọi 1900 8828 để tra nhanh.
-        </p>
+        <div className="ml-auto flex flex-col items-end gap-1 text-right">
+          <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-semibold text-brand-deep">
+            {syncedWithBackend
+              ? "Đã ghi nhận vào CSDL PostGIS (Trạng thái: Chờ thẩm định)"
+              : "Đã lưu hàng đợi thẩm định trình duyệt"}
+          </span>
+          <p className="text-xs text-muted">
+            Mang mã này khi gọi 1900 8828 hoặc kiểm tra tại khu vực Nhân viên thẩm định.
+          </p>
+        </div>
       </div>
 
       <ol className="card flex flex-col gap-4 p-5">
         {[
-          ["Nhận hồ sơ", "Chúng tôi kiểm tra giấy tờ còn hiệu lực trong 1 ngày làm việc."],
-          ["Thẩm định", "Nhân viên có thể gọi để xác minh địa chỉ thu gom thực tế."],
-          ["Duyệt và lên bản đồ", "Sau khi duyệt, bạn đặt bảng giá và bắt đầu nhận yêu cầu."],
+          ["Nhận hồ sơ", "Hệ thống lưu chứng từ và toạ độ kho bãi ở trạng thái Pending (chưa hiển thị công khai — BR-MTH-01)."],
+          ["Thẩm định thực địa", "Nhân viên kiểm tra giấy phép và đối chiếu vị trí ghim kho bãi trên bản đồ thẩm định (S-04)."],
+          ["Duyệt và lên bản đồ", "Ngay khi được duyệt, cơ sở hiển thị trên trang Bản đồ GPS để người dân đặt lịch bàn giao."],
         ].map(([t, b], i) => (
           <li key={t} className="flex gap-3">
             <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-white">
@@ -229,6 +326,12 @@ function Done({ id, name }: { id: string; name: string }) {
           </li>
         ))}
       </ol>
+
+      <div>
+        <Link to="/map" className="btn-outline h-10 px-4 text-xs">
+          Quay về trang Bản đồ điểm thu mua
+        </Link>
+      </div>
     </div>
   )
 }

@@ -22,22 +22,6 @@ export interface WastePredictionDto {
   displayName: string
 }
 
-export interface AiScanResultDto {
-  success: boolean
-  isOutOfDistribution: boolean
-  confidenceThreshold: number
-  modelUsed?: string | null
-  modelName?: string | null
-  modelFamily?: string | null
-  topPrediction?: WastePredictionDto | null
-  predictions: WastePredictionDto[]
-  allProbabilities?: WastePredictionDto[]
-  pipeline?: string | null
-  croppedBbox?: number[] | null
-  inferenceTimeMs: number
-  errorMessage?: string | null
-}
-
 export interface WasteSortingGuideDto {
   categoryCode: string
   categoryName: string
@@ -45,6 +29,40 @@ export interface WasteSortingGuideDto {
   preparationSteps: string | string[]
   handlingAction: string
   hazardWarning?: string | null
+}
+
+export interface DetectedWasteObjectDto {
+  id: number
+  rawClass: string
+  label: string
+  displayName: string
+  confidence: number
+  centerScore: number
+  isPrimary: boolean
+  source?: string | null
+  bbox: number[]
+  sortingGuide?: WasteSortingGuideDto | null
+}
+
+export interface AiScanResultDto {
+  success: boolean
+  isOutOfDistribution: boolean
+  confidenceThreshold: number
+  modelUsed?: string | null
+  modelName?: string | null
+  modelFamily?: string | null
+  imageWidth?: number
+  imageHeight?: number
+  topPrediction?: WastePredictionDto | null
+  predictions: WastePredictionDto[]
+  allProbabilities?: WastePredictionDto[]
+  detectedCount?: number
+  categorySummary?: Record<string, number>
+  detectedObjects?: DetectedWasteObjectDto[]
+  pipeline?: string | null
+  croppedBbox?: number[] | null
+  inferenceTimeMs: number
+  errorMessage?: string | null
 }
 
 export interface WasteScanResponseDto {
@@ -64,8 +82,8 @@ export interface SubmitFeedbackRequest {
 export const DEFAULT_AI_MODELS: AiModelOption[] = [
   {
     id: "yolov8_detect",
-    name: "YOLOv8 Detection (Khuyên dùng - Định vị & Cắt nền)",
-    family: "Object Detection (Ultralytics)",
+    name: "YOLOv8 Detection (Khuyên dùng - Đa vật thể & Cắt nền)",
+    family: "Two-Stage Object Detection & Ensemble",
     is_ready: true,
   },
   {
@@ -97,6 +115,8 @@ export interface WasteCategoryMeta {
   priceUnit: string
   recyclable: boolean
   handoverWasteId: string
+  defaultBinColor: string
+  defaultSteps: string[]
 }
 
 export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
@@ -109,6 +129,11 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
     priceUnit: "đ / kg",
     recyclable: true,
     handoverWasteId: "pet",
+    defaultBinColor: "Vàng / Cam",
+    defaultSteps: [
+      "Đổ sạch chất lỏng còn thừa và tráng sơ bằng nước sạch.",
+      "Tháo nắp, bóp dẹp chai nhựa để tiết kiệm thể tích lưu trữ.",
+    ],
   },
   paper: {
     code: "paper",
@@ -119,6 +144,11 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
     priceUnit: "đ / kg",
     recyclable: true,
     handoverWasteId: "office-paper",
+    defaultBinColor: "Xanh dương",
+    defaultSteps: [
+      "Giữ giấy khô ráo, không dính dầu mỡ hoặc thức ăn.",
+      "Tháo ghim bấm kim loại, băng keo nhựa và xếp phẳng theo xấp.",
+    ],
   },
   cardboard: {
     code: "cardboard",
@@ -129,6 +159,11 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
     priceUnit: "đ / kg",
     recyclable: true,
     handoverWasteId: "carton",
+    defaultBinColor: "Xanh dương",
+    defaultSteps: [
+      "Bóc bỏ băng keo dán, mút xốp hoặc túi khí bên trong thùng.",
+      "Gấp phẳng thùng carton và buộc gọn để tránh ẩm ướt.",
+    ],
   },
   metal: {
     code: "metal",
@@ -139,6 +174,11 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
     priceUnit: "đ / kg",
     recyclable: true,
     handoverWasteId: "aluminum",
+    defaultBinColor: "Vàng",
+    defaultSteps: [
+      "Đổ hết nước ngọt/bia thừa và tráng sơ để tránh thu hút côn trùng.",
+      "Ép dẹp lon nhôm hoặc bọc kín cạnh sắc nhọn trước khi bàn giao.",
+    ],
   },
   glass: {
     code: "glass",
@@ -149,6 +189,11 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
     priceUnit: "đ / kg",
     recyclable: true,
     handoverWasteId: "glass",
+    defaultBinColor: "Trắng / Xanh lá",
+    defaultSteps: [
+      "Tráng sạch cặn bên trong và tháo rời nắp kim loại hoặc nút nhựa.",
+      "Đặt riêng vào thùng cứng, bọc kỹ nếu có vết nứt vỡ.",
+    ],
   },
   trash: {
     code: "trash",
@@ -159,6 +204,11 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
     priceUnit: "Bỏ thùng rác đô thị",
     recyclable: false,
     handoverWasteId: "organic",
+    defaultBinColor: "Xám / Xanh đậm",
+    defaultSteps: [
+      "Tách riêng khỏi nhóm nhựa, giấy, kim loại để không làm bẩn phế liệu sạch.",
+      "Buộc kín túi rác và bỏ đúng giờ thu gom rác sinh hoạt tại địa phương.",
+    ],
   },
 }
 
@@ -183,6 +233,10 @@ export function getCategoryMeta(code?: string | null): WasteCategoryMeta {
       priceUnit: "đ / kg",
       recyclable: false,
       handoverWasteId: "pet",
+      defaultBinColor: "Theo quy định",
+      defaultSteps: [
+        "Kiểm tra lại bề mặt vật liệu và tách riêng các thành phần khác loại.",
+      ],
     }
   )
 }
@@ -281,4 +335,3 @@ export async function submitAiFeedback(
       "Cảm ơn bạn đã phản hồi! Dữ liệu đã được chuyển tới Nhân viên vận hành để kiểm chứng.",
   }
 }
-

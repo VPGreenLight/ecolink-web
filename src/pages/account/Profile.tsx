@@ -1,42 +1,85 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { PageHead, Field, Stat, Status } from "@/components/Portal"
-import { useSession } from "@/lib/session"
+import { ROLE_LABEL, useSession } from "@/lib/session"
+import {
+  fetchCurrentUserProfile,
+  formatAuthError,
+  updateCurrentUserProfile,
+} from "@/lib/authApi"
 import { FLOWS } from "@/data/cashflow"
 import { MY_HANDOVERS } from "@/data/handover"
 import { LEADERBOARD, RANK_POINTS, SPEND_POINTS, fmt, tierProgress } from "@/data/rewards"
 
 /** SU-01 Xem và cập nhật hồ sơ · SU-03 Thông báo hệ thống.
  *
- *  Gộp vì cùng một nguồn dữ liệu: hồ sơ và danh sách thông báo đều là "việc
- *  của tài khoản này". Tách hai trang thì người dùng phải biết cái nào ở
- *  đâu, mà cả hai đều là việc người dùng làm hằng ngày.
- *
- *  Đổi mật khẩu (SU-02) tách riêng thành `/account/password` vì đó là thao tác
- *  có xác thực, không phải chỉnh sửa hồ sơ. */
+ *  Đồng bộ trực tiếp với `GET /api/v1/auth/me` (nạp email, SĐT, điểm xanh, hạng cây ảo,
+ *  tổng khối lượng tái chế từ PostgreSQL) và `PUT /api/v1/auth/profile` khi bấm Lưu hồ sơ. */
 export default function Profile() {
   const session = useSession()
   const [name, setName] = useState(session?.name ?? "")
-  const [phone, setPhone] = useState("0901 234 567")
-  const [area, setArea] = useState("Quận 3, TP. Hồ Chí Minh")
-  const [saved, setSaved] = useState(false)
+  const [phone, setPhone] = useState(session?.phoneNumber ?? "0901 234 567")
+  const [area, setArea] = useState("Khu Công nghệ cao Hòa Lạc, Hà Nội")
+  const [submitting, setSubmitting] = useState(false)
+  const [savedMsg, setSavedMsg] = useState("")
   const [err, setErr] = useState("")
 
-  const submit = (e: React.FormEvent) => {
+  useEffect(() => {
+    let active = true
+    void fetchCurrentUserProfile().then((profile) => {
+      if (!active || !profile) return
+      setName(profile.fullName || profile.username)
+      if (profile.phoneNumber) {
+        setPhone(profile.phoneNumber)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submitting) return
     if (name.trim().length < 2) {
       setErr("Tên hiển thị phải có ít nhất 2 ký tự.")
-      setSaved(false)
+      setSavedMsg("")
       return
     }
     if (!/^(?:\+84|0)\d{9,10}$/.test(phone.replace(/[\s.\-()]/g, ""))) {
       setErr("Số điện thoại chưa đúng định dạng Việt Nam.")
-      setSaved(false)
+      setSavedMsg("")
       return
     }
+
     setErr("")
-    // ponytail: chưa có backend. Nối API thì thay đúng dòng này.
-    setSaved(true)
+    setSubmitting(true)
+    try {
+      const res = await updateCurrentUserProfile({
+        fullName: name,
+        phoneNumber: phone,
+      })
+      setSavedMsg(res.message)
+    } catch (error) {
+      setErr(formatAuthError(error))
+      setSavedMsg("")
+    } finally {
+      setSubmitting(false)
+    }
   }
+
+  const resolvedEmail =
+    session?.email ||
+    (session ? `${name.split(" ").slice(-1)[0]?.toLowerCase() ?? "ban"}@ecolink.vn` : "ban@ecolink.vn")
+
+  const displayGreenPoints =
+    session?.fromBackend && typeof session.currentGreenPoints === "number"
+      ? fmt(session.currentGreenPoints)
+      : fmt(SPEND_POINTS)
+
+  const displayTreeTier =
+    session?.fromBackend && typeof session.treeLevel === "number"
+      ? `Cấp ${session.treeLevel}`
+      : tierProgress().cur.name
 
   return (
     <div className="page flex flex-col gap-6">
@@ -47,8 +90,6 @@ export default function Profile() {
       />
 
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
-        {/* self-start: mặc định grid kéo phần tử cao bằng hàng, nên thẻ form
-            bị dài bằng cột thông báo và để lại một khoảng trắng lớn dưới nút. */}
         <form onSubmit={submit} noValidate className="card flex flex-col gap-5 self-start p-5 md:p-6">
           <Field label="Tên hiển thị" hint="Người thu gom và nhân viên thấy tên này.">
             <input
@@ -56,7 +97,7 @@ export default function Profile() {
               value={name}
               onChange={(e) => {
                 setName(e.target.value)
-                setSaved(false)
+                setSavedMsg("")
               }}
             />
           </Field>
@@ -70,7 +111,7 @@ export default function Profile() {
               value={phone}
               onChange={(e) => {
                 setPhone(e.target.value)
-                setSaved(false)
+                setSavedMsg("")
               }}
             />
           </Field>
@@ -84,26 +125,25 @@ export default function Profile() {
           </Field>
 
           <Field label="Email">
-            <input
-              className="input"
-              value={session ? `${name.split(" ").slice(-1)[0]?.toLowerCase() ?? "ban"}@email.vn` : "ban@email.vn"}
-              readOnly
-              disabled
-            />
+            <input className="input" value={resolvedEmail} readOnly disabled />
             <span className="text-[12px] font-normal text-muted">
-              Email là định danh đăng nhập, không đổi trên trang này.
+              Email là định danh đăng nhập{session?.isGoogleAuth ? " (đã liên kết Google OAuth)" : ""}, không đổi trên trang này.
             </span>
           </Field>
 
           {err && <p className="text-[13px] text-warn">{err}</p>}
 
           <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
-            <button type="submit" className="btn-primary h-11 px-6">
-              Lưu hồ sơ
+            <button
+              type="submit"
+              disabled={submitting}
+              className="btn-primary h-11 px-6 disabled:opacity-60"
+            >
+              {submitting ? "Đang lưu..." : "Lưu hồ sơ"}
             </button>
-            {saved && (
+            {savedMsg && (
               <p role="status" className="text-[13px] font-semibold text-brand">
-                Đã lưu hồ sơ.
+                {savedMsg}
               </p>
             )}
           </div>
@@ -114,10 +154,14 @@ export default function Profile() {
             <h2 className="text-base font-bold text-ink">Tài khoản của bạn</h2>
             <dl className="flex flex-col gap-2 text-sm">
               {[
-                ["Vai trò", session?.role === "recycler" ? "Cơ sở thu mua" : session?.role === "staff" ? "Nhân viên" : session?.role === "admin" ? "Quản trị viên" : "Người dân"],
-                ["Điểm tiêu dùng", fmt(SPEND_POINTS)],
+                ["Vai trò", session ? ROLE_LABEL[session.role] : "Người dân"],
+                ...(session?.username ? [["Tên đăng nhập", session.username]] : []),
+                ["Điểm tiêu dùng", displayGreenPoints],
                 ["Điểm xếp hạng", fmt(RANK_POINTS)],
-                ["Hạng cây ảo", tierProgress().cur.name],
+                ["Hạng cây ảo", displayTreeTier],
+                ...(session?.fromBackend && typeof session.totalRecycledKg === "number"
+                  ? [["Tổng phế liệu tái chế", `${session.totalRecycledKg} kg`]]
+                  : []),
                 ["Giao dịch đã hoàn tất", String(MY_HANDOVERS.filter((h) => h.status === "done").length)],
                 ["Khoản đã nhận", String(FLOWS.filter((f) => f.kind === "payout").length)],
               ].map(([k, v]) => (
@@ -143,14 +187,12 @@ export default function Profile() {
   )
 }
 
-/** SU-03 Thông báo hệ thống. Ba thông báo mẫu đủ để thấy cách phân loại:
- *  cột phải là việc người dùng cần làm, cột trái là tin chỉ để đọc. */
 type Note = { id: string; text: string; time: string; needsAction: boolean }
 
 const NOTES: Note[] = [
   {
     id: "n1",
-    text: "Cô Ba Thu Gom đã nhận yêu cầu của bạn và chốt khung giờ 10:00 - 12:00.",
+    text: "Trạm Thu Gom Tái Chế Xanh Hòa Lạc đã nhận yêu cầu của bạn và chốt khung giờ 10:00 - 12:00.",
     time: "Hôm nay, 09:34",
     needsAction: true,
   },

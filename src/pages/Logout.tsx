@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { signOut, useSession } from "@/lib/session"
 import { isAuthPopup } from "@/lib/popupAuth"
+import "@/lib/authApi"
 
 export default function Logout() {
   const session = useSession()
@@ -15,7 +16,9 @@ export default function Logout() {
     if (isPopup && window.opener) {
       try {
         window.opener.postMessage({ type: "AUTH_LOGOUT" }, "*")
-      } catch {}
+      } catch {
+        // ignore cross-window errors
+      }
       setTimeout(() => {
         window.close()
       }, 500)
