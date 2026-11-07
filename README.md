@@ -37,6 +37,7 @@ src/
   lib/
     api.ts                HTTP client chuẩn hóa ApiResponse<T>, tự dò cổng & xoay vòng Refresh Token (401)
     authApi.ts            API client Module Authentication & RBAC (/api/v1/auth/*, Google OAuth, Khôi phục MK)
+    chatApi.ts            API client & SignalR WebSockets Module Negotiation Chatbox (U-08, R-05)
     wasteScanApi.ts       API client Module AI Waste Classification & Rule Engine
     recyclerDiscoveryApi.ts API client Module Location-Based Recycler Discovery (U-05)
     recyclerWorkflowApi.ts Liên thông 4 mắt xích vai trò (đăng ký, duyệt KYB, bật/tắt vựa, đặt lịch)
@@ -55,6 +56,7 @@ src/
 | `/guidance`, `/waste` | Tra cứu quy tắc xử lý rác từ Rule Engine & báo cáo nhãn sai |
 | `/map` | Bản đồ tương tác CARTO Voyager tìm cơ sở thu mua, tra cứu địa danh 2 tầng & làm mờ vị trí `~500m` (`/api/v1/recyclers/*`, `/api/v1/geocoding/search`) |
 | `/partners` | Đối tác tái chế & cơ sở thu mua trực tuyến |
+| `/chat` | Chatbox thương lượng đơn giá, khối lượng & khung giờ thu gom thời gian thực (`U-08`, `R-05`, SignalR WebSocket) |
 | `/login`, `/register`, `/reset-password` | Đăng nhập, đăng ký, Google OAuth & khôi phục mật khẩu (`/api/v1/auth/*`) |
 | `*` | 404 |
 
@@ -88,3 +90,4 @@ export const PARTNERS: Partner[] = [{ name: "...", logo: "/assets/...", ... }]
   - [Phiên 2026-11-03: Kết nối AI Classification & Recycler Discovery](docs/2026-11-03.md): Tích hợp API nhận diện rác đa mô hình, Rule Engine, báo cáo nhãn sai và bản đồ tìm cơ sở thu mua theo GPS (`U-05`).
   - [Phiên 2026-11-04: Cloudflare Tunnel & AI Multi-Object Bounding Box](docs/2026-11-04.md): Mở `allowedHosts` trên Vite 8, tích hợp Cloudflare Quick Tunnel và nâng cấp nhận diện rác đa vật thể đóng khung tương tác (Đề xuất 1 + 2 + 3).
   - [Phiên 2026-11-05: Bản đồ CARTO Voyager, Liên thông 4 Vai trò & PostGIS `ST_DWithin`](docs/2026-11-05.md): Tích hợp `Leaflet 1.9.4` + `CARTO Voyager`, Backend Geocoding Proxy, bảo mật vị trí `~500m` (`BR-MTH-05`), liên thông không gian 4 vai trò (`U-17`, `R-02`, `S-04`, `U-07`) và truy vấn chỉ mục PostGIS `ST_DWithin`.
+  - [Phiên 2026-11-07: In-App Real-Time Negotiation Chatbox (SignalR)](docs/2026-11-07.md): Tích hợp `@microsoft/signalr`, API client `chatApi.ts`, nâng cấp `Chat.tsx` với thẻ đề xuất `Proposal Card` đa trạng thái, tải ảnh phế liệu Cloudflare R2, chỉ báo gõ phím và liên thông 2 chiều giữa Người dân và Chủ vựa (`U-08`, `R-05`).

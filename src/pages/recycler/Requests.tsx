@@ -158,6 +158,12 @@ export default function Requests() {
                     >
                       Nhận và chốt khung giờ
                     </button>
+                    <Link
+                      to={`/chat?orderId=${encodeURIComponent(h.id)}`}
+                      className="btn-outline h-11 px-5"
+                    >
+                      Chat thương lượng
+                    </Link>
                     <button
                       type="button"
                       disabled={busy === h.id}
@@ -200,13 +206,22 @@ export default function Requests() {
                       Tạo biên nhận
                     </Link>
                   ) : h.status === "accepted" ? (
-                    <button
-                      type="button"
-                      onClick={() => cancel(h.id)}
-                      className="text-[13px] font-semibold text-warn hover:underline"
-                    >
-                      Huỷ lịch
-                    </button>
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <Link
+                        to={`/chat?orderId=${encodeURIComponent(h.id)}`}
+                        className="text-[13px] font-semibold text-brand hover:underline"
+                      >
+                        Hỏi đường
+                      </Link>
+                      <span className="text-muted">·</span>
+                      <button
+                        type="button"
+                        onClick={() => cancel(h.id)}
+                        className="text-[13px] font-semibold text-warn hover:underline"
+                      >
+                        Huỷ lịch
+                      </button>
+                    </div>
                   ) : (
                     <span className="text-[13px] text-muted">—</span>
                   )}

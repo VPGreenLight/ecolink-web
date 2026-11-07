@@ -161,11 +161,20 @@ export default function Handover() {
                       >
                         Huỷ yêu cầu
                       </button>
+                      <Link
+                        to={`/chat?orderId=${encodeURIComponent(h.id)}&partnerName=${encodeURIComponent(h.recycler)}`}
+                        className="btn-outline h-9 px-3 text-[13px] font-medium text-brand"
+                      >
+                        Thương lượng giá &amp; giờ
+                      </Link>
                     </>
                   )}
                   {h.status === "accepted" && (
-                    <Link to="/chat" className="btn-outline h-9 px-3 text-[13px]">
-                      Nhắn đối tác
+                    <Link
+                      to={`/chat?orderId=${encodeURIComponent(h.id)}&partnerName=${encodeURIComponent(h.recycler)}`}
+                      className="btn-outline h-9 px-3 text-[13px]"
+                    >
+                      Nhắn đối tác (Hỏi đường)
                     </Link>
                   )}
                   {h.status === "collected" && (
