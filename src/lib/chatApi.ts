@@ -11,11 +11,17 @@
  */
 
 import * as signalR from "@microsoft/signalr"
+import { ApiError, apiRequest, fetchWithAutoHost, getResolvedApiHost } from "@/lib/api"
 import type { ApiResponse } from "@/lib/api"
-import { fetchWithAutoHost } from "@/lib/api"
+import { INCOMING, MY_HANDOVERS } from "@/data/handover"
+import { WASTES } from "@/data/waste"
 import { getAccessToken, getSession } from "@/lib/session"
 import type { Role } from "@/lib/session"
-import { ensureRoleJwt } from "@/lib/recyclerWorkflowApi"
+import {
+  ensureRoleJwt,
+  findCachedHandoverOrder,
+  formatOrderDisplayCode,
+} from "@/lib/recyclerWorkflowApi"
 
 // ==========================================
 // 1. Data Transfer Objects (DTOs)
@@ -66,6 +72,7 @@ export interface OrderChatThreadDto {
   citizenName: string
   recyclerUserId: string
   facilityName: string
+  pickupAddress?: string | null
   orderStatus: string
   categoryCode?: string | null
   estimatedWeightKg?: number | null
@@ -80,6 +87,7 @@ export interface OrderChatThreadDto {
   unreadCount: number
   activeProposal?: ChatMessageDto | null
   messages: PagedResult<ChatMessageDto>
+  isOfflineFallback?: boolean
 }
 
 export interface ProposalAcceptanceResultDto {
@@ -155,30 +163,27 @@ export async function getOrderChatThread(
       }).toString()
       const authHeaders = await getEffectiveAuthHeader()
 
-      const res = await fetchWithAutoHost(
+      const res = await apiRequest<OrderChatThreadDto>(
         `/api/v1/trade/orders/${encodeURIComponent(orderId)}/messages?${query}`,
         {
           method: "GET",
-          headers: {
-            Accept: "application/json",
-            ...authHeaders,
-          },
+          headers: authHeaders,
         },
       )
 
-      if (res.ok) {
-        const json = (await res.json()) as ApiResponse<OrderChatThreadDto>
-        if (json?.data) {
-          saveFallbackThread(json.data)
-          return json.data
-        }
+      if (res.data) {
+        saveFallbackThread(res.data)
+        return res.data
       }
-    } catch {
-      // Backend offline -> rơi xuống fallback
+    } catch (err) {
+      if (err instanceof ApiError && !err.isNetworkError) {
+        throw err
+      }
+      // Backend thực sự offline -> rơi xuống fallback
     }
   }
 
-  // Chế độ dự phòng offline / mã đơn demo
+  // Chế độ dự phòng offline / mã đơn demo khi máy chủ chưa bật
   return getFallbackThread(orderId)
 }
 
@@ -192,25 +197,20 @@ export async function sendChatMessage(
   if (isGuid(orderId)) {
     try {
       const authHeaders = await getEffectiveAuthHeader()
-      const res = await fetchWithAutoHost(
+      const res = await apiRequest<ChatMessageDto>(
         `/api/v1/trade/orders/${encodeURIComponent(orderId)}/messages`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            ...authHeaders,
-          },
+          headers: authHeaders,
           body: JSON.stringify(request),
         },
       )
 
-      if (res.ok) {
-        const json = (await res.json()) as ApiResponse<ChatMessageDto>
-        if (json?.data) return json.data
+      if (res.data) return res.data
+    } catch (err) {
+      if (err instanceof ApiError && !err.isNetworkError) {
+        throw err
       }
-    } catch {
-      // Backend offline -> rơi xuống fallback
     }
   }
 
@@ -276,25 +276,20 @@ export async function sendProposal(
   if (isGuid(orderId)) {
     try {
       const authHeaders = await getEffectiveAuthHeader()
-      const res = await fetchWithAutoHost(
+      const res = await apiRequest<ChatMessageDto>(
         `/api/v1/trade/orders/${encodeURIComponent(orderId)}/proposals`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            ...authHeaders,
-          },
+          headers: authHeaders,
           body: JSON.stringify(request),
         },
       )
 
-      if (res.ok) {
-        const json = (await res.json()) as ApiResponse<ChatMessageDto>
-        if (json?.data) return json.data
+      if (res.data) return res.data
+    } catch (err) {
+      if (err instanceof ApiError && !err.isNetworkError) {
+        throw err
       }
-    } catch {
-      // Fallback
     }
   }
 
@@ -312,25 +307,20 @@ export async function respondToProposal(
   if (isGuid(orderId)) {
     try {
       const authHeaders = await getEffectiveAuthHeader()
-      const res = await fetchWithAutoHost(
+      const res = await apiRequest<ProposalAcceptanceResultDto>(
         `/api/v1/trade/orders/${encodeURIComponent(orderId)}/proposals/${encodeURIComponent(messageId)}/respond`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            ...authHeaders,
-          },
+          headers: authHeaders,
           body: JSON.stringify(request),
         },
       )
 
-      if (res.ok) {
-        const json = (await res.json()) as ApiResponse<ProposalAcceptanceResultDto>
-        if (json?.data) return json.data
+      if (res.data) return res.data
+    } catch (err) {
+      if (err instanceof ApiError && !err.isNetworkError) {
+        throw err
       }
-    } catch {
-      // Fallback
     }
   }
 
@@ -346,23 +336,19 @@ export async function acceptOrderInitialTerms(
   if (isGuid(orderId)) {
     try {
       const authHeaders = await getEffectiveAuthHeader()
-      const res = await fetchWithAutoHost(
+      const res = await apiRequest<ProposalAcceptanceResultDto>(
         `/api/v1/trade/orders/${encodeURIComponent(orderId)}/accept-terms`,
         {
           method: "POST",
-          headers: {
-            Accept: "application/json",
-            ...authHeaders,
-          },
+          headers: authHeaders,
         },
       )
 
-      if (res.ok) {
-        const json = (await res.json()) as ApiResponse<ProposalAcceptanceResultDto>
-        if (json?.data) return json.data
+      if (res.data) return res.data
+    } catch (err) {
+      if (err instanceof ApiError && !err.isNetworkError) {
+        throw err
       }
-    } catch {
-      // Fallback
     }
   }
 
@@ -378,25 +364,16 @@ export async function markMessagesAsRead(
   if (isGuid(orderId)) {
     try {
       const authHeaders = await getEffectiveAuthHeader()
-      const res = await fetchWithAutoHost(
-        `/api/v1/trade/orders/${encodeURIComponent(orderId)}/messages/read`,
-        {
-          method: "PUT",
-          headers: {
-            Accept: "application/json",
-            ...authHeaders,
-          },
-        },
-      )
+      const res = await apiRequest<{
+        orderId: string
+        markedCount: number
+        readAtUtc: string
+      }>(`/api/v1/trade/orders/${encodeURIComponent(orderId)}/messages/read`, {
+        method: "PUT",
+        headers: authHeaders,
+      })
 
-      if (res.ok) {
-        const json = (await res.json()) as ApiResponse<{
-          orderId: string
-          markedCount: number
-          readAtUtc: string
-        }>
-        return json.data
-      }
+      if (res.data) return res.data
     } catch {
       // Fallback
     }
@@ -454,7 +431,8 @@ export function createNegotiationChatConnection(
   const configuredBase = (import.meta.env?.VITE_API_BASE_URL as string | undefined)
     ?.trim()
     .replace(/\/+$/, "")
-  const hubUrl = configuredBase ? `${configuredBase}/hubs/negotiation-chat` : "/hubs/negotiation-chat"
+  const resolvedBase = configuredBase || getResolvedApiHost()
+  const hubUrl = resolvedBase ? `${resolvedBase}/hubs/negotiation-chat` : "/hubs/negotiation-chat"
 
   const connection = new signalR.HubConnectionBuilder()
     .withUrl(hubUrl, {
@@ -509,7 +487,7 @@ export async function joinOrderChatRoom(
   connection: signalR.HubConnection,
   orderId: string,
 ): Promise<void> {
-  if (connection.state === signalR.HubConnectionState.Connected) {
+  if (connection.state === signalR.HubConnectionState.Connected && isGuid(orderId)) {
     await connection.invoke("JoinOrderChatRoom", orderId)
   }
 }
@@ -521,7 +499,7 @@ export async function leaveOrderChatRoom(
   connection: signalR.HubConnection,
   orderId: string,
 ): Promise<void> {
-  if (connection.state === signalR.HubConnectionState.Connected) {
+  if (connection.state === signalR.HubConnectionState.Connected && isGuid(orderId)) {
     await connection.invoke("LeaveOrderChatRoom", orderId)
   }
 }
@@ -534,7 +512,7 @@ export async function sendTypingIndicator(
   orderId: string,
   isTyping: boolean,
 ): Promise<void> {
-  if (connection.state === signalR.HubConnectionState.Connected) {
+  if (connection.state === signalR.HubConnectionState.Connected && isGuid(orderId)) {
     await connection.invoke("SendTypingIndicator", orderId, isTyping).catch(() => {})
   }
 }
@@ -543,7 +521,7 @@ export async function sendTypingIndicator(
 // 4. Offline Demo & Local Storage Fallback
 // ==========================================
 
-const FALLBACK_KEY_PREFIX = "ecolink:chat_thread:v2:"
+const FALLBACK_KEY_PREFIX = "ecolink:chat_thread:v3:"
 
 function saveFallbackThread(thread: OrderChatThreadDto): void {
   if (typeof localStorage === "undefined") return
@@ -562,93 +540,79 @@ export function getFallbackThread(orderId: string): OrderChatThreadDto {
     } catch {}
   }
 
-  // Khởi tạo phòng chat mẫu chuẩn đồ án
+  // Khớp thông tin thực tế của đơn đang chọn (từ cache local hoặc danh mục đơn ngoại tuyến)
+  const cachedOrder = findCachedHandoverOrder(orderId)
+  const staticOrder =
+    INCOMING.find((x) => x.id === orderId) ||
+    MY_HANDOVERS.find((x) => x.id === orderId)
+
+  const lines = cachedOrder?.lines || staticOrder?.lines || [{ wasteId: "pet", kg: 12.5 }]
+  const totalWeight = lines.reduce((sum, l) => sum + (Number(l.kg) || 0), 0) || 12.5
+  const primaryWaste = WASTES.find((w) => w.id === lines[0]?.wasteId)
+  const initialPrice = cachedOrder?.initialPricePerKg || primaryWaste?.price || 7000
+  const agreedPrice = cachedOrder?.agreedPricePerKg || null
+  const slot = cachedOrder?.slot || staticOrder?.slot || "14:00 - 16:00"
+  const pickupAddress =
+    cachedOrder?.address || staticOrder?.address || "Điểm hẹn bàn giao theo đơn"
+  const facilityName =
+    cachedOrder?.recycler || staticOrder?.recycler || "Vựa phế liệu EcoGreen"
+  const session = getSession()
+  const displayCode = formatOrderDisplayCode(orderId)
+  const citizenName =
+    cachedOrder?.citizenName ||
+    (session?.role === "user" ? session.name : undefined) ||
+    `Người dân (${displayCode})`
+
+  const statusRaw = cachedOrder?.status || staticOrder?.status || "pending"
+  const isAccepted =
+    statusRaw === "accepted" || statusRaw === "collected" || statusRaw === "done"
+
+  const summaryItems = lines
+    .map((l) => {
+      const wName = WASTES.find((w) => w.id === l.wasteId)?.name ?? l.wasteId
+      return `${wName} (${l.kg} kg)`
+    })
+    .join(", ")
+
   const now = new Date()
   const initialThread: OrderChatThreadDto = {
     orderId,
     citizenUserId: "11111111-1111-1111-1111-111111111111",
-    citizenName: "Nguyễn Văn An",
-    recyclerUserId: "22222222-2222-2222-2222-222222222222",
-    facilityName: "Vựa phế liệu EcoGreen",
-    orderStatus: "Negotiating",
-    categoryCode: "plastic",
-    estimatedWeightKg: 12.5,
-    initialPricePerKg: 7000,
-    agreedPricePerKg: null,
-    proposedTimeSlot: "14:00 - 16:00",
-    confirmedTimeSlot: null,
+    citizenName,
+    recyclerUserId: cachedOrder?.recyclerId || "22222222-2222-2222-2222-222222222222",
+    facilityName,
+    pickupAddress,
+    orderStatus: isAccepted ? "Accepted" : "Pending",
+    categoryCode: lines[0]?.wasteId || "plastic",
+    estimatedWeightKg: totalWeight,
+    initialPricePerKg: initialPrice,
+    agreedPricePerKg: isAccepted ? agreedPrice || initialPrice : agreedPrice,
+    proposedTimeSlot: slot,
+    confirmedTimeSlot: isAccepted ? slot : null,
     scheduledAt: now.toISOString(),
-    acceptedAt: null,
-    isProposalLocked: false,
+    acceptedAt: isAccepted ? now.toISOString() : null,
+    isProposalLocked: isAccepted,
     isChatOpen: true,
     unreadCount: 0,
-    activeProposal: {
-      id: "prop-demo-01",
-      orderId,
-      senderUserId: "22222222-2222-2222-2222-222222222222",
-      senderName: "Vựa phế liệu EcoGreen",
-      senderRole: "Recycler",
-      messageType: "Proposal",
-      messageContent: "Chai PET sạch không lẫn nắp bên mình thu 7.500đ/kg chiều nay nhé!",
-      attachmentUrl: null,
-      proposal: {
-        proposedPricePerKg: 7500,
-        proposedWeightKg: 12.5,
-        proposedTimeSlot: "14:00 - 16:00",
-        note: "Chai PET sạch không lẫn nắp bên mình thu 7.500đ/kg chiều nay nhé!",
-        proposalStatus: "Pending",
-      },
-      isRead: true,
-      sentAt: new Date(now.getTime() - 10 * 60000).toISOString(),
-    },
+    activeProposal: null,
+    isOfflineFallback: true,
     messages: {
       items: [
         {
-          id: "msg-demo-01",
+          id: `sys-init-${orderId}`,
           orderId,
-          senderUserId: "22222222-2222-2222-2222-222222222222",
-          senderName: "Vựa phế liệu EcoGreen",
-          senderRole: "Recycler",
-          messageType: "Text",
-          messageContent:
-            "Chào bạn, vựa mình đang mở cửa nhận thu gom hôm nay. Bạn cần bán khoảng bao nhiêu kg và có phân loại sạch chưa ạ?",
-          isRead: true,
-          sentAt: new Date(now.getTime() - 25 * 60000).toISOString(),
-        },
-        {
-          id: "msg-demo-02",
-          orderId,
-          senderUserId: "11111111-1111-1111-1111-111111111111",
-          senderName: "Nguyễn Văn An",
-          senderRole: "Citizen",
-          messageType: "Text",
-          messageContent:
-            "Mình có khoảng 12.5kg vỏ chai PET sạch đã tráng nước và đóng bao tải sẵn. Khung giờ 14:00 - 16:00 vựa ghé đầu hẻm được không?",
-          isRead: true,
-          sentAt: new Date(now.getTime() - 15 * 60000).toISOString(),
-        },
-        {
-          id: "prop-demo-01",
-          orderId,
-          senderUserId: "22222222-2222-2222-2222-222222222222",
-          senderName: "Vựa phế liệu EcoGreen",
-          senderRole: "Recycler",
-          messageType: "Proposal",
-          messageContent: "Chai PET sạch không lẫn nắp bên mình thu 7.500đ/kg chiều nay nhé!",
-          proposal: {
-            proposedPricePerKg: 7500,
-            proposedWeightKg: 12.5,
-            proposedTimeSlot: "14:00 - 16:00",
-            note: "Chai PET sạch không lẫn nắp bên mình thu 7.500đ/kg chiều nay nhé!",
-            proposalStatus: "Pending",
-          },
+          senderUserId: "00000000-0000-0000-0000-000000000000",
+          senderName: "Hệ thống EcoLink",
+          senderRole: "System",
+          messageType: "System",
+          messageContent: `Đơn ${displayCode}: ${summaryItems} • Khung giờ đề xuất ${slot} • Điểm hẹn: ${pickupAddress}.`,
           isRead: true,
           sentAt: new Date(now.getTime() - 10 * 60000).toISOString(),
         },
       ],
       pageNumber: 1,
       pageSize: 50,
-      totalRecords: 3,
+      totalRecords: 1,
       totalPages: 1,
       hasPreviousPage: false,
       hasNextPage: false,

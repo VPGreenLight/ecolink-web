@@ -11,19 +11,34 @@ import {
   type Handover as HandoverItem,
 } from "@/data/handover"
 import { VND, WASTES, estimate } from "@/data/waste"
-import { LOCATION_PRESETS } from "@/lib/recyclerDiscoveryApi"
+import {
+  LOCATION_PRESETS,
+  searchNearbyRecyclers,
+  type CollectionPartnerDto,
+} from "@/lib/recyclerDiscoveryApi"
 import {
   createHandoverOrder,
-  fetchSyncedHandoverOrders,
+  fetchHandoverOrdersResult,
+  formatOrderDisplayCode,
+  updateHandoverOrderStatus,
+  updateHandoverOrderTimeSlot,
 } from "@/lib/recyclerWorkflowApi"
 
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
 
 type HandoverView = HandoverItem & {
+  displayCode: string
   pickupLat?: number
   pickupLng?: number
+  fromBackend?: boolean
 }
+
+const DEFAULT_OFFLINE_HANDOVERS: HandoverView[] = MY_HANDOVERS.map((m) => ({
+  ...m,
+  displayCode: formatOrderDisplayCode(m.id),
+  fromBackend: false,
+}))
 
 /** U-07 Tạo yêu cầu (kèm chấm điểm hẹn đầu ngõ `BR-MTH-05`) · U-08 Sửa / Huỷ yêu cầu.
  *
@@ -38,30 +53,36 @@ export default function Handover() {
   const prefilledWaste = searchParams.get("waste") ?? ""
 
   const [open, setOpen] = useState(() => Boolean(prefilledPartner || prefilledWaste))
-  const [list, setList] = useState<HandoverView[]>(MY_HANDOVERS)
+  const [list, setList] = useState<HandoverView[]>(DEFAULT_OFFLINE_HANDOVERS)
   const [editId, setEditId] = useState<string | null>(null)
   const [flash, setFlash] = useState("")
 
   useEffect(() => {
     let active = true
-    void fetchSyncedHandoverOrders("user").then((synced) => {
-      if (!active || synced.length === 0) return
-      const existingIds = new Set(MY_HANDOVERS.map((m) => m.id))
-      const fresh: HandoverView[] = synced
-        .filter((s) => !existingIds.has(s.id))
-        .map((s) => ({
-          id: s.id,
-          recycler: s.recycler,
-          address: s.address,
-          date: s.date,
-          slot: s.slot,
-          lines: s.lines,
-          status: s.status === "accepted" ? "accepted" : "pending",
-          pickupLat: s.pickupLat,
-          pickupLng: s.pickupLng,
-        }))
-      if (fresh.length > 0) {
-        setList([...fresh, ...MY_HANDOVERS])
+    void fetchHandoverOrdersResult("user").then((res) => {
+      if (!active) return
+      const mapped: HandoverView[] = res.orders.map((s) => ({
+        id: s.id,
+        displayCode: s.displayCode || formatOrderDisplayCode(s.id),
+        recycler: s.recycler,
+        address: s.address,
+        date: s.date,
+        slot: s.slot,
+        lines: s.lines,
+        status: s.status,
+        reason: s.reason,
+        pickupLat: s.pickupLat,
+        pickupLng: s.pickupLng,
+        fromBackend: s.fromBackend,
+      }))
+
+      if (res.fromBackend) {
+        // Khi kết nối PostgreSQL thành công: hiển thị đúng các đơn thật của tài khoản hiện tại
+        setList(mapped)
+      } else if (mapped.length > 0) {
+        const existingIds = new Set(DEFAULT_OFFLINE_HANDOVERS.map((m) => m.id))
+        const fresh = mapped.filter((s) => !existingIds.has(s.id))
+        setList([...fresh, ...DEFAULT_OFFLINE_HANDOVERS])
       }
     })
     return () => {
@@ -69,21 +90,28 @@ export default function Handover() {
     }
   }, [])
 
-  const reslot = (id: string, slot: string) => {
-    setList((ls) => ls.map((h) => (h.id === id ? { ...h, slot } : h)))
+  const reslot = async (h: HandoverView, slot: string) => {
+    setList((ls) => ls.map((item) => (item.id === h.id ? { ...item, slot } : item)))
     setEditId(null)
-    setFlash(`${id}: đã đổi khung giờ sang ${slot}. Người thu gom sẽ thấy giờ mới.`)
+    const res = await updateHandoverOrderTimeSlot(h.id, slot)
+    setFlash(
+      `${h.displayCode}: đã đổi khung giờ sang ${slot}${res.syncedWithBackend ? " (đã cập nhật CSDL)" : ""}. Người thu gom sẽ thấy giờ mới.`,
+    )
   }
 
-  const cancel = (h: HandoverView) => {
-    const reason = window.prompt(`Huỷ yêu cầu ${h.id}. Lý do (người thu gom sẽ thấy):`)
+  const cancel = async (h: HandoverView) => {
+    const reason = window.prompt(`Huỷ yêu cầu ${h.displayCode}. Lý do (người thu gom sẽ thấy):`)
     if (!reason?.trim()) return
+    const cleanReason = reason.trim()
     setList((ls) =>
       ls.map((x) =>
-        x.id === h.id ? { ...x, status: "cancelled", reason: reason.trim() } : x,
+        x.id === h.id ? { ...x, status: "cancelled", reason: cleanReason } : x,
       ),
     )
-    setFlash(`${h.id}: đã huỷ. Người thu gom sẽ không tới.`)
+    const res = await updateHandoverOrderStatus(h.id, "user", "Cancelled", cleanReason)
+    setFlash(
+      `${h.displayCode}: đã huỷ${res.syncedWithBackend ? " trên CSDL" : ""}. Người thu gom sẽ không tới.`,
+    )
   }
 
   return (
@@ -115,12 +143,12 @@ export default function Handover() {
           initialPartner={prefilledPartner}
           initialWasteId={prefilledWaste}
           onDone={(draft) => {
-            setList((ls) => [newRow(draft), ...ls])
+            setList((ls) => [newRow(draft), ...ls.filter((x) => x.id !== draft.id)])
             setOpen(false)
             setFlash(
               draft.recyclerName
-                ? `Đã gửi yêu cầu ${draft.orderCode} tới ${draft.recyclerName}${draft.syncedWithBackend ? " (đã lưu CSDL)" : ""}. Đối tác sẽ xác nhận khung giờ trong hôm nay.`
-                : `Đã gửi yêu cầu ${draft.orderCode}. Người thu gom sẽ xác nhận khung giờ trong hôm nay.`,
+                ? `Đã gửi yêu cầu ${draft.displayCode} tới ${draft.recyclerName}${draft.syncedWithBackend ? " (đã lưu PostgreSQL)" : ""}. Đối tác sẽ xác nhận khung giờ trong hôm nay.`
+                : `Đã gửi yêu cầu ${draft.displayCode}. Người thu gom sẽ xác nhận khung giờ trong hôm nay.`,
             )
           }}
         />
@@ -128,7 +156,7 @@ export default function Handover() {
 
       {list.length === 0 ? (
         <p className="card px-5 py-8 text-center text-sm text-muted">
-          Bạn chưa có yêu cầu nào. Bấm "Tạo yêu cầu mới" để đặt lịch thu gom.
+          Bạn chưa có yêu cầu nào trên hệ thống. Bấm "Tạo yêu cầu mới" để đặt lịch thu gom.
         </p>
       ) : (
         <ul className="flex flex-col gap-4">
@@ -141,7 +169,7 @@ export default function Handover() {
                     <Status tone={TONE[h.status]}>{STATUS_LABEL[h.status]}</Status>
                   </p>
                   <p className="mt-1 text-[13px] text-muted">
-                    {h.id} · {h.date} · {h.slot}
+                    {h.displayCode} · {h.date} · {h.slot}
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-2">
@@ -156,13 +184,13 @@ export default function Handover() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => cancel(h)}
+                        onClick={() => void cancel(h)}
                         className="btn-ghost h-9 px-3 text-[13px]"
                       >
                         Huỷ yêu cầu
                       </button>
                       <Link
-                        to={`/chat?orderId=${encodeURIComponent(h.id)}&partnerName=${encodeURIComponent(h.recycler)}`}
+                        to={`/chat?orderId=${encodeURIComponent(h.id)}&partnerName=${encodeURIComponent(h.recycler)}&partnerAddress=${encodeURIComponent(h.address)}`}
                         className="btn-outline h-9 px-3 text-[13px] font-medium text-brand"
                       >
                         Thương lượng giá &amp; giờ
@@ -171,7 +199,7 @@ export default function Handover() {
                   )}
                   {h.status === "accepted" && (
                     <Link
-                      to={`/chat?orderId=${encodeURIComponent(h.id)}&partnerName=${encodeURIComponent(h.recycler)}`}
+                      to={`/chat?orderId=${encodeURIComponent(h.id)}&partnerName=${encodeURIComponent(h.recycler)}&partnerAddress=${encodeURIComponent(h.address)}`}
                       className="btn-outline h-9 px-3 text-[13px]"
                     >
                       Nhắn đối tác (Hỏi đường)
@@ -235,7 +263,7 @@ export default function Handover() {
                         <button
                           key={s}
                           type="button"
-                          onClick={() => reslot(h.id, s)}
+                          onClick={() => void reslot(h, s)}
                           className="rounded-full border border-brand bg-white px-3.5 py-2 text-[13px] font-medium text-brand transition-colors hover:bg-brand/10"
                         >
                           {s}
@@ -260,6 +288,8 @@ export default function Handover() {
 }
 
 type Draft = {
+  id: string
+  displayCode: string
   orderCode: string
   syncedWithBackend: boolean
   rows: { wasteId: string; kg: number }[]
@@ -276,7 +306,8 @@ function newRow(d: Draft): HandoverView {
   const mm = String(now.getMonth() + 1).padStart(2, "0")
   const yyyy = now.getFullYear()
   return {
-    id: d.orderCode,
+    id: d.id,
+    displayCode: d.displayCode,
     recycler: d.recyclerName || "Vựa phế liệu EcoGreen",
     address: d.address,
     date: `${dd}/${mm}/${yyyy}`,
@@ -285,6 +316,7 @@ function newRow(d: Draft): HandoverView {
     status: "pending",
     pickupLat: d.pickupLat,
     pickupLng: d.pickupLng,
+    fromBackend: d.syncedWithBackend,
   }
 }
 
@@ -308,8 +340,44 @@ function CreateForm({
   const [address, setAddress] = useState("Đầu ngõ 24 Lý Tự Trọng, P. Bến Nghé, Quận 1")
   const [pickupLat, setPickupLat] = useState<number>(LOCATION_PRESETS[0].lat)
   const [pickupLng, setPickupLng] = useState<number>(LOCATION_PRESETS[0].lng)
+  const [partners, setPartners] = useState<CollectionPartnerDto[]>([])
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string>(
+    initialPartnerId || "22222222-2222-2222-2222-222222222222",
+  )
+  const [selectedPartnerName, setSelectedPartnerName] = useState<string>(
+    initialPartner || "Vựa phế liệu EcoGreen",
+  )
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState("")
+
+  useEffect(() => {
+    let active = true
+    void searchNearbyRecyclers({
+      lat: pickupLat,
+      lng: pickupLng,
+      radiusKm: 50,
+    })
+      .then((res) => {
+        if (!active) return
+        const items = res.data?.items ?? []
+        if (items.length > 0) {
+          setPartners(items)
+          if (!initialPartnerId) {
+            setSelectedPartnerId(items[0].id)
+            setSelectedPartnerName(items[0].facilityName)
+          } else {
+            const matched = items.find((p) => p.id === initialPartnerId)
+            if (matched) {
+              setSelectedPartnerName(matched.facilityName)
+            }
+          }
+        }
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [initialPartnerId, pickupLat, pickupLng])
 
   const set = (i: number, patch: Partial<{ wasteId: string; kg: number }>) =>
     setRows((r) => r.map((row, n) => (n === i ? { ...row, ...patch } : row)))
@@ -329,8 +397,8 @@ function CreateForm({
     setSubmitting(true)
     try {
       const result = await createHandoverOrder({
-        partnerId: initialPartnerId || undefined,
-        partnerName: initialPartner || undefined,
+        partnerId: selectedPartnerId || initialPartnerId || undefined,
+        partnerName: selectedPartnerName || initialPartner || undefined,
         rows: rows.map((r) => ({
           wasteId: r.wasteId,
           kg: r.kg,
@@ -343,6 +411,8 @@ function CreateForm({
       })
 
       onDone({
+        id: result.id,
+        displayCode: result.displayCode,
         orderCode: result.orderCode,
         syncedWithBackend: result.syncedWithBackend,
         rows,
@@ -350,7 +420,7 @@ function CreateForm({
         address,
         pickupLat,
         pickupLng,
-        recyclerName: initialPartner || undefined,
+        recyclerName: result.partnerName || selectedPartnerName || initialPartner || undefined,
       })
     } finally {
       setSubmitting(false)
@@ -363,12 +433,39 @@ function CreateForm({
     <form onSubmit={(e) => void submit(e)} noValidate className="card flex flex-col gap-5 p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-bold text-ink">Thông tin rác & điểm hẹn bàn giao</h2>
-        {initialPartner && (
-          <span className="rounded-full border border-brand/25 bg-brand/8 px-3 py-1 text-xs font-semibold text-brand-deep">
-            Đối tác đã chọn: {initialPartner}
-          </span>
-        )}
+        <span className="rounded-full border border-brand/25 bg-brand/8 px-3 py-1 text-xs font-semibold text-brand-deep">
+          Đối tác nhận đơn: {selectedPartnerName}
+        </span>
       </div>
+
+      <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+        Cơ sở thu mua tiếp nhận đơn
+        <select
+          className="input"
+          value={selectedPartnerId}
+          onChange={(e) => {
+            const nextId = e.target.value
+            setSelectedPartnerId(nextId)
+            const matched = partners.find((p) => p.id === nextId)
+            if (matched) {
+              setSelectedPartnerName(matched.facilityName)
+            } else if (nextId === "22222222-2222-2222-2222-222222222222") {
+              setSelectedPartnerName("Vựa phế liệu EcoGreen")
+            }
+          }}
+        >
+          {partners.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.facilityName} · {p.address}
+            </option>
+          ))}
+          {!partners.some((p) => p.id === "22222222-2222-2222-2222-222222222222") && (
+            <option value="22222222-2222-2222-2222-222222222222">
+              Vựa phế liệu EcoGreen (Cơ sở mặc định)
+            </option>
+          )}
+        </select>
+      </label>
 
       <ul className="flex flex-col gap-3">
         {rows.map((r, i) => (

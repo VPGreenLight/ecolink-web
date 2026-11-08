@@ -111,6 +111,10 @@ function readEffectiveAccessToken(): string | null {
   }
 }
 
+export function getResolvedApiHost(): string {
+  return resolvedHost ?? configuredBase ?? ""
+}
+
 export async function fetchWithAutoHost(path: string, init: RequestInit): Promise<Response> {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`
 

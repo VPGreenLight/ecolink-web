@@ -4,11 +4,12 @@ import type * as signalR from "@microsoft/signalr"
 import { PageHead } from "@/components/Portal"
 import { ADDRESS } from "@/data/map"
 import { TIME_SLOTS } from "@/data/handover"
-import { useRole } from "@/lib/session"
+import { useRole, useSession } from "@/lib/session"
 import {
   acceptOrderInitialTerms,
   createNegotiationChatConnection,
   getOrderChatThread,
+  isGuid,
   joinOrderChatRoom,
   leaveOrderChatRoom,
   markMessagesAsRead,
@@ -19,10 +20,14 @@ import {
   uploadChatAttachment,
 } from "@/lib/chatApi"
 import type { OrderChatThreadDto } from "@/lib/chatApi"
-import { fetchSyncedHandoverOrders } from "@/lib/recyclerWorkflowApi"
+import {
+  fetchHandoverOrdersResult,
+  formatOrderDisplayCode,
+} from "@/lib/recyclerWorkflowApi"
 
 export default function Chat() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const session = useSession()
   const role = useRole() || "user"
   const orderIdParam = searchParams.get("orderId")
   const partnerFromMap = searchParams.get("partnerName")
@@ -32,11 +37,11 @@ export default function Chat() {
   const [availableOrders, setAvailableOrders] = useState<
     Array<{ id: string; displayCode: string; partner: string; slot: string; status: string }>
   >([])
+  const [ordersLoaded, setOrdersLoaded] = useState(false)
+  const [backendConnected, setBackendConnected] = useState(false)
 
-  // Trạng thái đơn hiện tại
-  const [currentOrderId, setCurrentOrderId] = useState<string>(
-    orderIdParam || "demo-order-8f2b1c",
-  )
+  // Trạng thái đơn hiện tại: giữ nguyên orderId từ URL (hoặc chờ danh sách đơn thật từ PostgreSQL)
+  const [currentOrderId, setCurrentOrderId] = useState<string>(orderIdParam || "")
 
   const [thread, setThread] = useState<OrderChatThreadDto | null>(null)
   const [loading, setLoading] = useState(true)
@@ -72,46 +77,60 @@ export default function Chat() {
 
   const isRecycler = role === "recycler"
 
-  // 1. Tải danh sách đơn liên quan của người dùng
+  // 1. Tải danh sách đơn thật của tài khoản đang đăng nhập từ PostgreSQL
   useEffect(() => {
     let active = true
     async function loadOrders() {
       try {
-        const rawOrders = await fetchSyncedHandoverOrders(isRecycler ? "recycler" : "user")
+        const res = await fetchHandoverOrdersResult(isRecycler ? "recycler" : "user")
         if (!active) return
 
-        const formatted = (rawOrders || []).map((o) => {
+        setBackendConnected(res.fromBackend)
+        const formatted = (res.orders || []).map((o) => {
           const rawId = o.id || ""
-          const displayCode = rawId.startsWith("BH-")
-            ? rawId
-            : `BH-${rawId.slice(0, 6).toUpperCase()}`
+          const displayCode = o.displayCode || formatOrderDisplayCode(rawId)
           return {
             id: rawId,
             displayCode,
-            partner: o.recycler || (isRecycler ? "Người dân EcoLink" : "Vựa thu mua"),
+            partner: isRecycler
+              ? o.citizenName || `Người dân (${displayCode})`
+              : o.recycler || "Vựa thu mua EcoLink",
             slot: o.slot || "09:00 - 11:00",
             status: o.status || "pending",
           }
         })
 
         setAvailableOrders(formatted)
+        setOrdersLoaded(true)
 
-        // Nếu trên URL không có orderId, chọn đơn đầu tiên
-        if (!orderIdParam && formatted.length > 0) {
-          setCurrentOrderId(formatted[0].id)
-          setSearchParams(
-            (prev) => {
-              prev.set("orderId", formatted[0].id)
-              return prev
-            },
-            { replace: true },
-          )
+        if (!orderIdParam) {
+          if (formatted.length > 0) {
+            setCurrentOrderId(formatted[0].id)
+            setSearchParams(
+              (prev) => {
+                prev.set("orderId", formatted[0].id)
+                return prev
+              },
+              { replace: true },
+            )
+          } else if (!res.fromBackend) {
+            // Chỉ khi máy chủ thực sự ngoại tuyến mới chọn mã đơn mẫu để trình diễn
+            const offlineDefaultId = isRecycler ? "BH-2609-0199" : "BH-2609-0184"
+            setCurrentOrderId(offlineDefaultId)
+          } else {
+            // Tài khoản hiện tại chưa có đơn bàn giao nào trên PostgreSQL
+            setCurrentOrderId("")
+            setLoading(false)
+          }
         }
       } catch {
-        // Fallback
+        if (active) {
+          setOrdersLoaded(true)
+          setLoading(false)
+        }
       }
     }
-    loadOrders()
+    void loadOrders()
     return () => {
       active = false
     }
@@ -128,6 +147,13 @@ export default function Chat() {
   useEffect(() => {
     let active = true
     async function loadThread() {
+      if (!currentOrderId) {
+        if (ordersLoaded) {
+          setThread(null)
+          setLoading(false)
+        }
+        return
+      }
       setLoading(true)
       setErrorMsg(null)
       try {
@@ -153,13 +179,11 @@ export default function Chat() {
       }
     }
 
-    if (currentOrderId) {
-      loadThread()
-    }
+    void loadThread()
     return () => {
       active = false
     }
-  }, [currentOrderId])
+  }, [currentOrderId, ordersLoaded])
 
   // Tự động cuộn xuống cuối khi có tin nhắn mới
   useEffect(() => {
@@ -168,8 +192,6 @@ export default function Chat() {
 
   // 3. Khởi tạo kết nối thời gian thực SignalR Hub
   useEffect(() => {
-    if (!currentOrderId) return
-
     const hub = createNegotiationChatConnection({
       onReceiveMessage: (payload) => {
         if (payload.orderId === currentOrderId) {
@@ -283,7 +305,12 @@ export default function Chat() {
         }
       },
       onReconnecting: () => setConnectionStatus("reconnecting"),
-      onReconnected: () => setConnectionStatus("connected"),
+      onReconnected: () => {
+        setConnectionStatus("connected")
+        if (hub && isGuid(currentOrderId)) {
+          joinOrderChatRoom(hub, currentOrderId).catch(() => {})
+        }
+      },
       onClose: () => setConnectionStatus("disconnected"),
     })
 
@@ -294,14 +321,18 @@ export default function Chat() {
       .start()
       .then(() => {
         setConnectionStatus("connected")
-        return joinOrderChatRoom(hub, currentOrderId)
+        if (isGuid(currentOrderId)) {
+          return joinOrderChatRoom(hub, currentOrderId).catch(() => {})
+        }
       })
       .catch(() => {
         setConnectionStatus("disconnected")
       })
 
     return () => {
-      leaveOrderChatRoom(hub, currentOrderId).catch(() => {})
+      if (isGuid(currentOrderId)) {
+        leaveOrderChatRoom(hub, currentOrderId).catch(() => {})
+      }
       hub.stop().catch(() => {})
       hubRef.current = null
     }
@@ -500,13 +531,18 @@ export default function Chat() {
     }
   }
 
-  const partnerDisplayName = isRecycler
-    ? thread?.citizenName || "Người dân EcoLink"
-    : thread?.facilityName || partnerFromMap || "Vựa phế liệu EcoGreen"
-  const partnerAddress = addressFromMap || ADDRESS
-  const orderDisplayCode = currentOrderId.startsWith("BH-")
-    ? currentOrderId
-    : `BH-${currentOrderId.slice(0, 6).toUpperCase()}`
+  const partnerDisplayName = !currentOrderId
+    ? isRecycler
+      ? "Chưa có đơn bàn giao"
+      : partnerFromMap || "Chưa có đơn bàn giao"
+    : isRecycler
+      ? thread?.citizenName || "Người dân EcoLink"
+      : thread?.facilityName || partnerFromMap || "Vựa phế liệu EcoGreen"
+  const partnerAddress =
+    thread?.pickupAddress || addressFromMap || (currentOrderId ? ADDRESS : "Chưa chọn điểm hẹn")
+  const orderDisplayCode = currentOrderId
+    ? formatOrderDisplayCode(currentOrderId)
+    : "Chưa chọn đơn"
 
   // Tính tiền ước tính
   const activePrice = thread?.agreedPricePerKg || thread?.initialPricePerKg || 7000
@@ -542,7 +578,7 @@ export default function Chat() {
 
           <div className="flex flex-wrap items-center gap-2">
             {/* Bộ chọn đổi đơn nếu có nhiều đơn */}
-            {availableOrders.length > 1 && (
+            {availableOrders.length > 0 && (
               <select
                 aria-label="Chọn đơn bàn giao cần thương lượng"
                 value={currentOrderId}
@@ -557,7 +593,7 @@ export default function Chat() {
                     { replace: true },
                   )
                 }}
-                className="input h-9 text-xs py-1 px-2.5 max-w-[200px]"
+                className="input h-9 text-xs py-1 px-2.5 max-w-[230px]"
               >
                 {availableOrders.map((o) => (
                   <option key={o.id} value={o.id}>
@@ -596,92 +632,111 @@ export default function Chat() {
         </header>
 
         {/* Thanh Điều Khoản Đang Thương Lượng / Đã Khóa */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line bg-surface-2/60 px-5 py-3 text-xs">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <div>
-              <span className="text-muted block text-[11px]">Đơn giá thu mua:</span>
-              <p className="font-bold text-ink text-sm">
-                {thread?.agreedPricePerKg ? (
-                  <span className="text-brand">
-                    {thread.agreedPricePerKg.toLocaleString("vi-VN")} đ/kg{" "}
-                    <span className="text-[11px] font-normal text-muted">(Đã chốt)</span>
-                  </span>
-                ) : (
-                  <span>
-                    {(thread?.initialPricePerKg ?? 7000).toLocaleString("vi-VN")} đ/kg
-                    {thread?.activeProposal?.proposal?.proposedPricePerKg && (
-                      <span className="ml-1 text-amber-600 font-semibold">
-                        → {thread.activeProposal.proposal.proposedPricePerKg.toLocaleString("vi-VN")} đ
-                      </span>
-                    )}
-                  </span>
-                )}
-              </p>
+        {currentOrderId && (
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line bg-surface-2/60 px-5 py-3 text-xs">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <div>
+                <span className="text-muted block text-[11px]">Đơn giá thu mua:</span>
+                <p className="font-bold text-ink text-sm">
+                  {thread?.agreedPricePerKg ? (
+                    <span className="text-brand">
+                      {thread.agreedPricePerKg.toLocaleString("vi-VN")} đ/kg{" "}
+                      <span className="text-[11px] font-normal text-muted">(Đã chốt)</span>
+                    </span>
+                  ) : (
+                    <span>
+                      {(thread?.initialPricePerKg ?? 7000).toLocaleString("vi-VN")} đ/kg
+                      {thread?.activeProposal?.proposal?.proposedPricePerKg && (
+                        <span className="ml-1 text-amber-600 font-semibold">
+                          → {thread.activeProposal.proposal.proposedPricePerKg.toLocaleString("vi-VN")} đ
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              <div>
+                <span className="text-muted block text-[11px]">Khối lượng ước tính:</span>
+                <p className="font-bold text-ink text-sm">
+                  {activeWeight} kg
+                </p>
+              </div>
+
+              <div>
+                <span className="text-muted block text-[11px]">Khung giờ hẹn thu gom:</span>
+                <p className="font-bold text-ink text-sm flex items-center gap-1">
+                  {thread?.confirmedTimeSlot ? (
+                    <span className="text-brand">
+                      🔒 {thread.confirmedTimeSlot}
+                    </span>
+                  ) : (
+                    <span className="text-body">
+                      🕒 {thread?.proposedTimeSlot || "09:00 - 11:00"}
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              <div>
+                <span className="text-muted block text-[11px]">Thành tiền ước tính:</span>
+                <p className="font-bold text-brand-deep text-sm">
+                  ~ {estimatedTotal.toLocaleString("vi-VN")} đ
+                </p>
+              </div>
             </div>
 
-            <div>
-              <span className="text-muted block text-[11px]">Khối lượng ước tính:</span>
-              <p className="font-bold text-ink text-sm">
-                {activeWeight} kg
-              </p>
-            </div>
-
-            <div>
-              <span className="text-muted block text-[11px]">Khung giờ hẹn thu gom:</span>
-              <p className="font-bold text-ink text-sm flex items-center gap-1">
-                {thread?.confirmedTimeSlot ? (
-                  <span className="text-brand">
-                    🔒 {thread.confirmedTimeSlot}
-                  </span>
-                ) : (
-                  <span className="text-body">
-                    🕒 {thread?.proposedTimeSlot || "09:00 - 11:00"}
-                  </span>
-                )}
-              </p>
-            </div>
-
-            <div>
-              <span className="text-muted block text-[11px]">Thành tiền ước tính:</span>
-              <p className="font-bold text-brand-deep text-sm">
-                ~ {estimatedTotal.toLocaleString("vi-VN")} đ
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {thread?.isProposalLocked ? (
-              <span className="badge bg-emerald-100 text-emerald-800 text-xs px-3 py-1 font-medium">
-                ✓ Lịch hẹn &amp; Điều khoản đã khóa
-              </span>
-            ) : (
-              <>
-                {isRecycler && thread?.orderStatus === "Pending" && (
+            <div className="flex items-center gap-2">
+              {thread?.isProposalLocked ? (
+                <span className="badge bg-emerald-100 text-emerald-800 text-xs px-3 py-1 font-medium">
+                  ✓ Lịch hẹn &amp; Điều khoản đã khóa
+                </span>
+              ) : (
+                <>
+                  {isRecycler && thread?.orderStatus === "Pending" && (
+                    <button
+                      type="button"
+                      onClick={handleAcceptInitialTerms}
+                      className="btn-primary h-8 px-3 text-xs"
+                    >
+                      Chốt lịch hẹn ban đầu
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={handleAcceptInitialTerms}
-                    className="btn-primary h-8 px-3 text-xs"
+                    onClick={() => setIsProposalModalOpen(true)}
+                    className="btn-outline h-8 px-3 text-xs font-semibold text-brand"
                   >
-                    Chốt lịch hẹn ban đầu
+                    ⚡ Đề xuất giá &amp; giờ mới
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setIsProposalModalOpen(true)}
-                  className="btn-outline h-8 px-3 text-xs font-semibold text-brand"
-                >
-                  ⚡ Đề xuất giá &amp; giờ mới
-                </button>
-              </>
-            )}
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* 2. Cuộc hội thoại tin nhắn */}
         <div className="flex h-[480px] flex-col gap-3 overflow-y-auto p-5 bg-surface-1">
           {loading ? (
             <div className="flex h-full items-center justify-center text-sm text-muted">
               Đang tải lịch sử thương lượng...
+            </div>
+          ) : !currentOrderId && ordersLoaded && backendConnected ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-center px-4">
+              <p className="text-base font-bold text-ink">
+                Tài khoản hiện tại chưa có đơn bàn giao nào để thương lượng
+              </p>
+              <p className="max-w-[52ch] text-xs leading-relaxed text-muted">
+                {isRecycler
+                  ? "Khi người dân tạo yêu cầu bàn giao gửi tới cơ sở của bạn trên hệ thống, đơn sẽ tự động xuất hiện tại đây và tại mục Yêu cầu bàn giao."
+                  : "Hãy tạo một yêu cầu bàn giao phế liệu mới hoặc chọn điểm thu gom trên bản đồ để bắt đầu thương lượng giá và khung giờ thời gian thực."}
+              </p>
+              <Link
+                to={isRecycler ? "/recycler/requests" : "/user/handover"}
+                className="btn-primary h-10 px-5 text-xs font-semibold"
+              >
+                {isRecycler ? "Đi tới Tiếp nhận yêu cầu" : "Tạo yêu cầu bàn giao mới"}
+              </Link>
             </div>
           ) : errorMsg ? (
             <div className="p-4 rounded-xl bg-amber-50 text-amber-800 text-sm border border-amber-200">
@@ -695,6 +750,7 @@ export default function Chat() {
 
               {(thread?.messages.items || []).map((m) => {
                 const isMe =
+                  Boolean(session?.id && m.senderUserId === session.id) ||
                   (role === "user" && m.senderRole === "Citizen") ||
                   (role === "recycler" && m.senderRole === "Recycler")
 
@@ -908,7 +964,7 @@ export default function Chat() {
           />
           <button
             type="button"
-            disabled={uploadingImage}
+            disabled={!currentOrderId || uploadingImage}
             onClick={() => fileInputRef.current?.click()}
             className="btn-ghost size-10 shrink-0 p-0 text-body hover:text-brand"
             title="Gửi ảnh chụp thực tế tình trạng phế liệu (Cloudflare R2)"
@@ -917,7 +973,7 @@ export default function Chat() {
           </button>
 
           {/* Nút gửi đề xuất nhanh nếu chưa khóa */}
-          {!thread?.isProposalLocked && (
+          {currentOrderId && !thread?.isProposalLocked && (
             <button
               type="button"
               onClick={() => setIsProposalModalOpen(true)}
@@ -930,6 +986,7 @@ export default function Chat() {
 
           <input
             value={draft}
+            disabled={!currentOrderId}
             onChange={(e) => {
               const val = e.target.value
               setDraft(val)
@@ -938,16 +995,18 @@ export default function Chat() {
               }
             }}
             placeholder={
-              thread?.isProposalLocked
-                ? `Nhắn tin hỏi đường hoặc trao đổi địa điểm với ${partnerDisplayName}...`
-                : `Nhắn tin trao đổi với ${partnerDisplayName}...`
+              !currentOrderId
+                ? "Hãy chọn hoặc tạo một đơn bàn giao để bắt đầu trò chuyện..."
+                : thread?.isProposalLocked
+                  ? `Nhắn tin hỏi đường hoặc trao đổi địa điểm với ${partnerDisplayName}...`
+                  : `Nhắn tin trao đổi với ${partnerDisplayName}...`
             }
             className="input h-10 flex-1 text-sm"
           />
 
           <button
             type="submit"
-            disabled={!draft.trim() || sending}
+            disabled={!currentOrderId || !draft.trim() || sending}
             className="btn-primary h-10 shrink-0 px-5 text-sm"
           >
             {sending ? "Đang gửi..." : "Gửi"}
