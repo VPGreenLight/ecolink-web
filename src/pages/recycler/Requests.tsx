@@ -11,15 +11,28 @@ import {
   type Handover as HandoverItem,
 } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
-import { fetchSyncedHandoverOrders } from "@/lib/recyclerWorkflowApi"
+import {
+  fetchHandoverOrdersResult,
+  formatOrderDisplayCode,
+  updateHandoverOrderStatus,
+} from "@/lib/recyclerWorkflowApi"
 
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
 
 type IncomingView = HandoverItem & {
+  displayCode: string
+  citizenName?: string
   pickupLat?: number
   pickupLng?: number
+  fromBackend?: boolean
 }
+
+const DEFAULT_OFFLINE_INCOMING: IncomingView[] = INCOMING.map((item) => ({
+  ...item,
+  displayCode: formatOrderDisplayCode(item.id),
+  fromBackend: false,
+}))
 
 /** R-03 Tiếp nhận / Từ chối yêu cầu bàn giao (kèm xem ghim điểm hẹn đầu ngõ của Người dân).
  *
@@ -27,30 +40,38 @@ type IncomingView = HandoverItem & {
  *  gian. Đã cam kết rồi mà đổi lịch thì phải qua R-04 (huỷ kèm lý do) chứ
  *  không sửa lặng lẽ. */
 export default function Requests() {
-  const [list, setList] = useState<IncomingView[]>(INCOMING)
+  const [list, setList] = useState<IncomingView[]>(DEFAULT_OFFLINE_INCOMING)
   const [busy, setBusy] = useState("")
+  const [flash, setFlash] = useState("")
   const [openMapId, setOpenMapId] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
-    void fetchSyncedHandoverOrders("recycler").then((synced) => {
-      if (!active || synced.length === 0) return
-      const existingIds = new Set(INCOMING.map((x) => x.id))
-      const fresh: IncomingView[] = synced
-        .filter((s) => !existingIds.has(s.id))
-        .map((s) => ({
-          id: s.id,
-          recycler: s.recycler,
-          address: s.address,
-          date: s.date,
-          slot: s.slot,
-          lines: s.lines,
-          status: s.status === "accepted" ? "accepted" : "pending",
-          pickupLat: s.pickupLat,
-          pickupLng: s.pickupLng,
-        }))
-      if (fresh.length > 0) {
-        setList([...fresh, ...INCOMING])
+    void fetchHandoverOrdersResult("recycler").then((res) => {
+      if (!active) return
+      const mapped: IncomingView[] = res.orders.map((s) => ({
+        id: s.id,
+        displayCode: s.displayCode || formatOrderDisplayCode(s.id),
+        citizenName: s.citizenName,
+        recycler: s.recycler,
+        address: s.address,
+        date: s.date,
+        slot: s.slot,
+        lines: s.lines,
+        status: s.status,
+        reason: s.reason,
+        pickupLat: s.pickupLat,
+        pickupLng: s.pickupLng,
+        fromBackend: s.fromBackend,
+      }))
+
+      if (res.fromBackend) {
+        // Khi kết nối PostgreSQL thành công: hiển thị đúng các đơn bàn giao thật gửi tới vựa hiện tại
+        setList(mapped)
+      } else if (mapped.length > 0) {
+        const existingIds = new Set(DEFAULT_OFFLINE_INCOMING.map((x) => x.id))
+        const fresh = mapped.filter((s) => !existingIds.has(s.id))
+        setList([...fresh, ...DEFAULT_OFFLINE_INCOMING])
       }
     })
     return () => {
@@ -58,17 +79,51 @@ export default function Requests() {
     }
   }, [])
 
-  const act = (id: string, next: "accepted" | "declined") => {
-    setList((ls) => ls.map((l) => (l.id === id ? { ...l, status: next } : l)))
+  const act = async (h: IncomingView, next: "accepted" | "declined") => {
+    setBusy(h.id)
+    try {
+      setList((ls) => ls.map((l) => (l.id === h.id ? { ...l, status: next } : l)))
+      const res = await updateHandoverOrderStatus(
+        h.id,
+        "recycler",
+        next === "accepted" ? "Accepted" : "Rejected",
+      )
+      setFlash(
+        next === "accepted"
+          ? `Đã tiếp nhận đơn ${h.displayCode} và chốt khung giờ ${h.slot}${res.syncedWithBackend ? " (đã lưu PostgreSQL)" : ""}.`
+          : `Đã từ chối đơn ${h.displayCode}${res.syncedWithBackend ? " (đã cập nhật PostgreSQL)" : ""}.`,
+      )
+    } finally {
+      setBusy("")
+    }
   }
 
   /** R-04 huỷ lịch giữa chừng: bắt buộc có lý do vì người dùng đang chờ. */
-  const cancel = (id: string) => {
-    const reason = window.prompt("Lý do huỷ lịch thu gom (người dùng sẽ thấy lý do này):")
-    if (!reason?.trim()) return
-    setList((ls) =>
-      ls.map((l) => (l.id === id ? { ...l, status: "broken", reason: reason.trim() } : l)),
+  const cancel = async (h: IncomingView) => {
+    const reason = window.prompt(
+      `Lý do huỷ lịch thu gom ${h.displayCode} (người dùng sẽ thấy lý do này):`,
     )
+    if (!reason?.trim()) return
+    const cleanReason = reason.trim()
+    setBusy(h.id)
+    try {
+      setList((ls) =>
+        ls.map((l) =>
+          l.id === h.id ? { ...l, status: "broken", reason: cleanReason } : l,
+        ),
+      )
+      const res = await updateHandoverOrderStatus(
+        h.id,
+        "recycler",
+        "Cancelled",
+        cleanReason,
+      )
+      setFlash(
+        `Đã huỷ lịch thu gom ${h.displayCode}${res.syncedWithBackend ? " trên PostgreSQL" : ""}.`,
+      )
+    } finally {
+      setBusy("")
+    }
   }
 
   const pending = list.filter((h) => h.status === "pending")
@@ -82,13 +137,19 @@ export default function Requests() {
         body="Nhận yêu cầu nghĩa là bạn cam kết tới đúng khung giờ và điểm hẹn người dân đã ghim. Không tới được thì huỷ kèm lý do, họ sẽ tìm người khác."
       />
 
+      {flash && (
+        <p role="status" className="text-[13px] font-semibold text-brand">
+          {flash}
+        </p>
+      )}
+
       <section>
         <h2 className="text-base font-bold text-ink">
           Chờ bạn xác nhận ({pending.length})
         </h2>
         {pending.length === 0 ? (
           <p className="card mt-3 px-5 py-8 text-center text-sm text-muted">
-            Không có yêu cầu nào đang chờ.
+            Không có yêu cầu nào đang chờ xác nhận.
           </p>
         ) : (
           <ul className="mt-3 flex flex-col gap-4">
@@ -102,8 +163,9 @@ export default function Requests() {
                     <div className="min-w-0">
                       <p className="font-bold text-ink">{h.address}</p>
                       <p className="mt-0.5 text-[13px] text-muted">
-                        {h.id} · {h.date} · Khung giờ đề xuất:{" "}
-                        <b className="text-ink">{h.slot}</b>
+                        {h.displayCode}
+                        {h.citizenName ? ` · Người gửi: ${h.citizenName}` : ""} · {h.date} · Khung
+                        giờ đề xuất: <b className="text-ink">{h.slot}</b>
                       </p>
                     </div>
                     <p className="shrink-0 text-base font-bold tabular-nums text-brand">
@@ -141,7 +203,7 @@ export default function Requests() {
                       lat={h.pickupLat!}
                       lng={h.pickupLng!}
                       readOnly
-                      pinTitle={`Điểm hẹn ${h.id}`}
+                      pinTitle={`Điểm hẹn ${h.displayCode}`}
                       heightClass="h-[200px]"
                     />
                   )}
@@ -150,10 +212,7 @@ export default function Requests() {
                     <button
                       type="button"
                       disabled={busy === h.id}
-                      onClick={() => {
-                        setBusy(h.id)
-                        act(h.id, "accepted")
-                      }}
+                      onClick={() => void act(h, "accepted")}
                       className="btn-primary h-11 px-6"
                     >
                       Nhận và chốt khung giờ
@@ -167,7 +226,7 @@ export default function Requests() {
                     <button
                       type="button"
                       disabled={busy === h.id}
-                      onClick={() => act(h.id, "declined")}
+                      onClick={() => void act(h, "declined")}
                       className="btn-ghost h-11 px-5"
                     >
                       Từ chối
@@ -183,52 +242,64 @@ export default function Requests() {
       <section>
         <h2 className="text-base font-bold text-ink">Lịch đã nhận</h2>
         <div className="mt-3">
-          <Table head={["Mã", "Địa chỉ", "Khung giờ", "Tiền ước tính", "Trạng thái", "Thao tác"]}>
-            {active.map((h) => (
-              <tr key={h.id}>
-                <Td className="tabular-nums whitespace-nowrap">{h.id}</Td>
-                <Td>{h.address}</Td>
-                <Td className="whitespace-nowrap">
-                  {h.date} · {h.slot}
-                </Td>
-                <Td className="tabular-nums whitespace-nowrap">
-                  {VND(calc(h, priceOf).gross)}
-                </Td>
-                <Td>
-                  <Status tone={TONE[h.status]}>{STATUS_LABEL[h.status]}</Status>
-                </Td>
-                <Td>
-                  {h.status === "collected" ? (
-                    <Link
-                      to="/recycler/receipt"
-                      className="text-[13px] font-semibold text-brand hover:text-brand-deep"
-                    >
-                      Tạo biên nhận
-                    </Link>
-                  ) : h.status === "accepted" ? (
-                    <div className="flex items-center gap-2 whitespace-nowrap">
+          {active.length === 0 ? (
+            <p className="card px-5 py-6 text-center text-sm text-muted">
+              Chưa có lịch hẹn nào đã nhận.
+            </p>
+          ) : (
+            <Table head={["Mã", "Địa chỉ", "Khung giờ", "Tiền ước tính", "Trạng thái", "Thao tác"]}>
+              {active.map((h) => (
+                <tr key={h.id}>
+                  <Td className="tabular-nums whitespace-nowrap">{h.displayCode}</Td>
+                  <Td>
+                    <div>{h.address}</div>
+                    {h.citizenName && (
+                      <div className="text-xs text-muted">Người gửi: {h.citizenName}</div>
+                    )}
+                  </Td>
+                  <Td className="whitespace-nowrap">
+                    {h.date} · {h.slot}
+                  </Td>
+                  <Td className="tabular-nums whitespace-nowrap">
+                    {VND(calc(h, priceOf).gross)}
+                  </Td>
+                  <Td>
+                    <Status tone={TONE[h.status]}>{STATUS_LABEL[h.status]}</Status>
+                  </Td>
+                  <Td>
+                    {h.status === "collected" ? (
                       <Link
-                        to={`/chat?orderId=${encodeURIComponent(h.id)}`}
-                        className="text-[13px] font-semibold text-brand hover:underline"
+                        to="/recycler/receipt"
+                        className="text-[13px] font-semibold text-brand hover:text-brand-deep"
                       >
-                        Hỏi đường
+                        Tạo biên nhận
                       </Link>
-                      <span className="text-muted">·</span>
-                      <button
-                        type="button"
-                        onClick={() => cancel(h.id)}
-                        className="text-[13px] font-semibold text-warn hover:underline"
-                      >
-                        Huỷ lịch
-                      </button>
-                    </div>
-                  ) : (
-                    <span className="text-[13px] text-muted">—</span>
-                  )}
-                </Td>
-              </tr>
-            ))}
-          </Table>
+                    ) : h.status === "accepted" ? (
+                      <div className="flex items-center gap-2 whitespace-nowrap">
+                        <Link
+                          to={`/chat?orderId=${encodeURIComponent(h.id)}`}
+                          className="text-[13px] font-semibold text-brand hover:underline"
+                        >
+                          Hỏi đường
+                        </Link>
+                        <span className="text-muted">·</span>
+                        <button
+                          type="button"
+                          disabled={busy === h.id}
+                          onClick={() => void cancel(h)}
+                          className="text-[13px] font-semibold text-warn hover:underline"
+                        >
+                          Huỷ lịch
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[13px] text-muted">—</span>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </Table>
+          )}
         </div>
       </section>
 

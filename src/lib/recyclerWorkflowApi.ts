@@ -81,9 +81,15 @@ export interface AvailabilityDto {
   activePriceCount: number
 }
 
+export interface TradeOrderLineApiDto {
+  wasteId: string
+  kg: number
+}
+
 export interface TradeOrderApiDto {
   id: string
   userId: string
+  citizenName?: string | null
   partnerId: string
   recyclerUserId?: string | null
   partnerName?: string | null
@@ -92,11 +98,15 @@ export interface TradeOrderApiDto {
   estimatedWeightKg: number
   categoryCode?: string | null
   initialPricePerKg?: number | null
+  agreedPricePerKg?: number | null
   proposedTimeSlot?: string | null
+  confirmedTimeSlot?: string | null
   pickupAddress?: string | null
   pickupLatitude?: number | null
   pickupLongitude?: number | null
   note?: string | null
+  cancelReason?: string | null
+  lines?: TradeOrderLineApiDto[] | null
   qrCodeValue: string
 }
 
@@ -134,6 +144,8 @@ interface LocalWorkflowSyncState {
   /** Đơn hẹn bàn giao rác mới tạo có kèm toạ độ điểm hẹn đầu ngõ */
   handoverOrders: {
     id: string
+    displayCode?: string
+    citizenName?: string
     recyclerId?: string
     recycler: string
     address: string
@@ -142,7 +154,9 @@ interface LocalWorkflowSyncState {
     date: string
     slot: string
     lines: { wasteId: string; kg: number }[]
-    status: "pending" | "accepted" | "declined" | "broken"
+    initialPricePerKg?: number
+    agreedPricePerKg?: number
+    status: "pending" | "accepted" | "collected" | "done" | "cancelled" | "declined" | "broken"
     reason?: string
   }[]
 }
@@ -712,18 +726,109 @@ const WASTE_ID_TO_CATEGORY: Record<string, string> = {
   pet: "plastic",
   hdpe: "plastic",
   carton: "cardboard",
+  "office-paper": "paper",
   paper: "paper",
+  aluminum: "metal",
   alu: "metal",
   steel: "metal",
   glass: "glass",
+  battery: "trash",
+  circuit: "trash",
+  organic: "trash",
 }
 
 const CATEGORY_TO_WASTE_ID: Record<string, string> = {
   plastic: "pet",
   cardboard: "carton",
-  paper: "paper",
-  metal: "alu",
+  paper: "office-paper",
+  metal: "aluminum",
   glass: "glass",
+  trash: "battery",
+}
+
+export function formatOrderDisplayCode(id: string): string {
+  const trimmed = (id ?? "").trim()
+  if (!trimmed) return "BH-000000"
+  if (trimmed.toUpperCase().startsWith("BH-")) return trimmed.toUpperCase()
+  const compact = trimmed.replace(/-/g, "").slice(0, 6).toUpperCase()
+  return `BH-${compact || "000000"}`
+}
+
+export type HandoverUiStatus =
+  | "pending"
+  | "accepted"
+  | "collected"
+  | "done"
+  | "cancelled"
+  | "declined"
+  | "broken"
+
+export interface SyncedHandoverOrder {
+  /** UUID (Guid) thật trên PostgreSQL (hoặc mã cục bộ khi máy chủ tắt) */
+  id: string
+  /** Mã rút gọn thân thiện hiển thị trên giao diện (VD: BH-A3F18C) */
+  displayCode: string
+  citizenName?: string
+  recyclerId?: string
+  recycler: string
+  address: string
+  pickupLat?: number
+  pickupLng?: number
+  date: string
+  slot: string
+  lines: { wasteId: string; kg: number }[]
+  initialPricePerKg?: number
+  agreedPricePerKg?: number
+  status: HandoverUiStatus
+  reason?: string
+  fromBackend?: boolean
+}
+
+function mapBackendOrderStatus(rawStatus?: string | null, hasReason?: boolean): HandoverUiStatus {
+  const s = (rawStatus ?? "").trim().toLowerCase()
+  if (s === "accepted" || s === "scheduled") return "accepted"
+  if (s === "completed" || s === "done") return "done"
+  if (s === "collected") return "collected"
+  if (s === "rejected" || s === "declined") return "declined"
+  if (s === "cancelled" || s === "canceled" || s === "expired") {
+    return hasReason ? "cancelled" : "cancelled"
+  }
+  return "pending"
+}
+
+function mapApiOrderToSynced(o: TradeOrderApiDto): SyncedHandoverOrder {
+  const fallbackWasteId = o.categoryCode
+    ? (CATEGORY_TO_WASTE_ID[o.categoryCode.toLowerCase()] ?? "pet")
+    : "pet"
+
+  const mappedLines =
+    Array.isArray(o.lines) && o.lines.length > 0
+      ? o.lines.map((l) => ({
+          wasteId: l.wasteId === "alu" ? "aluminum" : l.wasteId === "paper" ? "office-paper" : l.wasteId,
+          kg: Number(l.kg) || 1,
+        }))
+      : [{ wasteId: fallbackWasteId, kg: Number(o.estimatedWeightKg) || 5 }]
+
+  return {
+    id: o.id,
+    displayCode: formatOrderDisplayCode(o.id),
+    citizenName: o.citizenName?.trim() || undefined,
+    recyclerId: o.recyclerUserId || o.partnerId,
+    recycler: o.partnerName?.trim() || "Cơ sở thu mua EcoLink",
+    address: o.pickupAddress?.trim() || "Điểm hẹn bàn giao",
+    pickupLat: o.pickupLatitude ?? undefined,
+    pickupLng: o.pickupLongitude ?? undefined,
+    date: formatDateVi(o.scheduledAt),
+    slot: o.confirmedTimeSlot || o.proposedTimeSlot || "09:00 - 11:00",
+    lines: mappedLines,
+    initialPricePerKg:
+      typeof o.initialPricePerKg === "number" ? Number(o.initialPricePerKg) : undefined,
+    agreedPricePerKg:
+      typeof o.agreedPricePerKg === "number" ? Number(o.agreedPricePerKg) : undefined,
+    status: mapBackendOrderStatus(o.status, Boolean(o.cancelReason)),
+    reason: o.cancelReason ?? undefined,
+    fromBackend: true,
+  }
 }
 
 export interface CreateHandoverInput {
@@ -737,8 +842,12 @@ export interface CreateHandoverInput {
 }
 
 export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
+  id: string
+  displayCode: string
   orderCode: string
   syncedWithBackend: boolean
+  partnerName?: string
+  citizenName?: string
 }> {
   const totalKg = input.rows.reduce((sum, r) => sum + r.kg, 0)
   const primary = input.rows[0]
@@ -753,7 +862,10 @@ export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
   const mm = String(now.getMonth() + 1).padStart(2, "0")
   const yyyy = now.getFullYear()
 
-  let orderCode = `BH-${yyyy.toString().slice(-2)}${mm}-${String(Date.now()).slice(-4)}`
+  let orderId = `BH-${yyyy.toString().slice(-2)}${mm}-${String(Date.now()).slice(-4)}`
+  let displayCode = orderId
+  let resolvedPartnerName = input.partnerName || "Vựa phế liệu EcoGreen"
+  let resolvedCitizenName = getSession()?.name || undefined
   let syncedWithBackend = false
 
   try {
@@ -764,18 +876,27 @@ export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
         scheduledAt: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
         estimatedWeightKg: totalKg,
         categoryCode,
-        initialPricePerKg: primary?.unitPrice ?? 7000,
+        initialPricePerKg: primary?.unitPrice ?? 5500,
         proposedTimeSlot: input.slot,
         pickupAddress: input.pickupAddress.trim(),
         pickupLatitude: input.pickupLat,
         pickupLongitude: input.pickupLng,
+        lines: input.rows.map((r) => ({ wasteId: r.wasteId, kg: r.kg })),
         note: `Điểm hẹn bàn giao đầu ngõ/sảnh đã ghim trên bản đồ`,
       }),
     })
 
     const createdId = res.data?.id
     if (createdId) {
-      orderCode = `BH-${createdId.slice(0, 6).toUpperCase()}`
+      // Giữ nguyên UUID (Guid) thật của PostgreSQL làm id chính thức
+      orderId = createdId
+      displayCode = formatOrderDisplayCode(createdId)
+    }
+    if (res.data?.partnerName) {
+      resolvedPartnerName = res.data.partnerName
+    }
+    if (res.data?.citizenName) {
+      resolvedCitizenName = res.data.citizenName
     }
     syncedWithBackend = true
   } catch {
@@ -787,65 +908,189 @@ export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
     ...state,
     handoverOrders: [
       {
-        id: orderCode,
+        id: orderId,
+        displayCode,
+        citizenName: resolvedCitizenName,
         recyclerId: partnerGuid,
-        recycler: input.partnerName || "Vựa phế liệu EcoGreen",
+        recycler: resolvedPartnerName,
         address: input.pickupAddress.trim(),
         pickupLat: input.pickupLat,
         pickupLng: input.pickupLng,
         date: `${dd}/${mm}/${yyyy}`,
         slot: input.slot,
         lines: input.rows.map((r) => ({ wasteId: r.wasteId, kg: r.kg })),
+        initialPricePerKg: primary?.unitPrice ?? 5500,
         status: "pending",
       },
-      ...state.handoverOrders,
+      ...state.handoverOrders.filter((x) => x.id !== orderId),
     ],
   })
 
-  return { orderCode, syncedWithBackend }
+  return {
+    id: orderId,
+    displayCode,
+    orderCode: displayCode,
+    syncedWithBackend,
+    partnerName: resolvedPartnerName,
+    citizenName: resolvedCitizenName,
+  }
 }
 
-export async function fetchSyncedHandoverOrders(role: "user" | "recycler") {
+export async function fetchHandoverOrdersResult(role: "user" | "recycler"): Promise<{
+  orders: SyncedHandoverOrder[]
+  fromBackend: boolean
+}> {
   const state = readSyncState()
   try {
-    const targetUserId =
-      role === "recycler"
-        ? "22222222-2222-2222-2222-222222222222"
-        : "11111111-1111-1111-1111-111111111111"
-
-    const res = await authorizedRequest<TradeOrderApiDto[]>(
-      role,
-      `/api/v1/trade/orders?userId=${targetUserId}`,
-      { method: "GET" },
-    )
-
-    const apiItems = (res.data ?? []).map((o) => {
-      const wasteId = o.categoryCode
-        ? (CATEGORY_TO_WASTE_ID[o.categoryCode.toLowerCase()] ?? "pet")
-        : "pet"
-      return {
-        id: `BH-${o.id.slice(0, 6).toUpperCase()}`,
-        recycler: o.partnerName || "Vựa phế liệu EcoGreen",
-        address: o.pickupAddress || "Điểm hẹn khu vực trung tâm",
-        pickupLat: o.pickupLatitude ?? undefined,
-        pickupLng: o.pickupLongitude ?? undefined,
-        date: formatDateVi(o.scheduledAt),
-        slot: o.proposedTimeSlot || "09:00 – 11:00",
-        lines: [{ wasteId, kg: Number(o.estimatedWeightKg) || 5 }],
-        status: (o.status.toLowerCase() === "accepted" ? "accepted" : "pending") as
-          | "pending"
-          | "accepted",
-      }
+    // Lấy đơn theo đúng JWT của tài khoản đang đăng nhập (không truyền cứng userId seed)
+    const res = await authorizedRequest<TradeOrderApiDto[]>(role, "/api/v1/trade/orders", {
+      method: "GET",
     })
 
-    if (apiItems.length > 0) {
-      return apiItems
+    const apiItems = (res.data ?? []).map(mapApiOrderToSynced)
+    return {
+      orders: apiItems,
+      fromBackend: true,
     }
   } catch {
-    // Dự phòng sang đơn lưu cục bộ
+    // Dự phòng sang đơn lưu cục bộ khi máy chủ Backend chưa bật
+    const localItems: SyncedHandoverOrder[] = state.handoverOrders.map((h) => ({
+      ...h,
+      displayCode: h.displayCode || formatOrderDisplayCode(h.id),
+      fromBackend: false,
+    }))
+    return {
+      orders: localItems,
+      fromBackend: false,
+    }
+  }
+}
+
+export async function fetchSyncedHandoverOrders(
+  role: "user" | "recycler",
+): Promise<SyncedHandoverOrder[]> {
+  const res = await fetchHandoverOrdersResult(role)
+  return res.orders
+}
+
+export async function updateHandoverOrderStatus(
+  orderId: string,
+  role: "user" | "recycler",
+  nextStatus: "Accepted" | "Rejected" | "Cancelled",
+  reason?: string,
+): Promise<{ syncedWithBackend: boolean; order?: SyncedHandoverOrder }> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId)
+  let syncedWithBackend = false
+  let mappedOrder: SyncedHandoverOrder | undefined
+
+  if (isUuid) {
+    // Khi Recycler bấm Nhận đơn: ưu tiên gọi endpoint chuẩn BR-NEG-05 (/accept) để khóa điều khoản & phát SignalR
+    if (role === "recycler" && nextStatus === "Accepted") {
+      try {
+        await authorizedRequest<unknown>("recycler", `/api/v1/trade/orders/${orderId}/accept`, {
+          method: "POST",
+        })
+        syncedWithBackend = true
+      } catch {
+        // Nếu endpoint /accept từ chối, dự phòng sang PATCH /status
+      }
+    }
+
+    if (!syncedWithBackend) {
+      try {
+        const res = await authorizedRequest<TradeOrderApiDto>(
+          role,
+          `/api/v1/trade/orders/${orderId}/status`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              status: nextStatus,
+              reason: reason?.trim() || undefined,
+            }),
+          },
+        )
+        if (res.data) {
+          mappedOrder = mapApiOrderToSynced(res.data)
+        }
+        syncedWithBackend = true
+      } catch {
+        syncedWithBackend = false
+      }
+    }
   }
 
-  return state.handoverOrders
+  // Đồng bộ cả bộ nhớ đệm cục bộ
+  const uiStatus: HandoverUiStatus =
+    nextStatus === "Accepted"
+      ? "accepted"
+      : nextStatus === "Rejected"
+        ? "declined"
+        : role === "recycler"
+          ? "broken"
+          : "cancelled"
+
+  const state = readSyncState()
+  if (state.handoverOrders.some((x) => x.id === orderId)) {
+    writeSyncState({
+      ...state,
+      handoverOrders: state.handoverOrders.map((x) =>
+        x.id === orderId
+          ? {
+              ...x,
+              status: uiStatus,
+              reason: reason?.trim() || x.reason,
+            }
+          : x,
+      ),
+    })
+  }
+
+  return { syncedWithBackend, order: mappedOrder }
+}
+
+export async function updateHandoverOrderTimeSlot(
+  orderId: string,
+  proposedTimeSlot: string,
+): Promise<{ syncedWithBackend: boolean }> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId)
+  let syncedWithBackend = false
+
+  if (isUuid) {
+    try {
+      await authorizedRequest<TradeOrderApiDto>("user", `/api/v1/trade/orders/${orderId}/time-slot`, {
+        method: "PATCH",
+        body: JSON.stringify({ proposedTimeSlot }),
+      })
+      syncedWithBackend = true
+    } catch {
+      syncedWithBackend = false
+    }
+  }
+
+  const state = readSyncState()
+  if (state.handoverOrders.some((x) => x.id === orderId)) {
+    writeSyncState({
+      ...state,
+      handoverOrders: state.handoverOrders.map((x) =>
+        x.id === orderId ? { ...x, slot: proposedTimeSlot } : x,
+      ),
+    })
+  }
+
+  return { syncedWithBackend }
+}
+
+export function findCachedHandoverOrder(orderId: string): SyncedHandoverOrder | null {
+  const state = readSyncState()
+  const found = state.handoverOrders.find(
+    (x) => x.id === orderId || x.displayCode === orderId,
+  )
+  if (!found) return null
+  return {
+    ...found,
+    displayCode: found.displayCode || formatOrderDisplayCode(found.id),
+    fromBackend: false,
+  }
 }
 
 /**
