@@ -1,8 +1,16 @@
-import { useState } from "react"
-import { Link } from "react-router-dom"
+import { useEffect, useState } from "react"
+import { useSearchParams } from "react-router-dom"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
-import { INCOMING, STATUS_LABEL, TONE, calc } from "@/data/handover"
+import { INCOMING, STATUS_LABEL, TONE, calc, type Handover } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
+import {
+  confirmHandoverReceipt,
+  disputeHandoverReceipt,
+  fetchSyncedHandoverOrders,
+  fetchUserReceipt,
+  findCachedHandoverOrder,
+  type ReceiptDto,
+} from "@/lib/recyclerWorkflowApi"
 
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
@@ -13,22 +21,130 @@ const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
  *  dùng phải tự nhớ quay lại. Ở đây chỉ khi xác nhận xong mới hiện phần đánh
  *  giá — đúng luật "Mở khi hoàn tất giao dịch". */
 export default function Receipt() {
-  const h = INCOMING.find((x) => x.status === "collected")!
+  const [searchParams] = useSearchParams()
+  const orderId = searchParams.get("orderId")
+
+  const defaultHandover = INCOMING.find((x) => x.status === "collected") || INCOMING[0]
+  const [h, setH] = useState<Handover>(() => {
+    if (orderId) {
+      const cached = findCachedHandoverOrder(orderId)
+      if (cached) {
+        return {
+          id: cached.id,
+          displayCode: cached.displayCode,
+          recycler: cached.recycler,
+          address: cached.address,
+          date: cached.date,
+          slot: cached.slot,
+          lines: cached.lines,
+          status: cached.status,
+          reason: cached.reason,
+        }
+      }
+    }
+    return defaultHandover
+  })
+
   const [actual, setActual] = useState(() =>
     (h.lines ?? []).map((l) => ({ wasteId: l.wasteId, kg: l.kg })),
   )
   const [confirmed, setConfirmed] = useState(false)
+  const [disputed, setDisputed] = useState(false)
+  const [processing, setProcessing] = useState(false)
   const [stars, setStars] = useState(0)
   const [note, setNote] = useState("")
+  const [receiptInfo, setReceiptInfo] = useState<ReceiptDto | null>(null)
+  const [flashMessage, setFlashMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    async function loadData() {
+      if (!orderId) return
+
+      // Tải thông tin biên nhận từ backend
+      const r = await fetchUserReceipt(orderId)
+      if (!active) return
+
+      if (r) {
+        setReceiptInfo(r)
+        if (r.confirmedByUserAt || r.requestStatus === "Completed") {
+          setConfirmed(true)
+        }
+        if (r.requestStatus === "Disputed") {
+          setDisputed(true)
+        }
+        if (Array.isArray(r.lines) && r.lines.length > 0) {
+          setActual(
+            r.lines.map((l) => ({
+              wasteId: l.wasteCategoryId || l.wasteCategoryCode || "plastic",
+              kg: l.actualWeightKg,
+            })),
+          )
+        }
+      }
+
+      // Tải chi tiết đơn bàn giao
+      const orders = await fetchSyncedHandoverOrders("user")
+      if (!active) return
+      const found = orders.find((o) => o.id === orderId || o.displayCode === orderId)
+      if (found) {
+        setH({
+          id: found.id,
+          displayCode: found.displayCode,
+          recycler: found.recycler,
+          address: found.address,
+          date: found.date,
+          slot: found.slot,
+          lines: found.lines,
+          status: found.status,
+          reason: found.reason,
+        })
+        if (!r) {
+          setActual(found.lines.map((l) => ({ wasteId: l.wasteId, kg: l.kg })))
+        }
+      }
+    }
+    void loadData()
+    return () => {
+      active = false
+    }
+  }, [orderId])
 
   const money = calc({ ...h, actual }, priceOf)
   const differs = actual.some((a, i) => a.kg !== h.lines[i]?.kg)
 
-  const confirm = (e: React.FormEvent) => {
+  const confirm = async (e: React.FormEvent) => {
     e.preventDefault()
-    // ponytail: chưa có backend. Nối API thì thay đúng dòng này, và chỉ khi
-    // trả về thành công mới setConfirmed — hiện tại bấm là tin.
-    setConfirmed(true)
+    setProcessing(true)
+    try {
+      const res = await confirmHandoverReceipt(h.id)
+      setConfirmed(true)
+      setFlashMessage(
+        res.syncedWithBackend
+          ? "Đã xác nhận biên nhận thành công (đã cộng điểm xanh và hoàn tất giao dịch trên PostgreSQL)."
+          : "Đã xác nhận khối lượng bàn giao (chế độ dự phòng ngoại tuyến).",
+      )
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  const handleDispute = async () => {
+    const reason = window.prompt("Nhập lý do khiếu nại sai lệch khối lượng hoặc số tiền:")
+    if (!reason?.trim()) return
+
+    setProcessing(true)
+    try {
+      const res = await disputeHandoverReceipt(h.id, reason.trim())
+      setDisputed(true)
+      setFlashMessage(
+        res.syncedWithBackend
+          ? "Khiếu nại biên nhận đã được ghi nhận và gửi đến bộ phận vận hành thẩm định (đã cập nhật PostgreSQL)."
+          : "Khiếu nại đã được ghi nhận (chế độ dự phòng ngoại tuyến).",
+      )
+    } finally {
+      setProcessing(false)
+    }
   }
 
   return (
@@ -39,12 +155,28 @@ export default function Receipt() {
         body="Đối chiếu khối lượng người thu gom cân tại chỗ với những gì bạn bỏ ra. Sai ở đâu thì sửa ở đó — tiền tính trên số bạn xác nhận."
       />
 
+      {flashMessage && (
+        <div className="rounded-xl border border-brand/30 bg-mint/15 px-4 py-3 text-sm font-medium text-brand-deep">
+          {flashMessage}
+        </div>
+      )}
+
+      {receiptInfo?.hasDeviationWarning && (
+        <div className="rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-ink">
+          <p className="font-semibold text-warn">Cảnh báo chênh lệch khối lượng:</p>
+          <p className="mt-0.5 text-body">
+            {receiptInfo.deviationMessage ||
+              `Khối lượng thực tế lệch ${receiptInfo.deviationPercent}% so với ước tính ban đầu.`}
+          </p>
+        </div>
+      )}
+
       <form onSubmit={confirm} className="card flex flex-col gap-5 p-5 md:p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-line-soft pb-4">
           <div>
             <p className="font-bold text-ink">{h.recycler}</p>
             <p className="mt-0.5 text-[13px] text-muted">
-              {h.id} · {h.date} · {h.slot} · {h.address}
+              {h.displayCode || h.id} · {h.date} · {h.slot} · {h.address}
             </p>
           </div>
           <Status tone={TONE[h.status]}>{STATUS_LABEL[h.status]}</Status>
@@ -63,7 +195,7 @@ export default function Receipt() {
                   step={0.1}
                   aria-label={`Khối lượng thực tế ${nameOf(a.wasteId)}`}
                   value={a.kg}
-                  disabled={confirmed}
+                  disabled={confirmed || disputed || processing}
                   onChange={(e) =>
                     setActual((rs) =>
                       rs.map((r, n) =>
@@ -92,7 +224,7 @@ export default function Receipt() {
           </tr>
         </Table>
 
-        {differs && !confirmed && (
+        {differs && !confirmed && !disputed && (
           <p className="rounded-lg border border-line bg-surface-2 px-4 py-3 text-[13px] leading-5 text-body">
             Khối lượng bạn xác nhận khác với ước tính ban đầu — không sao, đó là bình
             thường vì người thu gom cân thực tế. Số tiền được tính trên khối lượng
@@ -101,13 +233,33 @@ export default function Receipt() {
         )}
 
         <div className="flex flex-wrap gap-4 border-t border-line-soft pt-4">
-          <button type="submit" disabled={confirmed} className="btn-primary h-11 px-6">
-            {confirmed ? "Đã xác nhận" : "Xác nhận khối lượng này"}
+          <button
+            type="submit"
+            disabled={confirmed || disputed || processing}
+            className="btn-primary h-11 px-6"
+          >
+            {processing
+              ? "Đang xử lý..."
+              : confirmed
+                ? "Đã xác nhận"
+                : "Xác nhận khối lượng này"}
           </button>
-          <Link to="/feedback" className="btn-ghost h-11 px-5">
-            Sai rồi, tôi muốn khiếu nại
-          </Link>
-          {!confirmed && (
+          {!confirmed && !disputed && (
+            <button
+              type="button"
+              disabled={processing}
+              onClick={() => void handleDispute()}
+              className="btn-ghost h-11 px-5"
+            >
+              Sai rồi, tôi muốn khiếu nại
+            </button>
+          )}
+          {disputed && (
+            <span className="rounded-full bg-warn/15 px-3 py-1.5 text-xs font-semibold text-warn">
+              Đơn đang được khiếu nại
+            </span>
+          )}
+          {!confirmed && !disputed && (
             <p className="self-center text-[13px] text-muted">
               Xác nhận xong hệ thống mới trả tiền về tài khoản của bạn.
             </p>

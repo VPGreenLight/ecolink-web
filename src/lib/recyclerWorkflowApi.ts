@@ -86,6 +86,110 @@ export interface TradeOrderLineApiDto {
   kg: number
 }
 
+export interface WasteCategoryDto {
+  id: string
+  code: string
+  name: string
+  description?: string | null
+  standardBinColor?: string | null
+  iconUrl?: string | null
+}
+
+export interface RecyclerPriceDto {
+  id: string
+  wasteCategoryId: string
+  wasteCategoryCode: string
+  wasteCategoryName: string
+  pricePerKg: number
+  minQuantityKg: number
+  collectionConditions?: string | null
+  isActive: boolean
+  effectiveFrom: string
+  effectiveTo?: string | null
+  lastUpdatedAt: string
+  isOutdated: boolean
+}
+
+export interface BulkPriceItemRequest {
+  wasteCategoryId: string
+  isActive: boolean
+  pricePerKg: number
+  minQuantityKg?: number
+  collectionConditions?: string | null
+}
+
+export interface ReceiptItemRequest {
+  itemId?: string | null
+  wasteCategoryId?: string | null
+  actualWeightKg: number
+}
+
+export interface CreateReceiptRequest {
+  items: ReceiptItemRequest[]
+  scaleProofPhotoUrls: string[]
+  receiptImageUrl?: string | null
+}
+
+export interface ReceiptLineDto {
+  itemId?: string | null
+  wasteCategoryId: string
+  wasteCategoryCode: string
+  wasteCategoryName: string
+  estimatedWeightKg: number
+  actualWeightKg: number
+  unitPricePerKg: number
+  subTotal: number
+  isExtra: boolean
+}
+
+export interface ReceiptDto {
+  receiptId?: string | null
+  receiptCode?: string | null
+  requestId: string
+  requestCode: string
+  requestStatus: string
+  lines: ReceiptLineDto[]
+  totalWeightKg: number
+  totalAmountCash: number
+  estimatedWeightKg: number
+  deviationPercent: number
+  hasDeviationWarning: boolean
+  deviationMessage?: string | null
+  points: number
+  pointsCredited: boolean
+  scaleProofPhotoUrls: string[]
+  receiptImageUrl?: string | null
+  createdAt?: string | null
+  confirmedByUserAt?: string | null
+  isLocked: boolean
+  canConfirm: boolean
+  recycler?: { id: string; name: string; phone?: string | null; address?: string | null }
+  requester?: { id: string; name: string; phone?: string | null; address?: string | null }
+}
+
+export interface TransactionHistoryItemDto {
+  receiptId: string
+  receiptCode: string
+  requestId: string
+  requestCode: string
+  completedAt: string
+  counterpartName: string
+  categories: string[]
+  totalWeightKg: number
+  totalAmountCash: number
+  pointsAwarded: number
+}
+
+export interface TransactionHistoryDto {
+  items: TransactionHistoryItemDto[]
+  page: number
+  pageSize: number
+  totalCount: number
+  totalWeightKg: number
+  totalAmountCash: number
+  totalPoints: number
+}
+
 export interface TradeOrderApiDto {
   id: string
   userId: string
@@ -159,12 +263,17 @@ interface LocalWorkflowSyncState {
     status: "pending" | "accepted" | "collected" | "done" | "cancelled" | "declined" | "broken"
     reason?: string
   }[]
+  customPrices?: RecyclerPriceDto[]
+  customReceipts?: Record<string, ReceiptDto>
+  customTransactions?: TransactionHistoryItemDto[]
 }
 
 const DEFAULT_SYNC_STATE: LocalWorkflowSyncState = {
   demoRecyclerOnline: true,
   customApplications: [],
   handoverOrders: [],
+  customReceipts: {},
+  customTransactions: [],
 }
 
 function readSyncState(): LocalWorkflowSyncState {
@@ -183,6 +292,11 @@ function readSyncState(): LocalWorkflowSyncState {
         ? parsed.customApplications
         : [],
       handoverOrders: Array.isArray(parsed.handoverOrders) ? parsed.handoverOrders : [],
+      customPrices: Array.isArray(parsed.customPrices) ? parsed.customPrices : undefined,
+      customReceipts: parsed.customReceipts || {},
+      customTransactions: Array.isArray(parsed.customTransactions)
+        ? parsed.customTransactions
+        : [],
     }
   } catch {
     return DEFAULT_SYNC_STATE
@@ -786,11 +900,11 @@ export interface SyncedHandoverOrder {
 
 function mapBackendOrderStatus(rawStatus?: string | null, hasReason?: boolean): HandoverUiStatus {
   const s = (rawStatus ?? "").trim().toLowerCase()
-  if (s === "accepted" || s === "scheduled") return "accepted"
+  if (s === "accepted" || s === "scheduled" || s === "in_progress" || s === "inprogress") return "accepted"
   if (s === "completed" || s === "done") return "done"
-  if (s === "collected") return "collected"
+  if (s === "collected" || s === "awaitingconfirmation" || s === "awaiting_confirmation") return "collected"
   if (s === "rejected" || s === "declined") return "declined"
-  if (s === "cancelled" || s === "canceled" || s === "expired") {
+  if (s === "cancelled" || s === "canceled" || s === "expired" || s === "disputed") {
     return hasReason ? "cancelled" : "cancelled"
   }
   return "pending"
@@ -1163,4 +1277,391 @@ export function applyOfflineWorkflowToPartners(
 
   return next
 }
+
+/* ------------------------------------------------------------------ Module 04: Danh mục & Bảng giá cơ sở (R-01, R-02) */
+
+export async function fetchWasteCategories(): Promise<{
+  items: WasteCategoryDto[]
+  fromBackend: boolean
+}> {
+  try {
+    const res = await authorizedRequest<WasteCategoryDto[]>(
+      "recycler",
+      "/api/v1/waste-categories",
+      { method: "GET" },
+    )
+    if (Array.isArray(res.data) && res.data.length > 0) {
+      return { items: res.data, fromBackend: true }
+    }
+  } catch {
+    // Dự phòng khi máy chủ backend chưa bật
+  }
+
+  const fallback: WasteCategoryDto[] = [
+    { id: "11111111-1111-1111-1111-111111111101", code: "plastic", name: "Nhựa tái chế (Plastic)", standardBinColor: "cam" },
+    { id: "11111111-1111-1111-1111-111111111102", code: "paper", name: "Giấy báo & Tài liệu (Paper)", standardBinColor: "xanh lam" },
+    { id: "11111111-1111-1111-1111-111111111103", code: "cardboard", name: "Bìa carton (Cardboard)", standardBinColor: "nâu" },
+    { id: "11111111-1111-1111-1111-111111111104", code: "metal", name: "Kim loại & Vỏ lon (Metal)", standardBinColor: "xám" },
+    { id: "11111111-1111-1111-1111-111111111105", code: "glass", name: "Thủy tinh (Glass)", standardBinColor: "xanh lá" },
+    { id: "11111111-1111-1111-1111-111111111106", code: "trash", name: "Rác cồng kềnh / Pin / E-waste", standardBinColor: "đỏ" },
+  ]
+  return { items: fallback, fromBackend: false }
+}
+
+export async function fetchRecyclerPrices(
+  keyword?: string,
+  isActive?: boolean,
+): Promise<{ items: RecyclerPriceDto[]; fromBackend: boolean }> {
+  try {
+    const params = new URLSearchParams()
+    if (keyword) params.append("keyword", keyword)
+    if (typeof isActive === "boolean") params.append("isActive", String(isActive))
+    const query = params.toString() ? `?${params.toString()}` : ""
+
+    const res = await authorizedRequest<RecyclerPriceDto[]>(
+      "recycler",
+      `/api/v1/recycler/prices${query}`,
+      { method: "GET" },
+    )
+    if (Array.isArray(res.data)) {
+      return { items: res.data, fromBackend: true }
+    }
+  } catch {
+    // Dự phòng sang bộ nhớ cục bộ
+  }
+
+  const state = readSyncState()
+  if (state.customPrices && state.customPrices.length > 0) {
+    let filtered = state.customPrices
+    if (typeof isActive === "boolean") {
+      filtered = filtered.filter((p) => p.isActive === isActive)
+    }
+    if (keyword) {
+      const kw = keyword.toLowerCase()
+      filtered = filtered.filter(
+        (p) =>
+          p.wasteCategoryName.toLowerCase().includes(kw) ||
+          p.wasteCategoryCode.toLowerCase().includes(kw),
+      )
+    }
+    return { items: filtered, fromBackend: false }
+  }
+
+  return { items: [], fromBackend: false }
+}
+
+export async function saveRecyclerPrices(
+  items: BulkPriceItemRequest[],
+): Promise<{ items: RecyclerPriceDto[]; syncedWithBackend: boolean }> {
+  try {
+    const res = await authorizedRequest<RecyclerPriceDto[]>(
+      "recycler",
+      "/api/v1/recycler/prices",
+      {
+        method: "PUT",
+        body: JSON.stringify({ items }),
+      },
+    )
+    if (Array.isArray(res.data)) {
+      const state = readSyncState()
+      writeSyncState({ ...state, customPrices: res.data })
+      return { items: res.data, syncedWithBackend: true }
+    }
+  } catch {
+    // Backend offline fallback
+  }
+
+  const now = new Date().toISOString()
+  const localItems: RecyclerPriceDto[] = items.map((it, idx) => ({
+    id: `local-price-${idx + 1}`,
+    wasteCategoryId: it.wasteCategoryId,
+    wasteCategoryCode: it.wasteCategoryId.slice(0, 8),
+    wasteCategoryName: it.wasteCategoryId,
+    pricePerKg: it.pricePerKg,
+    minQuantityKg: it.minQuantityKg ?? 1,
+    collectionConditions: it.collectionConditions ?? null,
+    isActive: it.isActive,
+    effectiveFrom: now,
+    effectiveTo: null,
+    lastUpdatedAt: now,
+    isOutdated: false,
+  }))
+
+  const state = readSyncState()
+  writeSyncState({ ...state, customPrices: localItems })
+  return { items: localItems, syncedWithBackend: false }
+}
+
+/* ------------------------------------------------------------------ Module 07: Lập & Xác nhận biên nhận (R-06, U-09, U-12) */
+
+export async function createHandoverReceipt(
+  requestId: string,
+  req: CreateReceiptRequest,
+): Promise<{ receipt: ReceiptDto; syncedWithBackend: boolean }> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+  if (isUuid) {
+    try {
+      const res = await authorizedRequest<ReceiptDto>(
+        "recycler",
+        `/api/v1/recycler/handover-requests/${requestId}/receipt`,
+        {
+          method: "POST",
+          body: JSON.stringify(req),
+        },
+      )
+      if (res.data) {
+        const state = readSyncState()
+        const customReceipts = { ...state.customReceipts, [requestId]: res.data }
+        writeSyncState({ ...state, customReceipts })
+        return { receipt: res.data, syncedWithBackend: true }
+      }
+    } catch {
+      // Bỏ qua lỗi kết nối và rơi vào lưu đệm ngoại tuyến
+    }
+  }
+
+  // Dự phòng ngoại tuyến
+  const order = findCachedHandoverOrder(requestId)
+  const totalWeight = req.items.reduce((s, it) => s + it.actualWeightKg, 0)
+  const unitPrice = order?.agreedPricePerKg || order?.initialPricePerKg || 5500
+  const totalAmount = totalWeight * unitPrice
+
+  const localReceipt: ReceiptDto = {
+    receiptId: `REC-${Date.now()}`,
+    receiptCode: `REC-${String(Date.now()).slice(-6)}`,
+    requestId,
+    requestCode: order?.displayCode || formatOrderDisplayCode(requestId),
+    requestStatus: "AwaitingConfirmation",
+    lines: req.items.map((it) => ({
+      itemId: it.itemId ?? null,
+      wasteCategoryId: it.wasteCategoryId || "plastic",
+      wasteCategoryCode: it.wasteCategoryId || "plastic",
+      wasteCategoryName: it.wasteCategoryId || "Phế liệu",
+      estimatedWeightKg: it.actualWeightKg,
+      actualWeightKg: it.actualWeightKg,
+      unitPricePerKg: unitPrice,
+      subTotal: it.actualWeightKg * unitPrice,
+      isExtra: false,
+    })),
+    totalWeightKg: totalWeight,
+    totalAmountCash: totalAmount,
+    estimatedWeightKg: totalWeight,
+    deviationPercent: 0,
+    hasDeviationWarning: false,
+    deviationMessage: null,
+    points: Math.round(totalWeight * 2),
+    pointsCredited: false,
+    scaleProofPhotoUrls: req.scaleProofPhotoUrls || [],
+    receiptImageUrl: req.receiptImageUrl || null,
+    createdAt: new Date().toISOString(),
+    confirmedByUserAt: null,
+    isLocked: false,
+    canConfirm: true,
+    recycler: { id: "22222222-2222-2222-2222-222222222222", name: order?.recycler || "Cơ sở EcoLink" },
+    requester: { id: "11111111-1111-1111-1111-111111111111", name: order?.citizenName || "Người dân EcoLink" },
+  }
+
+  const state = readSyncState()
+  const customReceipts = { ...state.customReceipts, [requestId]: localReceipt }
+  const handoverOrders = state.handoverOrders.map((h) =>
+    h.id === requestId ? { ...h, status: "collected" as const } : h,
+  )
+  writeSyncState({ ...state, customReceipts, handoverOrders })
+
+  return { receipt: localReceipt, syncedWithBackend: false }
+}
+
+export async function fetchRecyclerReceipt(requestId: string): Promise<ReceiptDto | null> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+  if (isUuid) {
+    try {
+      const res = await authorizedRequest<ReceiptDto>(
+        "recycler",
+        `/api/v1/recycler/handover-requests/${requestId}/receipt`,
+        { method: "GET" },
+      )
+      if (res.data) return res.data
+    } catch {
+      // Dự phòng bộ nhớ đệm
+    }
+  }
+
+  const state = readSyncState()
+  return state.customReceipts?.[requestId] || null
+}
+
+export async function fetchUserReceipt(requestId: string): Promise<ReceiptDto | null> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+  if (isUuid) {
+    try {
+      const res = await authorizedRequest<ReceiptDto>(
+        "user",
+        `/api/v1/handover-requests/${requestId}/receipt`,
+        { method: "GET" },
+      )
+      if (res.data) return res.data
+    } catch {
+      // Dự phòng bộ nhớ đệm
+    }
+  }
+
+  const state = readSyncState()
+  return state.customReceipts?.[requestId] || null
+}
+
+export async function confirmHandoverReceipt(
+  requestId: string,
+): Promise<{ receipt: ReceiptDto | null; syncedWithBackend: boolean }> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+  if (isUuid) {
+    try {
+      const res = await authorizedRequest<ReceiptDto>(
+        "user",
+        `/api/v1/handover-requests/${requestId}/receipt/confirm`,
+        { method: "POST" },
+      )
+      if (res.data) {
+        return { receipt: res.data, syncedWithBackend: true }
+      }
+    } catch {
+      // Dự phòng sang bộ nhớ đệm
+    }
+  }
+
+  const state = readSyncState()
+  const cached = state.customReceipts?.[requestId]
+  if (cached) {
+    const updated: ReceiptDto = {
+      ...cached,
+      confirmedByUserAt: new Date().toISOString(),
+      isLocked: true,
+      canConfirm: false,
+      requestStatus: "Completed",
+    }
+    const customReceipts = { ...state.customReceipts, [requestId]: updated }
+    const handoverOrders = state.handoverOrders.map((h) =>
+      h.id === requestId ? { ...h, status: "done" as const } : h,
+    )
+    writeSyncState({ ...state, customReceipts, handoverOrders })
+    return { receipt: updated, syncedWithBackend: false }
+  }
+
+  return { receipt: null, syncedWithBackend: false }
+}
+
+export async function disputeHandoverReceipt(
+  requestId: string,
+  reason: string,
+  evidenceUrls: string[] = [],
+): Promise<{ receipt: ReceiptDto | null; syncedWithBackend: boolean }> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+  if (isUuid) {
+    try {
+      const res = await authorizedRequest<ReceiptDto>(
+        "user",
+        `/api/v1/handover-requests/${requestId}/receipt/dispute`,
+        {
+          method: "POST",
+          body: JSON.stringify({ reason, evidenceUrls }),
+        },
+      )
+      if (res.data) {
+        return { receipt: res.data, syncedWithBackend: true }
+      }
+    } catch {
+      // Dự phòng
+    }
+  }
+
+  const state = readSyncState()
+  const cached = state.customReceipts?.[requestId]
+  if (cached) {
+    const updated: ReceiptDto = {
+      ...cached,
+      requestStatus: "Disputed",
+    }
+    const customReceipts = { ...state.customReceipts, [requestId]: updated }
+    writeSyncState({ ...state, customReceipts })
+    return { receipt: updated, syncedWithBackend: false }
+  }
+
+  return { receipt: null, syncedWithBackend: false }
+}
+
+export async function fetchUserTransactions(
+  from?: string,
+  to?: string,
+  page = 1,
+  pageSize = 20,
+): Promise<{ data: TransactionHistoryDto; fromBackend: boolean }> {
+  try {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+    if (from) params.append("from", from)
+    if (to) params.append("to", to)
+
+    const res = await authorizedRequest<TransactionHistoryDto>(
+      "user",
+      `/api/v1/transactions?${params.toString()}`,
+      { method: "GET" },
+    )
+    if (res.data) {
+      return { data: res.data, fromBackend: true }
+    }
+  } catch {
+    // Dự phòng
+  }
+
+  const state = readSyncState()
+  const customItems = state.customTransactions || []
+  return {
+    data: {
+      items: customItems,
+      page,
+      pageSize,
+      totalCount: customItems.length,
+      totalWeightKg: customItems.reduce((s, it) => s + it.totalWeightKg, 0),
+      totalAmountCash: customItems.reduce((s, it) => s + it.totalAmountCash, 0),
+      totalPoints: customItems.reduce((s, it) => s + it.pointsAwarded, 0),
+    },
+    fromBackend: false,
+  }
+}
+
+export async function fetchRecyclerTransactions(
+  from?: string,
+  to?: string,
+  page = 1,
+  pageSize = 20,
+): Promise<{ data: TransactionHistoryDto; fromBackend: boolean }> {
+  try {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+    if (from) params.append("from", from)
+    if (to) params.append("to", to)
+
+    const res = await authorizedRequest<TransactionHistoryDto>(
+      "recycler",
+      `/api/v1/recycler/transactions?${params.toString()}`,
+      { method: "GET" },
+    )
+    if (res.data) {
+      return { data: res.data, fromBackend: true }
+    }
+  } catch {
+    // Dự phòng
+  }
+
+  return {
+    data: {
+      items: [],
+      page,
+      pageSize,
+      totalCount: 0,
+      totalWeightKg: 0,
+      totalAmountCash: 0,
+      totalPoints: 0,
+    },
+    fromBackend: false,
+  }
+}
+
 

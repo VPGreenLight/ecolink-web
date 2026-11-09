@@ -1,10 +1,31 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
 import { VND, WASTES } from "@/data/waste"
+import {
+  fetchRecyclerPrices,
+  fetchWasteCategories,
+  saveRecyclerPrices,
+  type BulkPriceItemRequest,
+  type WasteCategoryDto,
+} from "@/lib/recyclerWorkflowApi"
 
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 
-type Row = { id: string; on: boolean; price: number }
+type Row = { id: string; on: boolean; price: number; categoryCode: string }
+
+const WASTE_TO_CAT_CODE: Record<string, string> = {
+  pet: "plastic",
+  hdpe: "plastic",
+  carton: "cardboard",
+  "office-paper": "paper",
+  paper: "paper",
+  aluminum: "metal",
+  alu: "metal",
+  steel: "metal",
+  glass: "glass",
+  battery: "trash",
+  circuit: "trash",
+}
 
 /** R-01 Danh mục thu mua & bảng giá.
  *
@@ -14,13 +35,97 @@ type Row = { id: string; on: boolean; price: number }
  *  luôn thấy con số hệ thống nên không bị bất ngờ. */
 export default function Catalog() {
   const [rows, setRows] = useState<Row[]>(() =>
-    WASTES.filter((w) => w.recyclable).map((w) => ({ id: w.id, on: true, price: w.price })),
+    WASTES.filter((w) => w.recyclable).map((w) => ({
+      id: w.id,
+      on: true,
+      price: w.price,
+      categoryCode: WASTE_TO_CAT_CODE[w.id] || "plastic",
+    })),
   )
+  const [categories, setCategories] = useState<WasteCategoryDto[]>([])
   const [dirty, setDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [flash, setFlash] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    async function load() {
+      const [catsRes, pricesRes] = await Promise.all([
+        fetchWasteCategories(),
+        fetchRecyclerPrices(),
+      ])
+      if (!active) return
+
+      if (catsRes.items.length > 0) {
+        setCategories(catsRes.items)
+      }
+
+      if (pricesRes.items.length > 0) {
+        setRows((prev) =>
+          prev.map((r) => {
+            const matched = pricesRes.items.find(
+              (p) =>
+                p.wasteCategoryCode.toLowerCase() === r.categoryCode.toLowerCase() ||
+                p.wasteCategoryName.toLowerCase().includes(r.categoryCode.toLowerCase()),
+            )
+            if (matched) {
+              return {
+                ...r,
+                on: matched.isActive,
+                price: matched.pricePerKg > 0 ? matched.pricePerKg : r.price,
+              }
+            }
+            return r
+          }),
+        )
+      }
+    }
+    void load()
+    return () => {
+      active = false
+    }
+  }, [])
 
   const set = (id: string, patch: Partial<Row>) => {
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)))
     setDirty(true)
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      // Nhóm theo nhóm phế liệu backend để gửi BulkSavePricesRequest
+      const catCodeToCategory = new Map<string, WasteCategoryDto>()
+      for (const c of categories) {
+        catCodeToCategory.set(c.code.toLowerCase(), c)
+      }
+
+      // Mỗi loại phế liệu hệ thống lấy giá đại diện từ các dòng đang bật
+      const payloadMap = new Map<string, BulkPriceItemRequest>()
+      for (const r of rows) {
+        const cat = catCodeToCategory.get(r.categoryCode.toLowerCase())
+        const catId = cat ? cat.id : r.categoryCode
+        if (!payloadMap.has(catId) || r.on) {
+          payloadMap.set(catId, {
+            wasteCategoryId: catId,
+            isActive: r.on,
+            pricePerKg: r.price,
+            minQuantityKg: 1,
+            collectionConditions: r.on ? "Thu gom trực tiếp hoặc tại vựa" : "Tạm ngưng",
+          })
+        }
+      }
+
+      const res = await saveRecyclerPrices(Array.from(payloadMap.values()))
+      setDirty(false)
+      setFlash(
+        res.syncedWithBackend
+          ? "Đã lưu và công bố bảng giá thành công lên hệ thống (đã cập nhật PostgreSQL)."
+          : "Đã lưu bảng giá tạm thời (chế độ dự phòng ngoại tuyến).",
+      )
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -32,14 +137,20 @@ export default function Catalog() {
         action={
           <button
             type="button"
-            disabled={!dirty}
-            onClick={() => setDirty(false)}
+            disabled={!dirty || saving}
+            onClick={() => void handleSave()}
             className="btn-primary h-11 shrink-0 px-5"
           >
-            Lưu thay đổi
+            {saving ? "Đang lưu..." : "Lưu thay đổi"}
           </button>
         }
       />
+
+      {flash && (
+        <div className="rounded-xl border border-brand/30 bg-mint/15 px-4 py-3 text-sm font-medium text-brand-deep">
+          {flash}
+        </div>
+      )}
 
       <Table head={["Loại rác", "Nhóm", "Thu mua", "Giá bạn trả", "Giá hệ thống"]}>
         {rows.map((r) => {

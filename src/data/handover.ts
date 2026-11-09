@@ -35,6 +35,8 @@ export type HandoverLine = { wasteId: string; kg: number }
  *  của Recycler (R-03, R-04) — chỉ khác góc nhìn, không khác dữ liệu. */
 export type Handover = {
   id: string
+  /** Mã hiển thị thân thiện trên UI (VD: BH-A3F18C) */
+  displayCode?: string
   recycler: string
   address: string
   date: string
