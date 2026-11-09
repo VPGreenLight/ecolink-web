@@ -11,6 +11,34 @@
  *  cộng/trừ điểm. Backend có thật thì đọc từ đây. */
 export const RANK_POINTS = 23_400
 export const SPEND_POINTS = 12_400
+export const SPEND_POINTS_KEY = "ecolink:spend-points"
+
+export function getSpendPoints(): number {
+  if (typeof window === "undefined") return SPEND_POINTS
+  try {
+    const raw = localStorage.getItem(SPEND_POINTS_KEY)
+    if (raw !== null) {
+      const parsed = parseInt(raw, 10)
+      if (!isNaN(parsed)) return parsed
+    }
+  } catch {}
+  return SPEND_POINTS
+}
+
+export function setSpendPoints(points: number): void {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.setItem(SPEND_POINTS_KEY, String(points))
+    window.dispatchEvent(new CustomEvent("ecolink:points-change", { detail: points }))
+  } catch {}
+}
+
+export function addSpendPoints(delta: number): number {
+  const current = getSpendPoints()
+  const next = Math.max(0, current + delta)
+  setSpendPoints(next)
+  return next
+}
 
 /** ngưỡng lên hạng, tính trên RANK_POINTS */
 export const TIERS = [

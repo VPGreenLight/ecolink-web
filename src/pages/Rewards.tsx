@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import CheckIn from "@/components/CheckIn"
 import {
   EARN,
@@ -8,7 +8,8 @@ import {
   RANK_POINTS,
   REDEEMED,
   REWARDS,
-  SPEND_POINTS,
+  getSpendPoints,
+  addSpendPoints,
   tierProgress,
   type Reward,
 } from "@/data/rewards"
@@ -78,8 +79,17 @@ function Thumb({ reward }: { reward: Reward }) {
 
 export default function Rewards() {
   const { cur, next, pct, need } = tierProgress()
-  // Số dư nằm trong state vì điểm danh cộng vào đây. Ban đầu lấy từ data.
-  const [spend, setSpend] = useState(SPEND_POINTS)
+  // Số dư nằm trong state vì điểm danh cộng vào đây. Đồng bộ với điểm tiêu dùng EcoFacts.
+  const [spend, setSpend] = useState(() => getSpendPoints())
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const custom = e as CustomEvent<number>
+      if (typeof custom.detail === "number") setSpend(custom.detail)
+    }
+    window.addEventListener("ecolink:points-change", handler)
+    return () => window.removeEventListener("ecolink:points-change", handler)
+  }, [])
   // rẻ nhất trước: người vào trang này để đổi được ngay. Đổi quà bằng điểm
   // tiêu dùng, không phải điểm xếp hạng.
   const list = [...REWARDS].sort((a, b) => a.cost - b.cost)
@@ -146,7 +156,7 @@ export default function Rewards() {
             nhìn thấy ngay ở cùng một khối, không phải cuộn đi tìm. Cột này
             thấp hơn cột trái nên canh giữa theo chiều dọc cho cân. */}
         <div className="flex flex-col justify-center border-t border-line-soft px-5 py-6 md:px-8 md:py-7 lg:border-t-0 lg:border-l">
-          <CheckIn balance={spend} onEarn={(n) => setSpend((s) => s + n)} />
+          <CheckIn balance={spend} onEarn={(n) => setSpend(addSpendPoints(n))} />
         </div>
       </section>
 
@@ -360,6 +370,11 @@ export default function Rewards() {
                     <button
                       type="button"
                       disabled={!can}
+                      onClick={() => {
+                        if (can) {
+                          setSpend(addSpendPoints(-r.cost))
+                        }
+                      }}
                       className="btn btn-primary h-10 min-w-[104px]"
                     >
                       {soldOut ? "Hết hàng" : "Đổi ngay"}

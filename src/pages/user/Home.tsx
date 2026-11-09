@@ -2,7 +2,7 @@ import { Link } from "react-router-dom"
 import { PageHead, Stat, Table, Td } from "@/components/Portal"
 import { useUser } from "@/lib/session"
 import { MY_HANDOVERS } from "@/data/handover"
-import { LEADERBOARD, RANK_POINTS, SPEND_POINTS, fmt, tierProgress } from "@/data/rewards"
+import { LEADERBOARD, RANK_POINTS, getSpendPoints, fmt, tierProgress } from "@/data/rewards"
 
 /** Trang chủ sau đăng nhập của người dân: nối 3 việc đang dở thành một màn
  *  hình — có yêu cầu nào đang chờ, điểm đang ở hạng nào, bước kế tiếp là gì.
@@ -24,7 +24,7 @@ export default function UserHome() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Yêu cầu đang mở" value={String(open.length)} note="Chờ hoặc đã nhận" />
-        <Stat label="Điểm tiêu dùng" value={fmt(SPEND_POINTS)} note="Dùng để đổi quà" />
+        <Stat label="Điểm tiêu dùng" value={fmt(getSpendPoints())} note="Dùng để đổi quà" />
         <Stat label="Hạng cây ảo" value={cur.name} note={next ? `Cần ${fmt(need)} điểm lên ${next.name}` : "Đã đạt hạng cao nhất"} />
         <Stat label="Xếp hạng" value={`#${inRank ? LEADERBOARD.indexOf(inRank) + 1 : "—"}`} note={above ? `Cần ${fmt(above.points - RANK_POINTS)} điểm để vượt` : "Bạn đang dẫn đầu"} />
       </div>
