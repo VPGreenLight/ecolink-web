@@ -414,40 +414,36 @@ export default function MapPage() {
         if (controller.signal.aborted || (err as { name?: string })?.name === "AbortError") {
           return
         }
-        if (err instanceof ApiError && err.isNetworkError) {
-          // Dự phòng khi Backend chưa khởi động: đồng bộ trạng thái Online/Offline & hồ sơ vừa duyệt rồi tính Haversine
-          setIsOfflineDemo(true)
-          const filteredOffline = applyOfflineWorkflowToPartners(OFFLINE_PARTNERS)
-            .map((p) => ({
-              ...p,
-              distanceKm: haversineKm(coords.lat, coords.lng, p.latitude, p.longitude),
-            }))
-            .filter((p) => {
-              const withinRadius = p.distanceKm <= radiusKm
-              const hitCat =
-                !category ||
-                p.materials.some((m) => m.categoryCode.toLowerCase() === category)
-              const kw = debouncedKeyword.toLowerCase()
-              const hitKw =
-                !kw ||
-                p.facilityName.toLowerCase().includes(kw) ||
-                p.address.toLowerCase().includes(kw)
-              return withinRadius && hitCat && hitKw
-            })
-            .sort((a, b) => a.distanceKm - b.distanceKm)
+        // Dự phòng khi Backend lỗi kết nối hoặc phản hồi sự cố hệ thống:
+        // Tự động chuyển sang chế độ Offline Demo để hiển thị đầy đủ 4 cơ sở Hòa Lạc và cơ sở lân cận
+        setIsOfflineDemo(true)
+        const filteredOffline = applyOfflineWorkflowToPartners(OFFLINE_PARTNERS)
+          .map((p) => ({
+            ...p,
+            distanceKm: haversineKm(coords.lat, coords.lng, p.latitude, p.longitude),
+          }))
+          .filter((p) => {
+            const withinRadius = p.distanceKm <= radiusKm
+            const hitCat =
+              !category ||
+              p.materials.some((m) => m.categoryCode.toLowerCase() === category)
+            const kw = debouncedKeyword.toLowerCase()
+            const hitKw =
+              !kw ||
+              p.facilityName.toLowerCase().includes(kw) ||
+              p.address.toLowerCase().includes(kw)
+            return withinRadius && hitCat && hitKw
+          })
+          .sort((a, b) => a.distanceKm - b.distanceKm)
 
+        if (filteredOffline.length > 0) {
+          if (err instanceof ApiError) {
+            console.warn("[MapPage] Nearby API error (" + err.messageCode + "): " + err.message + ", fallback to offline.")
+          }
           setPartners(filteredOffline)
-          setFallback(
-            filteredOffline.length === 0
-              ? {
-                  suggestedExpandedRadiusKm: Math.min(50, Math.round(radiusKm * 2.5)),
-                  guidanceMessage:
-                    "Không tìm thấy cơ sở thu mua phù hợp trong bán kính hiện tại.",
-                  allowCommunityPickupPost: true,
-                }
-              : null,
-          )
+          setFallback(null)
           setSelectedId(filteredOffline[0]?.id ?? null)
+          setErrorMsg("")
           return
         }
 
@@ -457,7 +453,12 @@ export default function MapPage() {
             : "Không thể tải danh sách cơ sở thu mua gần bạn.",
         )
         setPartners([])
-        setFallback(null)
+        setFallback({
+          suggestedExpandedRadiusKm: Math.min(50, Math.round(radiusKm * 2.5)),
+          guidanceMessage:
+            "Không tìm thấy cơ sở thu mua phù hợp trong bán kính hiện tại.",
+          allowCommunityPickupPost: true,
+        })
       })
       .finally(() => {
         if (!controller.signal.aborted) {

@@ -269,7 +269,7 @@ export default function Requests() {
                   <Td>
                     {h.status === "collected" ? (
                       <Link
-                        to="/recycler/receipt"
+                        to={`/recycler/receipt?orderId=${encodeURIComponent(h.id)}`}
                         className="text-[13px] font-semibold text-brand hover:text-brand-deep"
                       >
                         Tạo biên nhận
@@ -277,8 +277,15 @@ export default function Requests() {
                     ) : h.status === "accepted" ? (
                       <div className="flex items-center gap-2 whitespace-nowrap">
                         <Link
-                          to={`/chat?orderId=${encodeURIComponent(h.id)}`}
+                          to={`/recycler/receipt?orderId=${encodeURIComponent(h.id)}`}
                           className="text-[13px] font-semibold text-brand hover:underline"
+                        >
+                          Cân &amp; Lập biên nhận
+                        </Link>
+                        <span className="text-muted">·</span>
+                        <Link
+                          to={`/chat?orderId=${encodeURIComponent(h.id)}`}
+                          className="text-[13px] font-semibold text-body hover:underline"
                         >
                           Hỏi đường
                         </Link>
