@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom"
 import { PageHead, Stat, Table, Td } from "@/components/Portal"
 import { GIFTS } from "@/data/ops"
-import { GRAND_PRIZES } from "@/data/rewards"
+import { GRAND_PRIZES, getSpendPoints, fmt } from "@/data/rewards"
 
 /** U-15 Điểm danh · U-16 Đổi điểm lấy quà · U-17 Cây ảo & Eco Fact.
  *
@@ -24,7 +24,7 @@ export default function Gamification() {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Điểm tiêu dùng" value="12.400" note="Dùng để đổi quà, bấm mới trừ" />
+        <Stat label="Điểm tiêu dùng" value={fmt(getSpendPoints())} note="Dùng để đổi quà, bấm mới trừ" />
         <Stat label="Điểm xếp hạng" value="23.400" note="Tích luỹ trọn đời, không bao giờ trừ" />
         <Stat label="Hạng hiện tại" value="Rừng" note="Cần thêm 6.600 điểm để lên Đại dương" />
         <Stat label="Eco Fact đã mở" value="2 / 6" note="Cần thêm 4.500 điểm cho tất cả" />

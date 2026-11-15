@@ -8,7 +8,7 @@ import {
 } from "@/lib/authApi"
 import { FLOWS } from "@/data/cashflow"
 import { MY_HANDOVERS } from "@/data/handover"
-import { LEADERBOARD, RANK_POINTS, SPEND_POINTS, fmt, tierProgress } from "@/data/rewards"
+import { LEADERBOARD, RANK_POINTS, getSpendPoints, fmt, tierProgress } from "@/data/rewards"
 
 /** SU-01 Xem và cập nhật hồ sơ · SU-03 Thông báo hệ thống.
  *
@@ -74,7 +74,7 @@ export default function Profile() {
   const displayGreenPoints =
     session?.fromBackend && typeof session.currentGreenPoints === "number"
       ? fmt(session.currentGreenPoints)
-      : fmt(SPEND_POINTS)
+      : fmt(getSpendPoints())
 
   const displayTreeTier =
     session?.fromBackend && typeof session.treeLevel === "number"
