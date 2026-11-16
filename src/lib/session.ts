@@ -204,9 +204,13 @@ export function clearAuthStorage() {
     localStorage.removeItem(ACCESS_TOKEN_KEY)
     localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(TOKEN_EXPIRES_AT_KEY)
+    localStorage.removeItem("ecolink:m12_entitlements")
     for (const k of ROLE_JWT_KEYS) {
       localStorage.removeItem(k)
     }
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("ecolink:auth-cleared"))
   }
   invalidate()
   emit()

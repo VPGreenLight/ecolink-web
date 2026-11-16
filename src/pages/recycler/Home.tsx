@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
+import { Check, Crown, Lock, QrCode, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, Star } from "lucide-react"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
 import { PageHead, Stat, Status } from "@/components/Portal"
+import SponsoredAdBanner from "@/components/SponsoredAdBanner"
+import VietQrCheckoutModal from "@/components/VietQrCheckoutModal"
 import { MY_HANDOVERS, type HandoverStatus } from "@/data/handover"
 import { FLOWS } from "@/data/cashflow"
 import { STATS, fmtVnd } from "@/data/ops"
@@ -12,6 +15,19 @@ import {
   updateRecyclerWarehousePin,
   type RecyclerProfileDto,
 } from "@/lib/recyclerWorkflowApi"
+import {
+  CANONICAL_FALLBACK_PACKAGES,
+  createServicePaymentOrder,
+  getAvailableServicePackages,
+  getMyServiceOrders,
+  getMyServiceSubscriptions,
+  setLocalEntitlements,
+  useEntitlements,
+  type ActiveSubscriptionDto,
+  type PayInOrderDto,
+  type ServicePackageCatalogDto,
+} from "@/lib/servicePackageApi"
+import { getAccessToken } from "@/lib/session"
 
 type UpcomingRow = {
   id: string
@@ -49,6 +65,17 @@ export default function RecyclerHome() {
     activePriceCount: 4,
   })
 
+  const entitlements = useEntitlements()
+  const [packages, setPackages] = useState<ServicePackageCatalogDto[]>(
+    () => CANONICAL_FALLBACK_PACKAGES,
+  )
+  const [activeSubs, setActiveSubs] = useState<ActiveSubscriptionDto[]>([])
+  const [recentOrders, setRecentOrders] = useState<PayInOrderDto[]>([])
+  const [buyingCode, setBuyingCode] = useState<string | null>(null)
+  const [activeQrOrder, setActiveQrOrder] = useState<PayInOrderDto | null>(null)
+  const [pkgNotice, setPkgNotice] = useState("")
+  const [pkgErr, setPkgErr] = useState("")
+
   const [editingLocation, setEditingLocation] = useState(false)
   const [draftLat, setDraftLat] = useState(10.7938)
   const [draftLng, setDraftLng] = useState(106.7182)
@@ -63,6 +90,29 @@ export default function RecyclerHome() {
 
   const payin = FLOWS.filter((f) => f.kind === "payin").reduce((s, f) => s + f.amount, 0)
 
+  const refreshRecyclerPackages = useCallback(async () => {
+    try {
+      const pkgRes = await getAvailableServicePackages("Recycler")
+      if (pkgRes.success && Array.isArray(pkgRes.data) && pkgRes.data.length > 0) {
+        setPackages(pkgRes.data)
+      }
+      if (getAccessToken()) {
+        const [subRes, ordRes] = await Promise.allSettled([
+          getMyServiceSubscriptions(),
+          getMyServiceOrders({ pageNumber: 1, pageSize: 5 }),
+        ])
+        if (subRes.status === "fulfilled" && subRes.value.success) {
+          setActiveSubs(subRes.value.data.activeSubscriptions ?? [])
+        }
+        if (ordRes.status === "fulfilled" && ordRes.value.success) {
+          setRecentOrders(ordRes.value.data.items ?? [])
+        }
+      }
+    } catch {
+      // fallback to canonical catalog
+    }
+  }, [])
+
   useEffect(() => {
     let active = true
     void fetchRecyclerStatus().then((res) => {
@@ -74,6 +124,8 @@ export default function RecyclerHome() {
       setDraftAddress(res.profile.businessAddress)
       setSyncedBackend(res.fromBackend)
     })
+
+    void refreshRecyclerPackages()
 
     void fetchSyncedHandoverOrders("recycler").then((synced) => {
       if (!active || synced.length === 0) return
@@ -135,13 +187,150 @@ export default function RecyclerHome() {
     }
   }
 
+  const isKybVerified =
+    String(profile.verificationStatus ?? "").toLowerCase() === "verified"
+
+  const handleBuyPackage = async (pkg: ServicePackageCatalogDto) => {
+    if (pkg.isDefaultFree) return
+    if ((pkg.requiresVerifiedKyb || pkg.packageCode === "PRO") && (!isKybVerified || !pkg.isEligible)) {
+      setPkgErr(
+        pkg.ineligibleReason ||
+          "Cơ sở thu mua cần hoàn tất xác minh hồ sơ KYB trước khi mua gói Tích xanh & Ghim nổi bật.",
+      )
+      return
+    }
+
+    setPkgErr("")
+    setPkgNotice("")
+    setBuyingCode(pkg.packageCode)
+    try {
+      if (!getAccessToken()) {
+        const rand = Math.floor(100000 + Math.random() * 900000)
+        const orderCode = `ECO${new Date().toISOString().slice(2, 10).replace(/-/g, "")}${rand}`
+        const transferContent = `ECOLINK ${orderCode}`
+        const demoOrder: PayInOrderDto = {
+          id: `demo-${orderCode}`,
+          userId: profile.recyclerId,
+          packageId: pkg.id,
+          packageCode: pkg.packageCode,
+          packageName: pkg.packageName,
+          durationDays: pkg.durationDays,
+          orderCode,
+          amount: pkg.priceVnd,
+          paidAmount: null,
+          description: `Thanh toán gói ${pkg.packageName}`,
+          transferContent,
+          bankCode: "MB",
+          bankName: "MB Bank (Ngân hàng Quân đội)",
+          accountNo: "090123456789",
+          accountName: "CONG TY CO PHAN ECOLINK",
+          qrCodeUrl: `https://img.vietqr.io/image/970422-090123456789-compact2.png?amount=${pkg.priceVnd}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent("CONG TY CO PHAN ECOLINK")}`,
+          status: "Pending",
+          reconciliationStatus: "Pending",
+          anomalyType: "None",
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        }
+        setRecentOrders((prev) => [demoOrder, ...prev])
+        setActiveQrOrder(demoOrder)
+        return
+      }
+
+      const res = await createServicePaymentOrder({
+        packageId: pkg.id,
+        packageCode: pkg.packageCode,
+        description: `Nâng cấp cơ sở ${pkg.packageName}`,
+      })
+      setActiveQrOrder(res.data)
+      setRecentOrders((prev) => [
+        res.data,
+        ...prev.filter((o) => o.orderCode !== res.data.orderCode),
+      ])
+    } catch (err) {
+      setPkgErr(
+        err instanceof Error ? err.message : "Không thể khởi tạo đơn VietQR lúc này.",
+      )
+    } finally {
+      setBuyingCode(null)
+    }
+  }
+
+  const handleRecyclerOrderUpdated = (updated: PayInOrderDto) => {
+    setActiveQrOrder(updated)
+    setRecentOrders((prev) => {
+      const exists = prev.some((o) => o.orderCode === updated.orderCode)
+      return exists
+        ? prev.map((o) => (o.orderCode === updated.orderCode ? updated : o))
+        : [updated, ...prev]
+    })
+
+    if (updated.status.toUpperCase() === "PAID") {
+      if (updated.id.startsWith("demo-")) {
+        const isPro = updated.packageCode.toUpperCase() === "PRO"
+        setLocalEntitlements({
+          currentTier: isPro ? "Pro" : "Premium",
+          isAdFree: true,
+          dailyPointMultiplier: isPro ? 1.5 : 1.2,
+          hasEcoPlusBadge: true,
+          hasVerifiedBlueBadge: isPro,
+          isFeaturedMapMarker: isPro,
+          mapPriorityBoost: isPro ? 100 : 0,
+        })
+        setActiveSubs([
+          {
+            subscriptionId: `sub-${updated.orderCode}`,
+            packageId: updated.packageId,
+            packageCode: updated.packageCode,
+            packageName: updated.packageName,
+            sourceOrderCode: updated.orderCode,
+            startsAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + updated.durationDays * 86_400_000).toISOString(),
+            remainingDays: updated.durationDays,
+            status: "Active",
+            features: {
+              tierName: isPro ? "Pro" : "Premium",
+              adFree: true,
+              dailyPointMultiplier: isPro ? 1.5 : 1.2,
+              ecoPlusBadge: true,
+              verifiedBlueBadge: isPro,
+              featuredMapMarker: isPro,
+              mapPriorityBoost: isPro ? 100 : 0,
+            },
+          },
+        ])
+      } else {
+        void refreshRecyclerPackages()
+      }
+      setPkgNotice(
+        `Đã kích hoạt gói ${updated.packageName} (${updated.orderCode}) thành công qua VietQR!`,
+      )
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <PageHead
         eyebrow="VẬN HÀNH"
         title="Tổng quan cơ sở thu mua"
         body="Bật trạng thái hoạt động để hiện trên bản đồ và nhận yêu cầu mới. Tắt khi bạn không ra thu gom được."
+        action={
+          <a
+            href="#recycler-packages"
+            className="inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand/6 px-3 py-1.5 text-xs font-semibold text-brand-deep hover:bg-brand/12"
+          >
+            {entitlements.hasVerifiedBlueBadge ? (
+              <>
+                <Star className="size-3.5 text-amber-500" />
+                Gói Pro · Tích xanh &amp; Ghim nổi bật
+              </>
+            ) : (
+              `Gói ${entitlements.currentTier} · Nâng cấp Pro`
+            )}
+          </a>
+        }
       />
+
+      <SponsoredAdBanner upgradeTo="#recycler-packages" compact />
 
       <section className="card flex flex-wrap items-center justify-between gap-4 p-5">
         <div className="min-w-0">
@@ -150,6 +339,12 @@ export default function RecyclerHome() {
             <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-[11px] font-semibold text-muted">
               {profile.facilityName} · {syncedBackend ? "Đồng bộ CSDL trực tiếp" : "Chế độ trình duyệt"}
             </span>
+            {entitlements.hasVerifiedBlueBadge && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-0.5 text-[11px] font-bold text-sky-700 ring-1 ring-sky-200">
+                <ShieldCheck className="size-3.5" />
+                Tích xanh Pro
+              </span>
+            )}
           </div>
           <p className="mt-1 text-sm leading-6 text-body">
             {open
@@ -256,6 +451,211 @@ export default function RecyclerHome() {
         )}
       </section>
 
+      {/* Khung R-07: Gói thương mại Cơ sở thu mua (Basic - Premium - Pro 365 ngày) & VietQR */}
+      <section id="recycler-packages" className="card flex flex-col gap-5 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line-soft pb-4">
+          <div>
+            <p className="text-[11px] font-bold tracking-[0.12em] text-brand uppercase">
+              R-07 · GÓI THƯƠNG MẠI CƠ SỞ THU MUA (BASIC - PREMIUM - PRO)
+            </p>
+            <h2 className="mt-1 text-base font-bold text-ink">
+              Nâng cấp Tích xanh Xác minh &amp; Ghim nổi bật trên Bản đồ
+            </h2>
+            <p className="mt-1 text-xs leading-5 text-body">
+              Gói <b>PRO (1.000.000 đ / 365 ngày)</b> cấp Tích xanh thương hiệu, tắt quảng cáo và
+              đẩy ghim cơ sở lên đầu kết quả tìm kiếm bản đồ PostGIS (<code className="rounded bg-surface-2 px-1 py-0.5">+100 ưu tiên</code>).
+              Nâng cấp từ Premium sang Pro sẽ kích hoạt Pro ngay lập tức (<code>BR-PAY-04</code>).
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void refreshRecyclerPackages()}
+            className="btn-outline inline-flex h-9 items-center gap-1.5 px-3 text-xs font-semibold"
+          >
+            <RefreshCw className="size-3.5" />
+            Đồng bộ gói
+          </button>
+        </div>
+
+        {!isKybVerified && (
+          <div className="flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+            <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+            <span>
+              <b>MSG-PAY-06:</b> Cơ sở thu mua cần hoàn tất xác minh hồ sơ KYB (<code>VerificationStatus = Verified</code>)
+              trước khi mua gói Tích xanh &amp; Ghim nổi bật <b>PRO</b>.
+            </span>
+          </div>
+        )}
+
+        {pkgNotice && (
+          <p role="status" className="rounded-xl border border-brand/30 bg-brand/8 px-4 py-2.5 text-xs font-semibold text-brand-deep">
+            {pkgNotice}
+          </p>
+        )}
+        {pkgErr && (
+          <p role="alert" className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn">
+            {pkgErr}
+          </p>
+        )}
+
+        {activeSubs.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/25 bg-brand/6 px-4 py-3 text-xs">
+            <div>
+              <span className="font-bold text-brand-deep">
+                Thuê bao hiệu lực: {activeSubs[0].packageName}
+              </span>
+              <span className="ml-2 text-muted">
+                · Còn {activeSubs[0].remainingDays} ngày (Hết hạn{" "}
+                {new Date(activeSubs[0].expiresAt).toLocaleDateString("vi-VN")})
+              </span>
+            </div>
+            <Link to="/map" className="font-semibold text-brand hover:underline">
+              Kiểm tra ghim nổi bật trên /map →
+            </Link>
+          </div>
+        )}
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          {packages.map((pkg) => {
+            const isBasic = pkg.isDefaultFree || pkg.packageCode === "BASIC"
+            const isPro = pkg.packageCode === "PRO"
+            const blockedByKyb =
+              isPro && (!isKybVerified || pkg.isEligible === false)
+            const isCurrent =
+              pkg.isCurrentPlan ||
+              entitlements.currentTier.toUpperCase() === pkg.packageCode.toUpperCase()
+
+            return (
+              <article
+                key={pkg.id}
+                className={`flex flex-col justify-between rounded-2xl border p-4 ${
+                  isPro
+                    ? "border-amber-400 bg-amber-50/35 shadow-xs"
+                    : "border-line bg-surface"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold tracking-wider text-brand uppercase">
+                      {isPro ? (
+                        <Crown className="size-3.5 text-amber-600" />
+                      ) : pkg.packageCode === "PREMIUM" ? (
+                        <Sparkles className="size-3.5" />
+                      ) : (
+                        <ShieldCheck className="size-3.5" />
+                      )}
+                      {pkg.packageCode}
+                    </span>
+                    {isCurrent && <Status tone="ok">Đang sử dụng</Status>}
+                  </div>
+
+                  <h3 className="mt-1.5 text-base font-bold text-ink">{pkg.packageName}</h3>
+                  <p className="mt-1.5 flex items-baseline gap-1.5">
+                    <span className="text-xl font-bold text-ink tabular-nums">
+                      {pkg.priceVnd === 0 ? "0 đ" : fmtVnd(pkg.priceVnd)}
+                    </span>
+                    <span className="text-xs text-muted">
+                      {pkg.durationDays > 0 ? `/ ${pkg.durationDays} ngày` : "/ Trọn đời"}
+                    </span>
+                  </p>
+                  <p className="mt-1.5 text-xs leading-5 text-body">{pkg.description}</p>
+
+                  <ul className="mt-3 flex flex-col gap-1.5 text-xs text-body">
+                    <li className="flex items-center gap-2">
+                      <Check className="size-3.5 shrink-0 text-brand" />
+                      {pkg.features.adFree ? "Tắt toàn bộ quảng cáo" : "Gói mặc định có banner"}
+                    </li>
+                    {pkg.features.verifiedBlueBadge && (
+                      <li className="flex items-center gap-2 font-medium text-sky-800">
+                        <ShieldCheck className="size-3.5 shrink-0 text-[#0284c7]" />
+                        Tích xanh xác minh cơ sở thu mua
+                      </li>
+                    )}
+                    {pkg.features.featuredMapMarker && (
+                      <li className="flex items-center gap-2 font-medium text-amber-800">
+                        <Star className="size-3.5 shrink-0 text-amber-600" />
+                        Ghim nổi bật &amp; Ưu tiên hiển thị bản đồ (+{pkg.features.mapPriorityBoost})
+                      </li>
+                    )}
+                  </ul>
+                </div>
+
+                <div className="mt-4 border-t border-line-soft pt-3">
+                  {isBasic ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="btn-outline h-9 w-full cursor-default text-xs opacity-75"
+                    >
+                      Gói mặc định của hệ thống
+                    </button>
+                  ) : blockedByKyb ? (
+                    <button
+                      type="button"
+                      disabled
+                      title="Cần xác minh KYB trước khi nâng cấp gói Pro"
+                      className="btn-outline inline-flex h-9 w-full cursor-not-allowed items-center justify-center gap-1.5 text-xs opacity-75"
+                    >
+                      <Lock className="size-3.5" />
+                      Chưa đủ điều kiện KYB
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={buyingCode === pkg.packageCode}
+                      onClick={() => void handleBuyPackage(pkg)}
+                      className="btn-primary inline-flex h-9 w-full items-center justify-center gap-1.5 text-xs font-semibold"
+                    >
+                      <QrCode className="size-3.5" />
+                      {buyingCode === pkg.packageCode
+                        ? "Đang tạo VietQR..."
+                        : isCurrent
+                          ? `Gia hạn cộng dồn (+${pkg.durationDays} ngày)`
+                          : `Mua gói ${pkg.packageCode} qua VietQR`}
+                    </button>
+                  )}
+                </div>
+              </article>
+            )
+          })}
+        </div>
+
+        {recentOrders.length > 0 && (
+          <div className="border-t border-line-soft pt-3">
+            <p className="mb-2 text-xs font-bold text-ink">Đơn thanh toán VietQR gần đây</p>
+            <ul className="flex flex-col gap-2">
+              {recentOrders.slice(0, 4).map((ord) => (
+                <li
+                  key={ord.orderCode}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 text-xs"
+                >
+                  <div>
+                    <span className="font-mono font-bold text-ink">{ord.orderCode}</span>
+                    <span className="ml-2 text-muted">
+                      {ord.packageName} · {fmtVnd(ord.amount)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Status tone={ord.status.toUpperCase() === "PAID" ? "ok" : "wait"}>
+                      {ord.status.toUpperCase() === "PAID" ? "Đã kích hoạt" : ord.status}
+                    </Status>
+                    {ord.status.toUpperCase() === "PENDING" && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveQrOrder(ord)}
+                        className="btn-outline h-7 px-2 text-[11px]"
+                      >
+                        Mở QR
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
           label="Yêu cầu đang mở"
@@ -315,6 +715,12 @@ export default function RecyclerHome() {
           </ul>
         )}
       </section>
+
+      <VietQrCheckoutModal
+        order={activeQrOrder}
+        onClose={() => setActiveQrOrder(null)}
+        onOrderUpdated={handleRecyclerOrderUpdated}
+      />
     </div>
   )
 }
