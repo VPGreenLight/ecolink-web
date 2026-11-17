@@ -42,6 +42,8 @@ const OFFLINE_PARTNERS: CollectionPartnerDto[] = [
     operatingHours: "07:30 - 19:00",
     description:
       "Chuyên thu mua chai nhựa, vỏ lon, bìa carton và giáo trình cũ tại khu KTX sinh viên, nhà trọ Tân Xã - Khu CNC Hòa Lạc.",
+    hasVerifiedBadge: true,
+    isFeatured: true,
     materials: [
       {
         categoryCode: "plastic",
@@ -434,7 +436,12 @@ export default function MapPage() {
               p.address.toLowerCase().includes(kw)
             return withinRadius && hitCat && hitKw
           })
-          .sort((a, b) => a.distanceKm - b.distanceKm)
+          .sort(
+            (a, b) =>
+              Number(Boolean(b.isFeatured)) - Number(Boolean(a.isFeatured)) ||
+              Number(Boolean(b.hasVerifiedBadge)) - Number(Boolean(a.hasVerifiedBadge)) ||
+              a.distanceKm - b.distanceKm,
+          )
 
         if (filteredOffline.length > 0) {
           if (err instanceof ApiError) {
@@ -929,7 +936,12 @@ export default function MapPage() {
                         <div className="min-w-0">
                           <p className="flex items-center gap-1.5 text-sm font-bold text-ink">
                             <span className="truncate">{p.facilityName}</span>
-                            <VerifiedIcon />
+                            {p.hasVerifiedBadge && <VerifiedIcon />}
+                            {p.isFeatured && (
+                              <span className="inline-flex shrink-0 items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 ring-1 ring-amber-300/70">
+                                Pro · Nổi bật
+                              </span>
+                            )}
                           </p>
                           <p className="mt-0.5 truncate text-xs text-muted">
                             {p.address}
@@ -996,11 +1008,16 @@ function PartnerDetailCard({
     <div className="mt-1 flex flex-col gap-3 rounded-2xl border border-line bg-surface-2/65 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <h2 className="truncate text-base font-bold text-ink">
               {partner.facilityName}
             </h2>
-            <VerifiedIcon />
+            {partner.hasVerifiedBadge && <VerifiedIcon />}
+            {partner.isFeatured && (
+              <span className="inline-flex shrink-0 items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 ring-1 ring-amber-300/70">
+                Đối tác Pro
+              </span>
+            )}
           </div>
           <p className="mt-0.5 text-xs text-body">{partner.address}</p>
           {partner.representativeName && (
@@ -1220,9 +1237,22 @@ function ShieldIcon() {
 
 function VerifiedIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="shrink-0 text-brand">
-      <circle cx="8" cy="8" r="7" {...stroke} />
-      <path d="M5.6 8.2l1.7 1.7 3.2-3.4" {...stroke} />
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-label="Tích xanh đã xác minh (Gói Pro)"
+      className="shrink-0 text-[#0284c7]"
+    >
+      <circle cx="8" cy="8" r="7" fill="#0284c7" />
+      <path
+        d="M5.4 8.2l1.8 1.8 3.4-3.6"
+        stroke="#ffffff"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   )
 }

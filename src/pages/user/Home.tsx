@@ -1,18 +1,26 @@
+import { useEffect } from "react"
 import { Link } from "react-router-dom"
 import { PageHead, Stat, Table, Td } from "@/components/Portal"
-import { useUser } from "@/lib/session"
+import SponsoredAdBanner from "@/components/SponsoredAdBanner"
 import { MY_HANDOVERS } from "@/data/handover"
 import { LEADERBOARD, RANK_POINTS, getSpendPoints, fmt, tierProgress } from "@/data/rewards"
+import { refreshMyEntitlementsSafely, useEntitlements } from "@/lib/servicePackageApi"
+import { useUser } from "@/lib/session"
 
 /** Trang chủ sau đăng nhập của người dân: nối 3 việc đang dở thành một màn
  *  hình — có yêu cầu nào đang chờ, điểm đang ở hạng nào, bước kế tiếp là gì.
  *  Không lặp lại nội dung các trang chuyên biệt, chỉ dẫn tới. */
 export default function UserHome() {
   const user = useUser()
+  const entitlements = useEntitlements()
   const { cur, next, pct, need } = tierProgress()
   const open = MY_HANDOVERS.filter((h) => h.status === "pending" || h.status === "accepted" || h.status === "collected")
   const inRank = LEADERBOARD.find((r) => r.you)
   const above = LEADERBOARD.find((r) => r.points > RANK_POINTS)
+
+  useEffect(() => {
+    void refreshMyEntitlementsSafely()
+  }, [])
 
   return (
     <div className="flex flex-col gap-6">
@@ -20,7 +28,19 @@ export default function UserHome() {
         eyebrow="TỔNG QUAN"
         title={`Xin chào, ${user || "bạn"}`}
         body="Từ đây bạn đặt lịch thu gom, nhận tiền về tài khoản và theo dõi điểm xanh của mình."
+        action={
+          <Link
+            to="/user/payout"
+            className="inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand/5 px-3 py-1.5 text-xs font-semibold text-brand-deep hover:bg-brand/10"
+          >
+            {entitlements.hasEcoPlusBadge
+              ? `Hội viên ${entitlements.currentTier} · +20% điểm`
+              : "Gói Basic · Nâng cấp Premium"}
+          </Link>
+        }
       />
+
+      <SponsoredAdBanner upgradeTo="/user/payout" compact />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Yêu cầu đang mở" value={String(open.length)} note="Chờ hoặc đã nhận" />

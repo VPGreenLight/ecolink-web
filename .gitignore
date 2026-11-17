@@ -45,6 +45,10 @@ Desktop.ini
 # --- file cục bộ của từng máy ---
 *.local
 .env.local
+.agents/
+.agent/
+AGENTS.md
+GEMINI.md
 
 # --- KHÔNG ignore public/assets ---
 # logo, ảnh món quà và video trong đó được code trỏ tới trực tiếp bằng đường

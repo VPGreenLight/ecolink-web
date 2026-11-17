@@ -223,13 +223,20 @@ export default function LeafletRecyclerMap({
     // Các ghim cơ sở thu mua đã xác minh (Verified + Online)
     partners.forEach((partner) => {
       const isSelected = partner.id === selectedPartnerId
+      const isFeatured = Boolean(partner.isFeatured)
+      const isVerified = Boolean(partner.hasVerifiedBadge)
       const label = `${escapeHtml(partner.facilityName)} (${escapeHtml(formatDistance(partner.distanceKm))})`
+      const badgeDot = isFeatured
+        ? `<span class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-amber-400 text-[9px] font-black text-[#0f1f15]">★</span>`
+        : isVerified
+          ? `<span class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[#0284c7] text-[8px] font-bold text-white">✓</span>`
+          : `<span class="inline-block size-2 shrink-0 rounded-full ${isSelected ? "bg-[#8df9b8]" : "bg-[#278733]"}"></span>`
 
       const pinHtml = isSelected
         ? `
           <div style="transform: translate(-50%, -100%);" class="flex flex-col items-center cursor-pointer select-none">
-            <span class="flex max-w-[230px] items-center gap-1.5 rounded-full border border-white/30 bg-[#006516] px-3 py-1.5 text-[11px] font-semibold text-white shadow-[0_10px_18px_-3px_rgba(0,0,0,0.28)]">
-              <span class="inline-block size-2 shrink-0 rounded-full bg-[#8df9b8]"></span>
+            <span class="flex max-w-[245px] items-center gap-1.5 rounded-full border ${isFeatured ? "border-amber-300 ring-2 ring-amber-300/60" : "border-white/30"} bg-[#006516] px-3 py-1.5 text-[11px] font-semibold text-white shadow-[0_10px_18px_-3px_rgba(0,0,0,0.28)]">
+              ${badgeDot}
               <span class="truncate">${label}</span>
             </span>
             <span class="-mt-1 size-2.5 rotate-45 bg-[#006516]"></span>
@@ -237,11 +244,11 @@ export default function LeafletRecyclerMap({
         `
         : `
           <div style="transform: translate(-50%, -100%);" class="flex flex-col items-center cursor-pointer select-none transition-transform hover:scale-105">
-            <span class="flex max-w-[205px] items-center gap-1.5 rounded-full border border-[#cdded3] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#0f1f15] shadow-[0_4px_8px_rgba(0,0,0,0.14)]">
-              <span class="inline-block size-2 shrink-0 rounded-full bg-[#278733]"></span>
+            <span class="flex max-w-[225px] items-center gap-1.5 rounded-full border ${isFeatured ? "border-amber-400 bg-amber-50 ring-2 ring-amber-300/50" : "border-[#cdded3] bg-white"} px-2.5 py-1 text-[11px] font-semibold text-[#0f1f15] shadow-[0_4px_8px_rgba(0,0,0,0.14)]">
+              ${badgeDot}
               <span class="truncate">${label}</span>
             </span>
-            <span class="-mt-1 size-2 rotate-45 border-r border-b border-[#cdded3] bg-white"></span>
+            <span class="-mt-1 size-2 rotate-45 border-r border-b ${isFeatured ? "border-amber-400 bg-amber-50" : "border-[#cdded3] bg-white"}"></span>
           </div>
         `
 
@@ -252,7 +259,7 @@ export default function LeafletRecyclerMap({
           iconAnchor: [0, 0],
           html: pinHtml,
         }),
-        zIndexOffset: isSelected ? 900 : 400,
+        zIndexOffset: isSelected ? 900 : isFeatured ? 650 : 400,
       })
 
       marker.on("click", (evt: LeafletTypes.LeafletMouseEvent) => {

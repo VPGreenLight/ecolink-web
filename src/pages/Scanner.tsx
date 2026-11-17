@@ -24,6 +24,8 @@ import {
   type WasteScanResponseDto,
   type WasteSortingGuideDto,
 } from "@/lib/wasteScanApi"
+import { fetchMyAiFeedback, type MyAiFeedbackReportDto } from "@/lib/aiCurationApi"
+import { getAccessToken } from "@/lib/session"
 import { isDiscoverableCategory } from "@/lib/recyclerDiscoveryApi"
 
 /** Trang này giữ bố cục gọn 2 cột (6/6) vừa màn hình 1440x900 và kết nối trực tiếp
@@ -51,6 +53,8 @@ interface DetectedBoxItem {
 }
 
 interface ViewModelResult {
+  scanId?: string | null
+  imageUrl?: string | null
   isOfflineDemo?: boolean
   isOod: boolean
   confidenceThreshold: number
@@ -217,6 +221,8 @@ function mapApiToViewModel(
     aiResult.modelName || selectedModelName || aiResult.modelUsed || "YOLOv8 Detection"
 
   return {
+    scanId: payload.scanId ?? null,
+    imageUrl: payload.imageUrl ?? null,
     isOod,
     confidenceThreshold: threshold,
     messageCode,
@@ -368,6 +374,9 @@ export default function Scanner() {
   const [scanResult, setScanResult] = useState<ViewModelResult | null>(null)
   const [selectedObjectIndex, setSelectedObjectIndex] = useState<number>(0)
   const [showBoxes, setShowBoxes] = useState<boolean>(true)
+  const [myFeedbacks, setMyFeedbacks] = useState<MyAiFeedbackReportDto[]>([])
+  const [hasSession, setHasSession] = useState<boolean>(false)
+  const [showMyHistory, setShowMyHistory] = useState<boolean>(false)
   const [scanError, setScanError] = useState<{
     message: string
     code?: string
@@ -375,6 +384,25 @@ export default function Scanner() {
   } | null>(null)
 
   const abortRef = useRef<AbortController | null>(null)
+
+  const refreshMyFeedbacks = () => {
+    const token = getAccessToken()
+    setHasSession(Boolean(token))
+    if (!token) return
+    fetchMyAiFeedback({ pageSize: 5 })
+      .then((res) => {
+        if (res.success && Array.isArray(res.data?.items)) {
+          setMyFeedbacks(res.data.items)
+        }
+      })
+      .catch(() => {
+        // Bỏ qua êm nếu phiên hết hạn hoặc backend đang offline
+      })
+  }
+
+  useEffect(() => {
+    refreshMyFeedbacks()
+  }, [])
 
   // Nạp danh sách mô hình AI thực tế từ Backend khi mở trang
   useEffect(() => {
@@ -623,6 +651,58 @@ export default function Scanner() {
                 <p className="rounded-lg border border-warn/25 bg-warn/5 px-3 py-2 text-xs leading-5 text-body">
                   <b className="text-warn">Lưu ý an toàn:</b> {activeResult.hazardWarning}
                 </p>
+              )}
+
+              {hasSession && (
+                <div className="border-t border-line-soft pt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !showMyHistory
+                      setShowMyHistory(next)
+                      if (next) refreshMyFeedbacks()
+                    }}
+                    className="flex w-full items-center justify-between text-xs font-semibold text-brand-deep hover:underline"
+                  >
+                    <span>Lịch sử báo sai AI của tôi ({myFeedbacks.length})</span>
+                    <span>{showMyHistory ? "Ẩn" : "Xem"}</span>
+                  </button>
+
+                  {showMyHistory && (
+                    <div className="mt-2.5 flex flex-col gap-2">
+                      {myFeedbacks.length === 0 ? (
+                        <p className="text-xs text-muted">
+                          Bạn chưa gửi báo cáo phân loại sai nào.
+                        </p>
+                      ) : (
+                        myFeedbacks.map((fb) => (
+                          <div
+                            key={fb.id}
+                            className="rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-xs"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold text-ink">
+                                AI: {fb.predictedLabel} → Đề xuất: {fb.userReportedLabel}
+                              </span>
+                              <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-brand-deep">
+                                {fb.status === "Reviewed"
+                                  ? `Đã duyệt (${fb.adminVerifiedLabel ?? fb.userReportedLabel})`
+                                  : fb.status === "Rejected"
+                                    ? "Từ chối"
+                                    : "Chờ duyệt"}
+                              </span>
+                            </div>
+                            {fb.reviewNote && (
+                              <p className="mt-1 text-[11px] text-muted">
+                                Phản hồi Staff: {fb.reviewNote}
+                              </p>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -1295,6 +1375,8 @@ function ScanResult({ result }: { result: ViewModelResult }) {
         )}
 
         <InlineFeedbackReport
+          scanId={result.scanId}
+          imageUrl={result.imageUrl}
           predictedLabel={result.categoryCode}
           confidenceScore={result.rawConfidence}
         />
@@ -1352,6 +1434,8 @@ function OodResult({
       </div>
 
       <InlineFeedbackReport
+        scanId={result.scanId}
+        imageUrl={result.imageUrl}
         predictedLabel={result.categoryCode}
         confidenceScore={result.rawConfidence}
         defaultOpen
@@ -1362,10 +1446,14 @@ function OodResult({
 
 /** Gửi phản hồi AI nhận diện sai ngay tại màn hình quét (POST /api/v1/waste-scan/feedback). */
 function InlineFeedbackReport({
+  scanId,
+  imageUrl,
   predictedLabel,
   confidenceScore,
   defaultOpen = false,
 }: {
+  scanId?: string | null
+  imageUrl?: string | null
   predictedLabel: string
   confidenceScore: number
   defaultOpen?: boolean
@@ -1383,6 +1471,8 @@ function InlineFeedbackReport({
     setErrMsg("")
     try {
       const res = await submitAiFeedback({
+        scanId,
+        imageUrl: imageUrl ?? undefined,
         predictedLabel,
         confidenceScore,
         userReportedLabel: reportedLabel,

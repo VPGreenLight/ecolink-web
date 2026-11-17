@@ -25,6 +25,8 @@ export interface CollectionPartnerDto {
   operatingHours: string
   description?: string | null
   businessPhotoUrl?: string | null
+  hasVerifiedBadge?: boolean
+  isFeatured?: boolean
   materials: AcceptedMaterialDto[]
 }
 
