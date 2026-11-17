@@ -39,6 +39,7 @@ src/
     authApi.ts            API client Module Authentication & RBAC (/api/v1/auth/*, Google OAuth, Khôi phục MK)
     chatApi.ts            API client & SignalR WebSockets Module Negotiation Chatbox (U-08, R-05)
     wasteScanApi.ts       API client Module AI Waste Classification & Rule Engine
+    aiCurationApi.ts      API client Module AI Misclassification Feedback & Dataset Curation (U-04, S-01..S-03)
     recyclerDiscoveryApi.ts API client Module Location-Based Recycler Discovery (U-05)
     recyclerWorkflowApi.ts Liên thông 4 mắt xích vai trò (đăng ký, duyệt KYB, bật/tắt vựa, đặt lịch)
     geocodingApi.ts       Tìm kiếm địa danh 2 tầng & làm mờ toạ độ ~500m (BR-MTH-05)
@@ -95,3 +96,4 @@ export const PARTNERS: Partner[] = [{ name: "...", logo: "/assets/...", ... }]
   - [Phiên 2026-11-09: Nâng cấp Cây Ảo 70 khung hình WebP & Đồng bộ Điểm tiêu dùng](docs/2026-11-09.md): Nâng cấp animation 6 giai đoạn sinh trưởng trên `EcoFactsPage.tsx` và liên thông ví điểm tiêu dùng với trang Đổi thưởng.
   - [Phiên 2026-11-15: Tích hợp Module Quản trị, Nhân sự, Chấm công & Kiểm toán (`FE-17`, `FE-18`)](docs/2026-11-15.md): Xây dựng `governanceApi.ts` và kết nối 19 REST APIs cho Cổng Admin & Staff (`A-01..A-04`, `S-06`, `S-07`, `S-11`), xuất báo cáo CSV/XLSX ẩn danh hóa PII, tra cứu nhật ký `audit_logs` bất biến và rà soát hợp nhất nhánh `giang` → `thang`.
   - [Phiên 2026-11-16: Gói Dịch vụ Nội bộ & Thanh toán VietQR (`FE-14` / `M-12`)](docs/2026-11-16.md): Tích hợp 15 REST APIs (`STT 115–129`) cho 3 bậc gói (`BASIC` 0đ, `PREMIUM` 59k/30d, `PRO` 1tr/365d KYB), `SponsoredAdBanner`, `VietQrCheckoutModal`, nâng cấp Tích xanh/Ghim bản đồ `PRO`, cấu hình biểu phí Admin `A-10` và sổ cái đối soát `A-11`.
+  - [Phiên 2026-11-17: Phản hồi Lỗi AI & Quản trị Bộ dữ liệu Huấn luyện (`FE-15` / `M-13`)](docs/2026-11-17.md): Tích hợp 10 Core REST APIs (`STT 130–139`, nâng cấp `STT 021, 024`) cho báo sai AI (`U-04`), duyệt & gán nhãn hàng đợi YOLO (`S-01`, `S-02`), đóng gói dataset Sticky Stratified Split `70/20/10` chống rò rỉ `SHA-256` & tải `.zip` `YOLO`/`ImageFolder` (`S-03`).

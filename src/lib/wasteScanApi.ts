@@ -66,12 +66,15 @@ export interface AiScanResultDto {
 }
 
 export interface WasteScanResponseDto {
+  scanId?: string | null
+  imageUrl?: string | null
   aiResult: AiScanResultDto
   sortingGuide?: WasteSortingGuideDto | null
   message: string
 }
 
 export interface SubmitFeedbackRequest {
+  scanId?: string | null
   imageUrl?: string
   predictedLabel: string
   confidenceScore: number
@@ -317,19 +320,25 @@ export async function fetchSortingRules(
 /** Gửi báo cáo AI nhận diện sai (POST /api/v1/waste-scan/feedback - BR-CLS-05). */
 export async function submitAiFeedback(
   payload: SubmitFeedbackRequest,
-): Promise<{ success: boolean; message: string }> {
-  const res = await apiRequest<unknown>("/api/v1/waste-scan/feedback", {
-    method: "POST",
-    body: JSON.stringify({
-      imageUrl: payload.imageUrl ?? "",
-      predictedLabel: payload.predictedLabel,
-      confidenceScore: payload.confidenceScore,
-      userReportedLabel: payload.userReportedLabel,
-      note: payload.note ?? "",
-    }),
-  })
+): Promise<{ success: boolean; message: string; reportId?: string; status?: string }> {
+  const res = await apiRequest<{ reportId?: string; status?: string } | null>(
+    "/api/v1/waste-scan/feedback",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        scanId: payload.scanId ?? null,
+        imageUrl: payload.imageUrl ?? "",
+        predictedLabel: payload.predictedLabel,
+        confidenceScore: payload.confidenceScore,
+        userReportedLabel: payload.userReportedLabel,
+        note: payload.note ?? "",
+      }),
+    },
+  )
   return {
     success: res.success,
+    reportId: res.data?.reportId,
+    status: res.data?.status,
     message:
       res.message ||
       "Cảm ơn bạn đã phản hồi! Dữ liệu đã được chuyển tới Nhân viên vận hành để kiểm chứng.",

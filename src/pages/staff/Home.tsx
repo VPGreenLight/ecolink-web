@@ -1,13 +1,49 @@
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { PageHead, Stat } from "@/components/Portal"
 import { ECO_FACTS, GIFTS, POSTS, STATS, DATASET, fmtInt } from "@/data/ops"
+import { getAccessToken } from "@/lib/session"
+import {
+  fetchAiDatasetDashboard,
+  fetchStaffAiFeedbackQueue,
+} from "@/lib/aiCurationApi"
 
-/** Tổng quan nhân viên (Staff). Không phải bảng điều khiển số liệu lớn như
- *  của Admin (A-01) — nhân viên cần biết "hôm nay có bao nhiêu việc đang chờ
- *  mình", đó là toàn bộ màn hình này. */
+/** Tổng quan nhân viên (Staff). */
 export default function StaffHome() {
+  const [pendingAiCount, setPendingAiCount] = useState<number>(STATS.pending.aiCases)
+  const [datasetStats, setDatasetStats] = useState({
+    accuracy: DATASET.accuracy,
+    labeled: DATASET.labeled,
+    total: DATASET.total,
+  })
+
+  useEffect(() => {
+    const token = getAccessToken()
+    if (!token) return
+
+    fetchStaffAiFeedbackQueue({ pageSize: 1 })
+      .then((res) => {
+        if (res.success && res.data) {
+          setPendingAiCount(res.data.pendingCount)
+        }
+      })
+      .catch(() => {})
+
+    fetchAiDatasetDashboard()
+      .then((res) => {
+        if (res.success && res.data?.summary) {
+          setDatasetStats({
+            accuracy: res.data.summary.empiricalAccuracyPercent,
+            labeled: res.data.summary.verifiedLabeledCount,
+            total: res.data.summary.totalPoolItems,
+          })
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   const queue = [
-    { to: "/staff/ai-review", label: "Ảnh AI nhận diện sai", n: STATS.pending.aiCases, unit: "ảnh" },
+    { to: "/staff/ai-review", label: "Ảnh AI nhận diện sai", n: pendingAiCount, unit: "ảnh" },
     { to: "/staff/applications", label: "Hồ sơ đối tác thu mua", n: STATS.pending.applications, unit: "hồ sơ" },
     { to: "/staff/complaints", label: "Khiếu nại giao dịch", n: STATS.pending.complaints, unit: "khiếu nại" },
     { to: "/staff/blog", label: "Bài blog chờ duyệt", n: STATS.pending.posts, unit: "bài" },
@@ -40,13 +76,13 @@ export default function StaffHome() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
           label="Độ chính xác AI"
-          value={DATASET.accuracy + "%"}
-          note={`${fmtInt(DATASET.labeled)} ảnh đã gán nhãn`}
+          value={datasetStats.accuracy + "%"}
+          note={`${fmtInt(datasetStats.labeled)} ảnh đã gán nhãn`}
         />
         <Stat
           label="Ảnh trong tập kiểm chứng"
-          value={fmtInt(DATASET.total)}
-          note={`${fmtInt(DATASET.total - DATASET.labeled)} ảnh chờ gán nhãn`}
+          value={fmtInt(datasetStats.total)}
+          note={`${fmtInt(Math.max(0, datasetStats.total - datasetStats.labeled))} ảnh chờ gán nhãn`}
         />
         <Stat
           label="Kho quà đang mở"
