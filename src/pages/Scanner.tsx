@@ -1240,18 +1240,13 @@ function ScanResult({ result }: { result: ViewModelResult }) {
         className="reveal rounded-lg border border-line-soft bg-surface-2 p-4"
         style={{ animationDelay: `${T.conf}ms` }}
       >
-        <div className="flex items-center justify-between">
-          <p className="flex items-center gap-1.5 text-xs font-semibold text-ink">
-            <ShieldIcon />
-            Độ tin cậy nhận diện AI
-            {result.objects.length > 1 && result.activeRank
-              ? ` (Khung #${result.activeRank})`
-              : ""}
-          </p>
-          <span className="rounded-full border border-brand/20 bg-mint/25 px-2.5 py-1 text-[11px] font-semibold text-brand-deep">
-            Chính xác {result.confidencePct}%
-          </span>
-        </div>
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-ink">
+          <ShieldIcon />
+          Độ tin cậy nhận diện AI
+          {result.objects.length > 1 && result.activeRank
+            ? ` (Khung #${result.activeRank})`
+            : ""}
+        </p>
 
         <ul className="mt-3 flex flex-col gap-2.5">
           {result.breakdown.map((b, i) => (

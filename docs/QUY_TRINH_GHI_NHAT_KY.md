@@ -96,3 +96,5 @@ Khi bắt đầu một buổi làm việc mới, tạo file `docs/YYYY-MM-DD.md`
 - [`docs/2026-11-07.md`](2026-11-07.md): Tích hợp thư viện `@microsoft/signalr`, API Client & WebSocket Connection Manager cho Real-Time Negotiation Chatbox (`U-08` & `R-05`), Proposal Cards và liên thông 2 chiều giữa Handover và Requests.
 - [`docs/2026-11-08.md`](2026-11-08.md): Khởi động dự án, cài đặt bổ sung các package còn thiếu (`leaflet`, `@microsoft/signalr`) và kiểm tra toàn diện lỗi TypeScript, SSR smoke test, route render và Vite production build.
 - [`docs/2026-11-09.md`](2026-11-09.md): Nâng cấp chức năng Cây Ảo (`EcoFactsPage`) với chuỗi 70 khung hình animation WebP, điều khiển tiến trình sinh trưởng theo 6 giai đoạn, vòng lặp nở hoa 55-60 và đưa cây về frame 46 khi thu hoạch quả.
+- [`docs/2026-11-11.md`](2026-11-11.md): Đẩy mã nguồn nhánh `giang` lên kho lưu trữ từ xa và hoàn thiện bảng theo dõi dự án [`docs/Project_Tracking.xlsx`](Project_Tracking.xlsx) (`WBS`, `Issues`, `Defects`, `Q&A`) theo đúng dữ liệu thực tế của EcoLink Web.
+- [`docs/2026-11-12.md`](2026-11-12.md): Xóa badge `Chính xác {result.confidencePct}%` trùng lặp trong thẻ độ tin cậy AI tại `src/pages/Scanner.tsx`.
