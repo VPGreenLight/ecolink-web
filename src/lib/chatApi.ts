@@ -11,17 +11,31 @@
  */
 
 import * as signalR from "@microsoft/signalr"
-import { ApiError, apiRequest, fetchWithAutoHost, getResolvedApiHost } from "@/lib/api"
+import {
+  ApiError,
+  apiRequest,
+  clearSessionOnUnauthorized,
+  fetchWithAutoHost,
+  getResolvedApiHost,
+  rotateRefreshTokenSingleFlight,
+} from "@/lib/api"
 import type { ApiResponse } from "@/lib/api"
 import { INCOMING, MY_HANDOVERS } from "@/data/handover"
 import { WASTES } from "@/data/waste"
-import { getAccessToken, getSession } from "@/lib/session"
+import {
+  getAccessToken,
+  getRefreshToken,
+  getSession,
+  isStoredAccessTokenExpired,
+} from "@/lib/session"
 import type { Role } from "@/lib/session"
 import {
+  createHandoverOrder,
   ensureRoleJwt,
   findCachedHandoverOrder,
   formatOrderDisplayCode,
 } from "@/lib/recyclerWorkflowApi"
+import { LOCATION_PRESETS } from "@/lib/recyclerDiscoveryApi"
 
 // ==========================================
 // 1. Data Transfer Objects (DTOs)
@@ -34,6 +48,8 @@ export interface ProposalDetailDto {
   proposedPricePerKg: number
   proposedWeightKg: number
   proposedTimeSlot: string
+  categoryCode?: string | null
+  pickupAddress?: string | null
   note?: string | null
   proposalStatus: ProposalStatus
   respondedByUserId?: string | null
@@ -83,6 +99,7 @@ export interface OrderChatThreadDto {
   scheduledAt?: string | null
   acceptedAt?: string | null
   isProposalLocked: boolean
+  isInquiryOnly?: boolean
   isChatOpen: boolean
   unreadCount: number
   activeProposal?: ChatMessageDto | null
@@ -121,6 +138,10 @@ export interface SendProposalRequest {
   proposedPricePerKg: number
   proposedWeightKg: number
   proposedTimeSlot: string
+  categoryCode?: string
+  pickupAddress?: string
+  pickupLatitude?: number
+  pickupLongitude?: number
   note?: string
 }
 
@@ -133,18 +154,60 @@ export function isGuid(val: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)
 }
 
+/**
+ * [Chiều A: Chat trước -> Lên đơn] Tự động tạo (hoặc tái sử dụng) một đơn thương lượng nháp (`Negotiating`)
+ * trên PostgreSQL để tuân thủ BR-NEG-01 khi người dùng bắt đầu nhắn tin/ảnh/đề xuất từ trang /map.
+ */
+export async function ensureInquiryOrderForPartner(params: {
+  partnerId?: string
+  partnerName?: string
+}) {
+  return createHandoverOrder({
+    partnerId: params.partnerId,
+    partnerName: params.partnerName,
+    rows: [],
+    slot: "",
+    pickupAddress: "",
+    pickupLat: LOCATION_PRESETS[0].lat,
+    pickupLng: LOCATION_PRESETS[0].lng,
+    isInquiryDraft: true,
+  })
+}
+
 // ==========================================
 // 2. REST API Client Methods
 // ==========================================
 
-export async function getEffectiveAuthHeader(): Promise<Record<string, string>> {
-  const direct = getAccessToken()
-  if (direct) return { Authorization: `Bearer ${direct}` }
+async function resolveEffectiveBearerToken(): Promise<string | null> {
+  let direct = getAccessToken()
+  if (direct && isStoredAccessTokenExpired(10)) {
+    if (getRefreshToken()) {
+      direct = await rotateRefreshTokenSingleFlight()
+    } else {
+      clearSessionOnUnauthorized()
+      return null
+    }
+  }
+  if (direct) return direct
+
   const currentSession = getSession()
+  if (currentSession?.fromBackend) {
+    if (getRefreshToken()) {
+      const renewed = await rotateRefreshTokenSingleFlight()
+      if (renewed) return renewed
+    } else {
+      clearSessionOnUnauthorized()
+    }
+    return null
+  }
+
   const r: Role = currentSession?.role || "user"
-  const roleToken = await ensureRoleJwt(r).catch(() => null)
-  if (roleToken) return { Authorization: `Bearer ${roleToken}` }
-  return {}
+  return ensureRoleJwt(r).catch(() => null)
+}
+
+export async function getEffectiveAuthHeader(): Promise<Record<string, string>> {
+  const token = await resolveEffectiveBearerToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
 /**
@@ -240,6 +303,28 @@ export async function uploadChatAttachment(
           body: formData,
         },
       )
+
+      if (res.status === 401 && getRefreshToken()) {
+        const renewed = await rotateRefreshTokenSingleFlight()
+        if (renewed) {
+          const retryRes = await fetchWithAutoHost(
+            `/api/v1/trade/orders/${encodeURIComponent(orderId)}/messages/attachments`,
+            {
+              method: "POST",
+              headers: { Authorization: `Bearer ${renewed}` },
+              body: formData,
+            },
+          )
+          if (retryRes.ok) {
+            const retryJson = (await retryRes.json()) as ApiResponse<ChatAttachmentUploadResponseDto>
+            if (retryJson?.data) return retryJson.data
+          } else if (retryRes.status === 401) {
+            clearSessionOnUnauthorized()
+          }
+        }
+      } else if (res.status === 401) {
+        clearSessionOnUnauthorized()
+      }
 
       if (res.ok) {
         const json = (await res.json()) as ApiResponse<ChatAttachmentUploadResponseDto>
@@ -411,6 +496,11 @@ export interface SignalRChatHandlers {
     isTyping: boolean
     timestamp: string
   }) => void
+  onOrderChatUpdated?: (data: {
+    orderId: string
+    eventType?: string
+    updatedAt?: string
+  }) => void
   onReconnecting?: (error?: Error) => void
   onReconnected?: (connectionId?: string) => void
   onClose?: (error?: Error) => void
@@ -437,12 +527,8 @@ export function createNegotiationChatConnection(
   const connection = new signalR.HubConnectionBuilder()
     .withUrl(hubUrl, {
       accessTokenFactory: async () => {
-        const direct = getAccessToken()
-        if (direct) return direct
-        const currentSession = getSession()
-        const r: Role = currentSession?.role || "user"
-        const roleToken = await ensureRoleJwt(r).catch(() => null)
-        return roleToken || ""
+        const token = await resolveEffectiveBearerToken()
+        return token || ""
       },
       transport:
         signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.LongPolling,
@@ -465,6 +551,9 @@ export function createNegotiationChatConnection(
   }
   if (handlers.onUserTypingChanged) {
     connection.on("UserTypingChanged", handlers.onUserTypingChanged)
+  }
+  if (handlers.onOrderChatUpdated) {
+    connection.on("OrderChatUpdated", handlers.onOrderChatUpdated)
   }
 
   if (handlers.onReconnecting) {
@@ -679,6 +768,8 @@ function fallbackSendProposal(
     proposedPricePerKg: request.proposedPricePerKg,
     proposedWeightKg: request.proposedWeightKg,
     proposedTimeSlot: request.proposedTimeSlot,
+    categoryCode: request.categoryCode ?? thread.categoryCode,
+    pickupAddress: request.pickupAddress ?? thread.pickupAddress,
     note: request.note,
     proposalStatus: "Pending",
   }
@@ -728,6 +819,12 @@ function fallbackRespondProposal(
     thread.agreedPricePerKg = target.proposal.proposedPricePerKg
     thread.estimatedWeightKg = target.proposal.proposedWeightKg
     thread.confirmedTimeSlot = target.proposal.proposedTimeSlot
+    if (target.proposal.categoryCode) {
+      thread.categoryCode = target.proposal.categoryCode
+    }
+    if (target.proposal.pickupAddress) {
+      thread.pickupAddress = target.proposal.pickupAddress
+    }
     thread.acceptedAt = new Date().toISOString()
     thread.activeProposal = null
 

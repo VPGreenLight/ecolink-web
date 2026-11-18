@@ -10,7 +10,8 @@ import {
   calc,
   type Handover as HandoverItem,
 } from "@/data/handover"
-import { VND, WASTES, estimate } from "@/data/waste"
+import { VND, WASTES } from "@/data/waste"
+import { hasLiveBackendAuth } from "@/lib/session"
 import {
   LOCATION_PRESETS,
   searchNearbyRecyclers,
@@ -27,12 +28,30 @@ import {
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
 
+const WASTE_TO_CAT: Record<string, string> = {
+  pet: "plastic",
+  hdpe: "plastic",
+  carton: "cardboard",
+  "office-paper": "paper",
+  paper: "paper",
+  aluminum: "metal",
+  steel: "metal",
+  glass: "glass",
+}
+
 type HandoverView = HandoverItem & {
   displayCode: string
+  rawStatus?: string
+  unitPricePerKg?: number
   pickupLat?: number
   pickupLng?: number
   fromBackend?: boolean
 }
+
+const priceForOrder = (h: HandoverView) => (wasteId: string) =>
+  h.unitPricePerKg && h.unitPricePerKg > 0 && wasteId === h.lines[0]?.wasteId
+    ? h.unitPricePerKg
+    : priceOf(wasteId)
 
 const DEFAULT_OFFLINE_HANDOVERS: HandoverView[] = MY_HANDOVERS.map((m) => ({
   ...m,
@@ -53,38 +72,49 @@ export default function Handover() {
   const prefilledWaste = searchParams.get("waste") ?? ""
 
   const [open, setOpen] = useState(() => Boolean(prefilledPartner || prefilledWaste))
-  const [list, setList] = useState<HandoverView[]>(DEFAULT_OFFLINE_HANDOVERS)
+  const [list, setList] = useState<HandoverView[]>(() =>
+    hasLiveBackendAuth() ? [] : DEFAULT_OFFLINE_HANDOVERS,
+  )
+  const [loading, setLoading] = useState<boolean>(() => hasLiveBackendAuth())
   const [editId, setEditId] = useState<string | null>(null)
   const [flash, setFlash] = useState("")
 
   useEffect(() => {
     let active = true
-    void fetchHandoverOrdersResult("user").then((res) => {
-      if (!active) return
-      const mapped: HandoverView[] = res.orders.map((s) => ({
-        id: s.id,
-        displayCode: s.displayCode || formatOrderDisplayCode(s.id),
-        recycler: s.recycler,
-        address: s.address,
-        date: s.date,
-        slot: s.slot,
-        lines: s.lines,
-        status: s.status,
-        reason: s.reason,
-        pickupLat: s.pickupLat,
-        pickupLng: s.pickupLng,
-        fromBackend: s.fromBackend,
-      }))
+    void fetchHandoverOrdersResult("user")
+      .then((res) => {
+        if (!active) return
+        const mapped: HandoverView[] = res.orders.map((s) => ({
+          id: s.id,
+          displayCode: s.displayCode || formatOrderDisplayCode(s.id),
+          recycler: s.recycler,
+          address: s.address,
+          date: s.date,
+          slot: s.slot,
+          lines: s.lines,
+          status: s.status,
+          rawStatus: s.rawStatus,
+          unitPricePerKg: s.agreedPricePerKg ?? s.initialPricePerKg,
+          reason: s.reason,
+          pickupLat: s.pickupLat,
+          pickupLng: s.pickupLng,
+          fromBackend: s.fromBackend,
+        }))
 
-      if (res.fromBackend) {
-        // Khi kết nối PostgreSQL thành công: hiển thị đúng các đơn thật của tài khoản hiện tại
-        setList(mapped)
-      } else if (mapped.length > 0) {
-        const existingIds = new Set(DEFAULT_OFFLINE_HANDOVERS.map((m) => m.id))
-        const fresh = mapped.filter((s) => !existingIds.has(s.id))
-        setList([...fresh, ...DEFAULT_OFFLINE_HANDOVERS])
-      }
-    })
+        if (res.fromBackend) {
+          // Khi kết nối PostgreSQL thành công: hiển thị đúng các đơn thật của tài khoản hiện tại
+          setList(mapped)
+        } else if (mapped.length > 0) {
+          const existingIds = new Set(DEFAULT_OFFLINE_HANDOVERS.map((m) => m.id))
+          const fresh = mapped.filter((s) => !existingIds.has(s.id))
+          setList([...fresh, ...DEFAULT_OFFLINE_HANDOVERS])
+        } else {
+          setList(DEFAULT_OFFLINE_HANDOVERS)
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
     return () => {
       active = false
     }
@@ -154,19 +184,29 @@ export default function Handover() {
         />
       )}
 
-      {list.length === 0 ? (
+      {loading ? (
         <p className="card px-5 py-8 text-center text-sm text-muted">
-          Bạn chưa có yêu cầu nào trên hệ thống. Bấm "Tạo yêu cầu mới" để đặt lịch thu gom.
+          Đang tải danh sách yêu cầu thu gom...
+        </p>
+      ) : list.length === 0 ? (
+        <p className="card px-5 py-8 text-center text-sm text-muted">
+          Bạn chưa có yêu cầu nào trên hệ thống. Bấm &quot;Tạo yêu cầu mới&quot; để đặt lịch thu gom.
         </p>
       ) : (
         <ul className="flex flex-col gap-4">
-          {list.map((h) => (
+          {list.map((h) => {
+            const rowPrice = priceForOrder(h)
+            return (
             <li key={h.id} className="card overflow-hidden">
               <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line-soft px-5 py-4">
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-2">
                     <span className="font-bold text-ink">{h.recycler}</span>
-                    <Status tone={TONE[h.status]}>{STATUS_LABEL[h.status]}</Status>
+                    <Status tone={h.rawStatus?.toLowerCase() === "negotiating" ? "wait" : TONE[h.status]}>
+                      {h.rawStatus?.toLowerCase() === "negotiating"
+                        ? "Đang thương lượng"
+                        : STATUS_LABEL[h.status]}
+                    </Status>
                   </p>
                   <p className="mt-1 text-[13px] text-muted">
                     {h.displayCode} · {h.date} · {h.slot}
@@ -228,7 +268,7 @@ export default function Handover() {
                       <Td className="font-semibold text-ink">{nameOf(l.wasteId)}</Td>
                       <Td className="tabular-nums">{l.kg.toLocaleString("vi-VN")} kg</Td>
                       <Td className="tabular-nums">
-                        {VND(l.kg * priceOf(l.wasteId))}
+                        {VND(l.kg * rowPrice(l.wasteId))}
                       </Td>
                     </tr>
                   ))}
@@ -243,7 +283,7 @@ export default function Handover() {
                       kg
                     </Td>
                     <Td className="tabular-nums font-bold text-brand">
-                      {VND(calc(h, priceOf).gross)}
+                      {VND(calc(h, rowPrice).gross)}
                     </Td>
                   </tr>
                 </Table>
@@ -283,7 +323,8 @@ export default function Handover() {
                 )}
               </div>
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
     </div>
@@ -296,6 +337,7 @@ type Draft = {
   orderCode: string
   syncedWithBackend: boolean
   rows: { wasteId: string; kg: number }[]
+  unitPricePerKg?: number
   slot: string
   address: string
   pickupLat: number
@@ -316,6 +358,7 @@ function newRow(d: Draft): HandoverView {
     date: `${dd}/${mm}/${yyyy}`,
     slot: d.slot,
     lines: d.rows.map((r) => ({ wasteId: r.wasteId, kg: r.kg })),
+    unitPricePerKg: d.unitPricePerKg,
     status: "pending",
     pickupLat: d.pickupLat,
     pickupLng: d.pickupLng,
@@ -340,7 +383,9 @@ function CreateForm({
 
   const [rows, setRows] = useState([{ wasteId: validInitialWaste, kg: 5 }])
   const [slot, setSlot] = useState<string>(TIME_SLOTS[1])
-  const [address, setAddress] = useState("Đầu ngõ 24 Lý Tự Trọng, P. Bến Nghé, Quận 1")
+  const [address, setAddress] = useState(
+    "Cổng phụ Khu CNC Hòa Lạc (gần ĐH FPT), Xã Tân Xã, Thạch Thất, Hà Nội",
+  )
   const [pickupLat, setPickupLat] = useState<number>(LOCATION_PRESETS[0].lat)
   const [pickupLng, setPickupLng] = useState<number>(LOCATION_PRESETS[0].lng)
   const [partners, setPartners] = useState<CollectionPartnerDto[]>([])
@@ -382,6 +427,15 @@ function CreateForm({
     }
   }, [initialPartnerId, pickupLat, pickupLng])
 
+  const selectedPartnerObj = partners.find((p) => p.id === selectedPartnerId)
+  const partnerPriceOf = (wasteId: string) => {
+    const catCode = WASTE_TO_CAT[wasteId] ?? wasteId
+    const mat = selectedPartnerObj?.materials?.find(
+      (m) => m.categoryCode.toLowerCase() === catCode.toLowerCase() && m.pricePerKg > 0,
+    )
+    return mat?.pricePerKg ?? priceOf(wasteId)
+  }
+
   const set = (i: number, patch: Partial<{ wasteId: string; kg: number }>) =>
     setRows((r) => r.map((row, n) => (n === i ? { ...row, ...patch } : row)))
 
@@ -399,13 +453,14 @@ function CreateForm({
     setErr("")
     setSubmitting(true)
     try {
+      const primaryUnitPrice = rows[0] ? partnerPriceOf(rows[0].wasteId) : 5500
       const result = await createHandoverOrder({
         partnerId: selectedPartnerId || initialPartnerId || undefined,
         partnerName: selectedPartnerName || initialPartner || undefined,
         rows: rows.map((r) => ({
           wasteId: r.wasteId,
           kg: r.kg,
-          unitPrice: priceOf(r.wasteId),
+          unitPrice: partnerPriceOf(r.wasteId),
         })),
         slot,
         pickupAddress: address,
@@ -419,6 +474,7 @@ function CreateForm({
         orderCode: result.orderCode,
         syncedWithBackend: result.syncedWithBackend,
         rows,
+        unitPricePerKg: primaryUnitPrice,
         slot,
         address,
         pickupLat,
@@ -430,7 +486,7 @@ function CreateForm({
     }
   }
 
-  const { gross } = estimate(rows)
+  const gross = rows.reduce((sum, r) => sum + r.kg * partnerPriceOf(r.wasteId), 0)
 
   return (
     <form onSubmit={(e) => void submit(e)} noValidate className="card flex flex-col gap-5 p-5">
@@ -482,7 +538,7 @@ function CreateForm({
               >
                 {WASTES.filter((w) => w.recyclable).map((w) => (
                   <option key={w.id} value={w.id}>
-                    {w.name} · {VND(w.price)}/kg
+                    {w.name} · {VND(partnerPriceOf(w.id))}/kg
                   </option>
                 ))}
               </select>

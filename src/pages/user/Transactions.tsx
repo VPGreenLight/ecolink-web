@@ -3,6 +3,7 @@ import { PageHead, Stat, Status, Table, Td } from "@/components/Portal"
 import { FLOWS, KIND_LABEL } from "@/data/cashflow"
 import { fmtVnd } from "@/data/ops"
 import { fetchUserTransactions, type TransactionHistoryDto } from "@/lib/recyclerWorkflowApi"
+import { hasLiveBackendAuth } from "@/lib/session"
 
 /** U-14 Xem lịch sử dòng tiền + SYS-01 giải ngân tự động.
  *
@@ -11,17 +12,23 @@ import { fetchUserTransactions, type TransactionHistoryDto } from "@/lib/recycle
  *  dòng dùng chung một bảng để thấy mỗi giao dịch có đủ 3 dòng không —
  *  thiếu dòng nghĩa là tiền bị kẹt, đó là việc người dùng cần thấy. */
 export default function Transactions() {
+  const liveAuth = hasLiveBackendAuth()
   const [liveData, setLiveData] = useState<TransactionHistoryDto | null>(null)
   const [fromBackend, setFromBackend] = useState(false)
+  const [loading, setLoading] = useState<boolean>(() => liveAuth)
 
   useEffect(() => {
     let active = true
     async function load() {
-      const res = await fetchUserTransactions()
-      if (!active) return
-      if (res.data.items.length > 0) {
-        setLiveData(res.data)
-        setFromBackend(res.fromBackend)
+      try {
+        const res = await fetchUserTransactions()
+        if (!active) return
+        if (res.fromBackend || res.data.items.length > 0) {
+          setLiveData(res.data)
+          setFromBackend(res.fromBackend)
+        }
+      } finally {
+        if (active) setLoading(false)
       }
     }
     void load()
@@ -30,8 +37,13 @@ export default function Transactions() {
     }
   }, [])
 
-  const payout = FLOWS.filter((f) => f.kind === "payout").reduce((s, f) => s + f.amount, 0)
-  const fee = FLOWS.filter((f) => f.kind === "fee").reduce((s, f) => s + f.amount, 0)
+  const showOfflineDemo = !loading && !fromBackend && !liveAuth
+  const payout = showOfflineDemo
+    ? FLOWS.filter((f) => f.kind === "payout").reduce((s, f) => s + f.amount, 0)
+    : 0
+  const fee = showOfflineDemo
+    ? FLOWS.filter((f) => f.kind === "fee").reduce((s, f) => s + f.amount, 0)
+    : 0
   const last = FLOWS[0]
 
   const totalPayout = liveData ? liveData.totalAmountCash : payout
@@ -57,22 +69,28 @@ export default function Transactions() {
           }
         />
         <Stat
-          label={liveData ? "Tổng rác bàn giao" : "Phí nền tảng"}
-          value={liveData ? `${totalWeight.toLocaleString("vi-VN")} kg` : fmtVnd(fee)}
+          label={liveData || liveAuth ? "Tổng rác bàn giao" : "Phí nền tảng"}
+          value={liveData || liveAuth ? `${totalWeight.toLocaleString("vi-VN")} kg` : fmtVnd(fee)}
           note={
-            liveData
+            liveData || liveAuth
               ? `Tích lũy ${totalPoints} điểm xanh`
               : "Trích trên giao dịch thành công"
           }
         />
         <Stat
           label="Giao dịch gần nhất"
-          value={liveData?.items[0]?.completedAt.slice(0, 10) || last.date}
-          note={liveData?.items[0]?.requestCode || last.handoverId}
+          value={
+            liveData?.items[0]?.completedAt.slice(0, 10) || (showOfflineDemo ? last.date : "—")
+          }
+          note={liveData?.items[0]?.requestCode || (showOfflineDemo ? last.handoverId : "Chưa có giao dịch")}
         />
       </div>
 
-      {liveData && liveData.items.length > 0 ? (
+      {loading ? (
+        <p className="card px-5 py-8 text-center text-sm text-muted">
+          Đang tải lịch sử giao dịch...
+        </p>
+      ) : liveData && liveData.items.length > 0 ? (
         <Table head={["Ngày", "Mã đơn", "Đối tác", "Khối lượng", "Số tiền nhận", "Điểm xanh"]}>
           {liveData.items.map((item) => (
             <tr key={item.receiptId} className="bg-brand/6">
@@ -95,6 +113,11 @@ export default function Transactions() {
             </tr>
           ))}
         </Table>
+      ) : fromBackend || liveAuth ? (
+        <p className="card px-5 py-8 text-center text-sm text-muted">
+          Tài khoản chưa có giao dịch hoàn tất nào trên hệ thống. Khi bạn xác nhận biên nhận thu
+          gom, tiền thanh toán và Điểm Xanh sẽ tự động ghi nhận tại đây.
+        </p>
       ) : (
         <Table head={["Ngày", "Mã", "Loại", "Số tiền", "Đối tác", "Ghi chú"]}>
           {FLOWS.map((f) => (

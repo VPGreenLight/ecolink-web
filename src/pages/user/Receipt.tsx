@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
 import { INCOMING, STATUS_LABEL, TONE, calc, type Handover } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
@@ -7,7 +7,7 @@ import { ApiError } from "@/lib/api"
 import {
   confirmHandoverReceipt,
   disputeHandoverReceipt,
-  fetchSyncedHandoverOrders,
+  fetchHandoverOrdersResult,
   fetchUserReceipt,
   findCachedHandoverOrder,
   type ReceiptDto,
@@ -19,7 +19,7 @@ import {
   uploadComplaintEvidence,
   type TransactionReviewDto,
 } from "@/lib/reviewComplaintApi"
-import { getAccessToken } from "@/lib/session"
+import { getAccessToken, hasLiveBackendAuth } from "@/lib/session"
 
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
@@ -32,9 +32,12 @@ const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
 export default function Receipt() {
   const [searchParams] = useSearchParams()
   const orderId = searchParams.get("orderId")
+  const liveAuth = hasLiveBackendAuth()
 
   const defaultHandover = INCOMING.find((x) => x.status === "collected") || INCOMING[0]
-  const [h, setH] = useState<Handover>(() => {
+  const [loadingOrder, setLoadingOrder] = useState<boolean>(() => liveAuth)
+  const [orderUnitPrice, setOrderUnitPrice] = useState<number | undefined>(undefined)
+  const [h, setH] = useState<Handover | null>(() => {
     if (orderId) {
       const cached = findCachedHandoverOrder(orderId)
       if (cached) {
@@ -51,11 +54,11 @@ export default function Receipt() {
         }
       }
     }
-    return defaultHandover
+    return liveAuth ? null : defaultHandover
   })
 
   const [actual, setActual] = useState(() =>
-    (h.lines ?? []).map((l) => ({ wasteId: l.wasteId, kg: l.kg })),
+    (h?.lines ?? []).map((l) => ({ wasteId: l.wasteId, kg: l.kg })),
   )
   const [confirmed, setConfirmed] = useState(false)
   const [disputed, setDisputed] = useState(false)
@@ -73,74 +76,112 @@ export default function Receipt() {
   useEffect(() => {
     let active = true
     async function loadData() {
-      if (getAccessToken() && orderId) {
-        try {
-          const myRevs = await fetchMyReviews(1, 50)
-          if (active && myRevs.success) {
-            const matched = myRevs.data.items.find((rv) => rv.requestId === orderId)
-            if (matched) setSubmittedReview(matched)
+      try {
+        const ordersRes = await fetchHandoverOrdersResult("user")
+        if (!active) return
+
+        const found = orderId
+          ? ordersRes.orders.find((o) => o.id === orderId || o.displayCode === orderId)
+          : ordersRes.orders.find((o) => o.status === "collected" || o.status === "done")
+
+        const targetId = found?.id || orderId
+
+        if (getAccessToken() && targetId) {
+          try {
+            const myRevs = await fetchMyReviews(1, 50)
+            if (active && myRevs.success) {
+              const matched = myRevs.data.items.find((rv) => rv.requestId === targetId)
+              if (matched) setSubmittedReview(matched)
+            }
+          } catch {
+            // bỏ qua nếu chưa đăng nhập hoặc offline
           }
-        } catch {
-          // bỏ qua nếu chưa đăng nhập hoặc offline
         }
-      }
 
-      if (!orderId) return
+        const r = targetId ? await fetchUserReceipt(targetId) : null
+        if (!active) return
 
-      // Tải thông tin biên nhận từ backend
-      const r = await fetchUserReceipt(orderId)
-      if (!active) return
-
-      if (r) {
-        setReceiptInfo(r)
-        if (r.confirmedByUserAt || r.requestStatus === "Completed") {
-          setConfirmed(true)
+        if (r) {
+          setReceiptInfo(r)
+          if (r.confirmedByUserAt || r.requestStatus === "Completed") {
+            setConfirmed(true)
+          }
+          if (r.requestStatus === "Disputed") {
+            setDisputed(true)
+          }
+          if (Array.isArray(r.lines) && r.lines.length > 0) {
+            setActual(
+              r.lines.map((l) => ({
+                wasteId: l.wasteCategoryId || l.wasteCategoryCode || "plastic",
+                kg: l.actualWeightKg,
+              })),
+            )
+          }
         }
-        if (r.requestStatus === "Disputed") {
-          setDisputed(true)
-        }
-        if (Array.isArray(r.lines) && r.lines.length > 0) {
-          setActual(
-            r.lines.map((l) => ({
-              wasteId: l.wasteCategoryId || l.wasteCategoryCode || "plastic",
-              kg: l.actualWeightKg,
+
+        if (found) {
+          setOrderUnitPrice(found.agreedPricePerKg ?? found.initialPricePerKg)
+          setH({
+            id: found.id,
+            displayCode: found.displayCode,
+            recycler: found.recycler,
+            address: found.address,
+            date: found.date,
+            slot: found.slot,
+            lines: found.lines,
+            status: found.status,
+            reason: found.reason,
+          })
+          if (!r) {
+            setActual(found.lines.map((l) => ({ wasteId: l.wasteId, kg: l.kg })))
+          }
+        } else if (!ordersRes.fromBackend && !liveAuth) {
+          setH(defaultHandover)
+          setActual(defaultHandover.lines.map((l) => ({ wasteId: l.wasteId, kg: l.kg })))
+        } else if (r) {
+          setH({
+            id: r.requestId,
+            displayCode: r.requestCode,
+            recycler: r.recycler?.name || "Cơ sở thu mua EcoLink",
+            address: r.recycler?.address || "Điểm hẹn bàn giao",
+            date: r.createdAt ? new Date(r.createdAt).toLocaleDateString("vi-VN") : "Hôm nay",
+            slot: "Theo biên nhận",
+            lines: r.lines.map((l) => ({
+              wasteId: l.wasteCategoryId || l.wasteCategoryCode || "pet",
+              kg: l.estimatedWeightKg,
             })),
-          )
+            status: r.requestStatus === "Completed" ? "done" : "collected",
+          })
+        } else {
+          setH(null)
         }
-      }
-
-      // Tải chi tiết đơn bàn giao
-      const orders = await fetchSyncedHandoverOrders("user")
-      if (!active) return
-      const found = orders.find((o) => o.id === orderId || o.displayCode === orderId)
-      if (found) {
-        setH({
-          id: found.id,
-          displayCode: found.displayCode,
-          recycler: found.recycler,
-          address: found.address,
-          date: found.date,
-          slot: found.slot,
-          lines: found.lines,
-          status: found.status,
-          reason: found.reason,
-        })
-        if (!r) {
-          setActual(found.lines.map((l) => ({ wasteId: l.wasteId, kg: l.kg })))
-        }
+      } finally {
+        if (active) setLoadingOrder(false)
       }
     }
     void loadData()
     return () => {
       active = false
     }
-  }, [orderId])
+  }, [orderId, liveAuth])
 
-  const money = calc({ ...h, actual }, priceOf)
-  const differs = actual.some((a, i) => a.kg !== h.lines[i]?.kg)
+  const rowPriceOf = (wasteId: string, index?: number) => {
+    if (receiptInfo && typeof index === "number" && receiptInfo.lines[index]?.unitPricePerKg > 0) {
+      return receiptInfo.lines[index].unitPricePerKg
+    }
+    if (orderUnitPrice && orderUnitPrice > 0 && (!index || index === 0)) {
+      return orderUnitPrice
+    }
+    return priceOf(wasteId)
+  }
+
+  const baseHandover = h ?? defaultHandover
+  const money = calc({ ...baseHandover, actual }, (id) => rowPriceOf(id))
+  const differs = actual.some((a, i) => a.kg !== baseHandover.lines[i]?.kg)
 
   const confirm = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!h) return
     setProcessing(true)
     try {
       const res = await confirmHandoverReceipt(h.id)
@@ -157,6 +198,7 @@ export default function Receipt() {
 
   const handleDisputeSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!h) return
     const clean = disputeReason.trim()
     if (clean.length < 10) {
       setFlashMessage("Vui lòng nhập lý do khiếu nại tối thiểu 10 ký tự.")
@@ -190,7 +232,7 @@ export default function Receipt() {
   }
 
   const handleSubmitReview = async () => {
-    if (stars < 1 || stars > 5) return
+    if (!h || stars < 1 || stars > 5) return
     setReviewBusy(true)
     try {
       const res = await createHandoverReview(h.id, {
@@ -269,6 +311,24 @@ export default function Receipt() {
         </div>
       )}
 
+      {loadingOrder ? (
+        <p className="card px-5 py-8 text-center text-sm text-muted">
+          Đang tải thông tin biên nhận...
+        </p>
+      ) : !h ? (
+        <div className="card flex flex-col items-center gap-3 px-5 py-10 text-center">
+          <p className="text-sm font-semibold text-ink">
+            Chưa có biên nhận thu gom nào đang chờ xác nhận.
+          </p>
+          <p className="max-w-[52ch] text-xs text-muted">
+            Khi cơ sở thu gom đến cân thực tế và phát hành biên nhận, bạn có thể bấm vào nút
+            &quot;Xác nhận biên nhận&quot; từ trang Yêu cầu thu gom hoặc khung Chat.
+          </p>
+          <Link to="/user/handover" className="btn-primary h-10 px-5 text-xs font-semibold">
+            Quay lại Yêu cầu thu gom
+          </Link>
+        </div>
+      ) : (
       <form onSubmit={confirm} className="card flex flex-col gap-5 p-5 md:p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-line-soft pb-4">
           <div>
@@ -304,7 +364,7 @@ export default function Receipt() {
                 />
               </Td>
               <Td className="tabular-nums font-semibold text-ink">
-                {VND(a.kg * priceOf(a.wasteId))}
+                {VND(a.kg * rowPriceOf(a.wasteId, i))}
               </Td>
             </tr>
           ))}
@@ -364,8 +424,9 @@ export default function Receipt() {
           )}
         </div>
       </form>
+      )}
 
-      {showDisputeForm && !confirmed && !disputed && (
+      {h && showDisputeForm && !confirmed && !disputed && (
         <form onSubmit={(e) => void handleDisputeSubmit(e)} className="card flex flex-col gap-4 border-warn/40 p-5 md:p-6">
           <h2 className="text-base font-bold text-ink">
             Gửi khiếu nại sai lệch biên nhận (U-11)
@@ -406,7 +467,7 @@ export default function Receipt() {
         </form>
       )}
 
-      {confirmed && (
+      {h && confirmed && (
         <section className="card flex flex-col gap-4 p-5 md:p-6">
           <h2 className="text-base font-bold text-ink">
             Đánh giá {h.recycler}

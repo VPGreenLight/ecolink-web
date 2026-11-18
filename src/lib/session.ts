@@ -149,6 +149,47 @@ export function getRefreshToken(): string | null {
   }
 }
 
+export function hasLiveBackendAuth(): boolean {
+  return Boolean(getSession()?.fromBackend || getAccessToken())
+}
+
+/**
+ * Kiểm tra payload `exp` của JWT phía client (không xác minh chữ ký).
+ * Trả về `false` nếu chuỗi không phải JWT chuẩn để tránh xóa nhầm token demo/tùy biến.
+ */
+export function isJwtExpired(token?: string | null, leewaySeconds = 10): boolean {
+  if (!token) return false
+  const parts = token.split(".")
+  if (parts.length !== 3) return false
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/")
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")
+    if (typeof atob !== "function") return false
+    const json = atob(padded)
+    const payload = JSON.parse(json) as { exp?: unknown }
+    if (typeof payload.exp !== "number") return false
+    return Date.now() >= payload.exp * 1000 - leewaySeconds * 1000
+  } catch {
+    return false
+  }
+}
+
+export function isStoredAccessTokenExpired(leewaySeconds = 10): boolean {
+  if (typeof localStorage === "undefined") return false
+  try {
+    const expiresRaw = localStorage.getItem(TOKEN_EXPIRES_AT_KEY)
+    if (expiresRaw) {
+      const expiresMs = Date.parse(expiresRaw)
+      if (!Number.isNaN(expiresMs) && Date.now() >= expiresMs - leewaySeconds * 1000) {
+        return true
+      }
+    }
+  } catch {
+    // Bỏ qua lỗi đọc storage
+  }
+  return isJwtExpired(getAccessToken(), leewaySeconds)
+}
+
 export function setAuthTokens(tokens: {
   accessToken: string
   refreshToken?: string | null

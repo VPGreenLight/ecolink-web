@@ -24,6 +24,7 @@ import { useSyncExternalStore } from "react"
 import {
   ApiError,
   apiRequest,
+  clearSessionOnUnauthorized,
   fetchWithAutoHost,
   rotateRefreshTokenSingleFlight,
   type ApiResponse,
@@ -625,6 +626,7 @@ export async function exportReconciliationReportBlob(
   }
 
   if (!res.ok) {
+    if (res.status === 401) clearSessionOnUnauthorized()
     let errMsg = `Xuất bảng kê đối soát thất bại (HTTP ${res.status}).`
     try {
       const json = (await res.json()) as { message?: string }

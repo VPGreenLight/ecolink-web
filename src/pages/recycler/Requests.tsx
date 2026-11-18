@@ -11,6 +11,7 @@ import {
   type Handover as HandoverItem,
 } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
+import { hasLiveBackendAuth } from "@/lib/session"
 import {
   fetchHandoverOrdersResult,
   formatOrderDisplayCode,
@@ -29,6 +30,8 @@ const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
 
 type IncomingView = HandoverItem & {
   displayCode: string
+  rawStatus?: string
+  unitPricePerKg?: number
   citizenName?: string
   pickupLat?: number
   pickupLng?: number
@@ -41,13 +44,21 @@ const DEFAULT_OFFLINE_INCOMING: IncomingView[] = INCOMING.map((item) => ({
   fromBackend: false,
 }))
 
+const priceForOrder = (h: IncomingView) => (wasteId: string) =>
+  h.unitPricePerKg && h.unitPricePerKg > 0 && wasteId === h.lines[0]?.wasteId
+    ? h.unitPricePerKg
+    : priceOf(wasteId)
+
 /** R-03 Tiếp nhận / Từ chối yêu cầu bàn giao (kèm xem ghim điểm hẹn đầu ngõ của Người dân).
  *
  *  Nhận = chốt luôn khung giờ User đề xuất, nên bấm Nhận là một cam kết thời
  *  gian. Đã cam kết rồi mà đổi lịch thì phải qua R-04 (huỷ kèm lý do) chứ
  *  không sửa lặng lẽ. */
 export default function Requests() {
-  const [list, setList] = useState<IncomingView[]>(DEFAULT_OFFLINE_INCOMING)
+  const [list, setList] = useState<IncomingView[]>(() =>
+    hasLiveBackendAuth() ? [] : DEFAULT_OFFLINE_INCOMING,
+  )
+  const [loading, setLoading] = useState<boolean>(() => hasLiveBackendAuth())
   const [busy, setBusy] = useState("")
   const [flash, setFlash] = useState("")
   const [openMapId, setOpenMapId] = useState<string | null>(null)
@@ -59,33 +70,41 @@ export default function Requests() {
 
   useEffect(() => {
     let active = true
-    void fetchHandoverOrdersResult("recycler").then((res) => {
-      if (!active) return
-      const mapped: IncomingView[] = res.orders.map((s) => ({
-        id: s.id,
-        displayCode: s.displayCode || formatOrderDisplayCode(s.id),
-        citizenName: s.citizenName,
-        recycler: s.recycler,
-        address: s.address,
-        date: s.date,
-        slot: s.slot,
-        lines: s.lines,
-        status: s.status,
-        reason: s.reason,
-        pickupLat: s.pickupLat,
-        pickupLng: s.pickupLng,
-        fromBackend: s.fromBackend,
-      }))
+    void fetchHandoverOrdersResult("recycler")
+      .then((res) => {
+        if (!active) return
+        const mapped: IncomingView[] = res.orders.map((s) => ({
+          id: s.id,
+          displayCode: s.displayCode || formatOrderDisplayCode(s.id),
+          rawStatus: s.rawStatus,
+          unitPricePerKg: s.agreedPricePerKg ?? s.initialPricePerKg,
+          citizenName: s.citizenName,
+          recycler: s.recycler,
+          address: s.address,
+          date: s.date,
+          slot: s.slot,
+          lines: s.lines,
+          status: s.status,
+          reason: s.reason,
+          pickupLat: s.pickupLat,
+          pickupLng: s.pickupLng,
+          fromBackend: s.fromBackend,
+        }))
 
-      if (res.fromBackend) {
-        // Khi kết nối PostgreSQL thành công: hiển thị đúng các đơn bàn giao thật gửi tới vựa hiện tại
-        setList(mapped)
-      } else if (mapped.length > 0) {
-        const existingIds = new Set(DEFAULT_OFFLINE_INCOMING.map((x) => x.id))
-        const fresh = mapped.filter((s) => !existingIds.has(s.id))
-        setList([...fresh, ...DEFAULT_OFFLINE_INCOMING])
-      }
-    })
+        if (res.fromBackend) {
+          // Khi kết nối PostgreSQL thành công: hiển thị đúng các đơn bàn giao thật gửi tới vựa hiện tại
+          setList(mapped)
+        } else if (mapped.length > 0) {
+          const existingIds = new Set(DEFAULT_OFFLINE_INCOMING.map((x) => x.id))
+          const fresh = mapped.filter((s) => !existingIds.has(s.id))
+          setList([...fresh, ...DEFAULT_OFFLINE_INCOMING])
+        } else {
+          setList(DEFAULT_OFFLINE_INCOMING)
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
     return () => {
       active = false
     }
@@ -198,7 +217,11 @@ export default function Requests() {
         <h2 className="text-base font-bold text-ink">
           Chờ bạn xác nhận ({pending.length})
         </h2>
-        {pending.length === 0 ? (
+        {loading ? (
+          <p className="card mt-3 px-5 py-8 text-center text-sm text-muted">
+            Đang tải danh sách yêu cầu bàn giao...
+          </p>
+        ) : pending.length === 0 ? (
           <p className="card mt-3 px-5 py-8 text-center text-sm text-muted">
             Không có yêu cầu nào đang chờ xác nhận.
           </p>
@@ -212,7 +235,12 @@ export default function Requests() {
                 <li key={h.id} className="card flex flex-col gap-4 p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-bold text-ink">{h.address}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-bold text-ink">{h.address}</p>
+                        {h.rawStatus?.toLowerCase() === "negotiating" && (
+                          <Status tone="wait">Đang thương lượng</Status>
+                        )}
+                      </div>
                       <p className="mt-0.5 text-[13px] text-muted">
                         {h.displayCode}
                         {h.citizenName ? ` · Người gửi: ${h.citizenName}` : ""} · {h.date} · Khung
@@ -220,7 +248,7 @@ export default function Requests() {
                       </p>
                     </div>
                     <p className="shrink-0 text-base font-bold tabular-nums text-brand">
-                      {VND(calc(h, priceOf).gross)}
+                      {VND(calc(h, priceForOrder(h)).gross)}
                     </p>
                   </div>
 
@@ -312,7 +340,7 @@ export default function Requests() {
                     {h.date} · {h.slot}
                   </Td>
                   <Td className="tabular-nums whitespace-nowrap">
-                    {VND(calc(h, priceOf).gross)}
+                    {VND(calc(h, priceForOrder(h)).gross)}
                   </Td>
                   <Td>
                     <Status tone={TONE[h.status]}>{STATUS_LABEL[h.status]}</Status>

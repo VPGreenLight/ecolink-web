@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { PageHead, Table, Td } from "@/components/Portal"
 import { INCOMING, calc, type Handover } from "@/data/handover"
 import { FEE_RATE, VND, WASTES } from "@/data/waste"
 import {
   createHandoverReceipt,
+  fetchHandoverOrdersResult,
   fetchRecyclerReceipt,
-  fetchSyncedHandoverOrders,
   findCachedHandoverOrder,
   type CreateReceiptRequest,
 } from "@/lib/recyclerWorkflowApi"
+import { hasLiveBackendAuth } from "@/lib/session"
 
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
@@ -23,9 +24,12 @@ const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
 export default function Receipt() {
   const [searchParams] = useSearchParams()
   const orderId = searchParams.get("orderId")
+  const liveAuth = hasLiveBackendAuth()
 
   const defaultHandover = INCOMING.find((x) => x.status === "collected") || INCOMING[0]
-  const [h, setH] = useState<Handover>(() => {
+  const [loadingOrder, setLoadingOrder] = useState<boolean>(() => liveAuth)
+  const [orderUnitPrice, setOrderUnitPrice] = useState<number | undefined>(undefined)
+  const [h, setH] = useState<Handover | null>(() => {
     if (orderId) {
       const cached = findCachedHandoverOrder(orderId)
       if (cached) {
@@ -42,11 +46,11 @@ export default function Receipt() {
         }
       }
     }
-    return defaultHandover
+    return liveAuth ? null : defaultHandover
   })
 
   const [rows, setRows] = useState(() =>
-    h.lines.map((l) => ({ wasteId: l.wasteId, kg: l.kg })),
+    (h?.lines ?? []).map((l) => ({ wasteId: l.wasteId, kg: l.kg })),
   )
   const [files, setFiles] = useState<File[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -56,49 +60,72 @@ export default function Receipt() {
   useEffect(() => {
     let active = true
     async function loadOrder() {
-      if (!orderId) return
-      // Kiểm tra xem đã có biên nhận được phát hành chưa
-      const existingReceipt = await fetchRecyclerReceipt(orderId)
-      if (!active) return
+      try {
+        const ordersRes = await fetchHandoverOrdersResult("recycler")
+        if (!active) return
 
-      if (existingReceipt) {
-        setSent(true)
-        setStatusMessage(
-          `Đơn này đã có biên nhận #${existingReceipt.receiptCode || existingReceipt.receiptId} (trạng thái: ${existingReceipt.requestStatus}).`,
-        )
-      }
+        const found = orderId
+          ? ordersRes.orders.find((o) => o.id === orderId || o.displayCode === orderId)
+          : ordersRes.orders.find((o) => o.status === "accepted" || o.status === "collected")
 
-      // Tải chi tiết đơn bàn giao từ PostgreSQL hoặc bộ đệm
-      const orders = await fetchSyncedHandoverOrders("recycler")
-      if (!active) return
-      const found = orders.find((o) => o.id === orderId || o.displayCode === orderId)
-      if (found) {
-        const resolved: Handover = {
-          id: found.id,
-          displayCode: found.displayCode,
-          recycler: found.recycler,
-          address: found.address,
-          date: found.date,
-          slot: found.slot,
-          lines: found.lines,
-          status: found.status,
-          reason: found.reason,
+        const targetId = found?.id || orderId
+
+        if (targetId) {
+          const existingReceipt = await fetchRecyclerReceipt(targetId)
+          if (!active) return
+
+          if (existingReceipt) {
+            setSent(true)
+            setStatusMessage(
+              `Đơn này đã có biên nhận #${existingReceipt.receiptCode || existingReceipt.receiptId} (trạng thái: ${existingReceipt.requestStatus}).`,
+            )
+          }
         }
-        setH(resolved)
-        setRows(found.lines.map((l) => ({ wasteId: l.wasteId, kg: l.kg })))
+
+        if (found) {
+          setOrderUnitPrice(found.agreedPricePerKg ?? found.initialPricePerKg)
+          const resolved: Handover = {
+            id: found.id,
+            displayCode: found.displayCode,
+            recycler: found.recycler,
+            address: found.address,
+            date: found.date,
+            slot: found.slot,
+            lines: found.lines,
+            status: found.status,
+            reason: found.reason,
+          }
+          setH(resolved)
+          setRows(found.lines.map((l) => ({ wasteId: l.wasteId, kg: l.kg })))
+        } else if (!ordersRes.fromBackend && !liveAuth) {
+          setH(defaultHandover)
+          setRows(defaultHandover.lines.map((l) => ({ wasteId: l.wasteId, kg: l.kg })))
+        } else {
+          setH(null)
+        }
+      } finally {
+        if (active) setLoadingOrder(false)
       }
     }
     void loadOrder()
     return () => {
       active = false
     }
-  }, [orderId])
+  }, [orderId, liveAuth])
 
-  const money = calc({ ...h, actual: rows, feeRate: FEE_RATE }, priceOf)
+  const rowPriceOf = (wasteId: string, index?: number) =>
+    orderUnitPrice && orderUnitPrice > 0 && (!index || index === 0)
+      ? orderUnitPrice
+      : priceOf(wasteId)
+
+  const baseHandover = h ?? defaultHandover
+  const money = calc({ ...baseHandover, actual: rows, feeRate: FEE_RATE }, (id) =>
+    rowPriceOf(id),
+  )
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (rows.some((r) => r.kg <= 0)) return
+    if (!h || rows.some((r) => r.kg <= 0)) return
 
     setSubmitting(true)
     try {
@@ -134,6 +161,24 @@ export default function Receipt() {
         body="Nhập khối lượng thực tế bạn vừa cân và chụp ảnh làm bằng chứng. Người dùng xác nhận khối lượng này thì hệ thống mới trả tiền."
       />
 
+      {loadingOrder ? (
+        <p className="card px-5 py-8 text-center text-sm text-muted">
+          Đang tải thông tin đơn thu gom...
+        </p>
+      ) : !h ? (
+        <div className="card flex flex-col items-center gap-3 px-5 py-10 text-center">
+          <p className="text-sm font-semibold text-ink">
+            Chưa có lịch hẹn nào đã chốt để lập biên nhận.
+          </p>
+          <p className="max-w-[52ch] text-xs text-muted">
+            Hãy tiếp nhận đơn hoặc chốt điều khoản trong Chat trước khi đến điểm hẹn cân thực tế
+            và phát hành biên nhận.
+          </p>
+          <Link to="/recycler/requests" className="btn-primary h-10 px-5 text-xs font-semibold">
+            Quay lại Tiếp nhận yêu cầu
+          </Link>
+        </div>
+      ) : (
       <form onSubmit={submit} className="card flex flex-col gap-5 p-5 md:p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-line-soft pb-4">
           <div>
@@ -169,7 +214,7 @@ export default function Receipt() {
                 />
               </Td>
               <Td className="tabular-nums font-semibold text-ink">
-                {VND(r.kg * priceOf(r.wasteId))}
+                {VND(r.kg * rowPriceOf(r.wasteId, i))}
               </Td>
             </tr>
           ))}
@@ -218,6 +263,7 @@ export default function Receipt() {
           )}
         </div>
       </form>
+      )}
     </div>
   )
 }

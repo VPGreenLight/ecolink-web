@@ -16,6 +16,8 @@ import {
   clearAuthStorage,
   getAccessToken,
   getRefreshToken,
+  getSession,
+  isStoredAccessTokenExpired,
   mapBackendRole,
   setAuthTokens,
   updateSession,
@@ -195,6 +197,17 @@ export async function rotateRefreshTokenSingleFlight(): Promise<string | null> {
         expiresAt: dto.expiresAt ?? null,
       })
 
+      const syncedRole = dto.user
+        ? mapBackendRole(dto.user.role)
+        : (getSession()?.role ?? null)
+      if (syncedRole && typeof localStorage !== "undefined") {
+        try {
+          localStorage.setItem(`ecolink:jwt:${syncedRole}`, dto.accessToken)
+        } catch {
+          // Bỏ qua nếu trình duyệt khoá storage
+        }
+      }
+
       if (dto.user) {
         updateSession({
           id: dto.user.id,
@@ -224,6 +237,39 @@ export async function rotateRefreshTokenSingleFlight(): Promise<string | null> {
   return refreshInFlight
 }
 
+/**
+ * Kiểm tra đồng bộ phiên đăng nhập Backend khi khởi động / điều hướng ứng dụng:
+ * - Nếu Access Token đã hết hạn nhưng còn Refresh Token hợp lệ -> xoay vòng âm thầm.
+ * - Nếu Access Token hết hạn/thiếu mà không còn Refresh Token -> xóa phiên để gỡ Avatar cũ.
+ * - Phiên ngoại tuyến (`fromBackend !== true`) vẫn được giữ nguyên.
+ */
+export async function ensureActiveAuthSession(): Promise<void> {
+  if (typeof window === "undefined") return
+  const session = getSession()
+  if (!session?.fromBackend) return
+
+  const token = getAccessToken()
+  if (token && !isStoredAccessTokenExpired(10)) return
+
+  if (getRefreshToken()) {
+    await rotateRefreshTokenSingleFlight()
+    return
+  }
+
+  clearAuthStorage()
+}
+
+/**
+ * Xóa phiên người dùng hiện tại khi Backend trả 401 mà không thể làm mới Access Token.
+ * Bảo toàn chế độ ngoại tuyến (`fromBackend !== true` và không có JWT thật).
+ */
+export function clearSessionOnUnauthorized(): void {
+  if (typeof window === "undefined") return
+  if (getSession()?.fromBackend || getAccessToken()) {
+    clearAuthStorage()
+  }
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
@@ -241,9 +287,12 @@ export async function apiRequest<T>(
     headers.set("Content-Type", "application/json")
   }
 
-  const callerProvidedAuth = new Headers(options.headers).has("Authorization")
+  const rawCallerAuth = headers.get("Authorization")
   const token = readEffectiveAccessToken()
-  if (token && !headers.has("Authorization")) {
+  const providedBearer = rawCallerAuth?.replace(/^Bearer\s+/i, "").trim() || null
+  const usesActiveSessionAuth =
+    !rawCallerAuth || (Boolean(token) && providedBearer === token)
+  if (token && !rawCallerAuth) {
     headers.set("Authorization", `Bearer ${token}`)
   }
 
@@ -264,7 +313,7 @@ export async function apiRequest<T>(
   if (
     res.status === 401 &&
     !_retriedAfterRefresh &&
-    !callerProvidedAuth &&
+    usesActiveSessionAuth &&
     shouldAttemptRefresh(path) &&
     getRefreshToken()
   ) {
@@ -287,6 +336,10 @@ export async function apiRequest<T>(
   }
 
   if (!res.ok) {
+    if (res.status === 401 && usesActiveSessionAuth && shouldAttemptRefresh(path)) {
+      clearSessionOnUnauthorized()
+    }
+
     const env = parsed as Partial<ApiResponse<unknown>> & { message?: string } | null
     const detailErrors = Array.isArray(env?.errors) ? env.errors : undefined
     const primaryMessage =

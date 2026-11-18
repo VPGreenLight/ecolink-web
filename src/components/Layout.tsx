@@ -1,5 +1,6 @@
 import { useEffect } from "react"
 import { Outlet, useLocation } from "react-router-dom"
+import { ensureActiveAuthSession } from "@/lib/api"
 import Navbar from "./Navbar"
 import MobileNav from "./MobileNav"
 import Footer from "./Footer"
@@ -10,6 +11,7 @@ export default function Layout() {
 
   useEffect(() => {
     window.scrollTo({ top: 0 })
+    void ensureActiveAuthSession()
   }, [pathname])
 
   return (

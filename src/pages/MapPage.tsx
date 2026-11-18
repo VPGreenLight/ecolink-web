@@ -591,8 +591,8 @@ export default function MapPage() {
   return (
     <div className="flex flex-col gap-3 p-3 md:p-4 xl:h-[calc(100dvh-76px)] xl:flex-row">
       {/* Cột trái: khung bản đồ tương tác + tra cứu khu vực + bảo mật vị trí ~500m */}
-      <section className="relative flex min-h-[520px] flex-1 flex-col overflow-clip rounded-2xl border border-line bg-surface-3">
-        <div className="relative flex-1">
+      <section className="relative flex h-[460px] shrink-0 flex-col overflow-clip rounded-2xl border border-line bg-surface-3 sm:h-[520px] xl:h-full xl:min-h-[520px] xl:flex-1">
+        <div className="relative h-full w-full flex-1">
           <LeafletRecyclerMap
             centerLat={coords.lat}
             centerLng={coords.lng}

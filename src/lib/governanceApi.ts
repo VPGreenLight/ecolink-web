@@ -13,6 +13,7 @@
 import {
   ApiError,
   apiRequest,
+  clearSessionOnUnauthorized,
   fetchWithAutoHost,
   rotateRefreshTokenSingleFlight,
   type ApiResponse,
@@ -615,6 +616,7 @@ export async function exportAdminReportBlob(
   }
 
   if (!res.ok) {
+    if (res.status === 401) clearSessionOnUnauthorized()
     let errMsg = `Xuất báo cáo thất bại (HTTP ${res.status}).`
     try {
       const json = (await res.json()) as { message?: string; messageCode?: string }

@@ -1,11 +1,23 @@
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { PageHead, Stat, Table, Td } from "@/components/Portal"
 import SponsoredAdBanner from "@/components/SponsoredAdBanner"
 import { MY_HANDOVERS } from "@/data/handover"
 import { LEADERBOARD, RANK_POINTS, getSpendPoints, fmt, tierProgress } from "@/data/rewards"
+import { fetchHandoverOrdersResult, type SyncedHandoverOrder } from "@/lib/recyclerWorkflowApi"
 import { refreshMyEntitlementsSafely, useEntitlements } from "@/lib/servicePackageApi"
-import { useUser } from "@/lib/session"
+import { hasLiveBackendAuth, useUser } from "@/lib/session"
+
+type OpenHandoverPreview = {
+  id: string
+  recycler: string
+  date: string
+  slot: string
+}
+
+const DEFAULT_OFFLINE_OPEN: OpenHandoverPreview[] = MY_HANDOVERS.filter(
+  (h) => h.status === "pending" || h.status === "accepted" || h.status === "collected",
+).map((h) => ({ id: h.id, recycler: h.recycler, date: h.date, slot: h.slot }))
 
 /** Trang chủ sau đăng nhập của người dân: nối 3 việc đang dở thành một màn
  *  hình — có yêu cầu nào đang chờ, điểm đang ở hạng nào, bước kế tiếp là gì.
@@ -14,12 +26,35 @@ export default function UserHome() {
   const user = useUser()
   const entitlements = useEntitlements()
   const { cur, next, pct, need } = tierProgress()
-  const open = MY_HANDOVERS.filter((h) => h.status === "pending" || h.status === "accepted" || h.status === "collected")
+  const [open, setOpen] = useState<OpenHandoverPreview[]>(() =>
+    hasLiveBackendAuth() ? [] : DEFAULT_OFFLINE_OPEN,
+  )
+  const [loadingOpen, setLoadingOpen] = useState<boolean>(() => hasLiveBackendAuth())
   const inRank = LEADERBOARD.find((r) => r.you)
   const above = LEADERBOARD.find((r) => r.points > RANK_POINTS)
 
   useEffect(() => {
+    let active = true
     void refreshMyEntitlementsSafely()
+    void fetchHandoverOrdersResult("user")
+      .then((res) => {
+        if (!active) return
+        if (res.fromBackend) {
+          const liveOpen = res.orders
+            .filter(
+              (h: SyncedHandoverOrder) =>
+                h.status === "pending" || h.status === "accepted" || h.status === "collected",
+            )
+            .map((h) => ({ id: h.id, recycler: h.recycler, date: h.date, slot: h.slot }))
+          setOpen(liveOpen)
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingOpen(false)
+      })
+    return () => {
+      active = false
+    }
   }, [])
 
   return (
@@ -52,7 +87,9 @@ export default function UserHome() {
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="card flex flex-col gap-4 p-5">
           <h2 className="text-base font-bold text-ink">Yêu cầu đang mở</h2>
-          {open.length === 0 ? (
+          {loadingOpen ? (
+            <p className="text-sm text-muted">Đang tải danh sách yêu cầu...</p>
+          ) : open.length === 0 ? (
             <p className="text-sm text-muted">
               Bạn không có yêu cầu nào đang chờ. Đặt lịch thu gom khi có rác cần
               bán.

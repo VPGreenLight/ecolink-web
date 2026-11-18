@@ -9,8 +9,8 @@ import { MY_HANDOVERS, type HandoverStatus } from "@/data/handover"
 import { FLOWS } from "@/data/cashflow"
 import { STATS, fmtVnd } from "@/data/ops"
 import {
+  fetchHandoverOrdersResult,
   fetchRecyclerStatus,
-  fetchSyncedHandoverOrders,
   toggleRecyclerOnlineStatus,
   updateRecyclerWarehousePin,
   type RecyclerProfileDto,
@@ -27,7 +27,7 @@ import {
   type PayInOrderDto,
   type ServicePackageCatalogDto,
 } from "@/lib/servicePackageApi"
-import { getAccessToken } from "@/lib/session"
+import { getAccessToken, getSession, hasLiveBackendAuth } from "@/lib/session"
 
 type UpcomingRow = {
   id: string
@@ -51,19 +51,36 @@ export default function RecyclerHome() {
   const [flash, setFlash] = useState("")
   const [syncedBackend, setSyncedBackend] = useState(false)
 
-  const [profile, setProfile] = useState<RecyclerProfileDto>({
-    recyclerId: "22222222-2222-2222-2222-222222222222",
-    facilityName: "Vựa phế liệu EcoGreen",
-    representativeName: "Trần Thu Gom",
-    businessAddress: "123 Đường Nguyễn Hữu Cảnh, P. 22, Bình Thạnh, TP.HCM",
-    latitude: 10.7938,
-    longitude: 106.7182,
-    operatingHours: "07:30 - 18:30",
-    contactPhone: "0988776655",
-    verificationStatus: "Verified",
-    activeStatus: "Online",
-    activePriceCount: 4,
-  })
+  const liveAuth = hasLiveBackendAuth()
+  const [profile, setProfile] = useState<RecyclerProfileDto>(() =>
+    liveAuth
+      ? {
+          recyclerId: "",
+          facilityName: getSession()?.name || "Đang tải hồ sơ cơ sở...",
+          representativeName: getSession()?.name || "",
+          businessAddress: "",
+          latitude: 21.0182,
+          longitude: 105.5345,
+          operatingHours: "07:30 - 19:00",
+          contactPhone: "",
+          verificationStatus: "Verified",
+          activeStatus: "Online",
+          activePriceCount: 0,
+        }
+      : {
+          recyclerId: "22222222-2222-2222-2222-222222222222",
+          facilityName: "Vựa phế liệu EcoGreen",
+          representativeName: "Trần Thu Gom",
+          businessAddress: "123 Đường Nguyễn Hữu Cảnh, P. 22, Bình Thạnh, TP.HCM",
+          latitude: 10.7938,
+          longitude: 106.7182,
+          operatingHours: "07:30 - 18:30",
+          contactPhone: "0988776655",
+          verificationStatus: "Verified",
+          activeStatus: "Online",
+          activePriceCount: 4,
+        },
+  )
 
   const entitlements = useEntitlements()
   const [packages, setPackages] = useState<ServicePackageCatalogDto[]>(
@@ -77,18 +94,21 @@ export default function RecyclerHome() {
   const [pkgErr, setPkgErr] = useState("")
 
   const [editingLocation, setEditingLocation] = useState(false)
-  const [draftLat, setDraftLat] = useState(10.7938)
-  const [draftLng, setDraftLng] = useState(106.7182)
-  const [draftAddress, setDraftAddress] = useState(
-    "123 Đường Nguyễn Hữu Cảnh, P. 22, Bình Thạnh, TP.HCM",
+  const [draftLat, setDraftLat] = useState(21.0182)
+  const [draftLng, setDraftLng] = useState(105.5345)
+  const [draftAddress, setDraftAddress] = useState(() =>
+    liveAuth ? "" : "123 Đường Nguyễn Hữu Cảnh, P. 22, Bình Thạnh, TP.HCM",
   )
   const [savingPin, setSavingPin] = useState(false)
 
+  const [loadingHandovers, setLoadingHandovers] = useState<boolean>(() => liveAuth)
   const [handovers, setHandovers] = useState<UpcomingRow[]>(() =>
-    MY_HANDOVERS.filter((h) => h.status !== "done"),
+    liveAuth ? [] : MY_HANDOVERS.filter((h) => h.status !== "done"),
   )
 
-  const payin = FLOWS.filter((f) => f.kind === "payin").reduce((s, f) => s + f.amount, 0)
+  const payin = liveAuth
+    ? 0
+    : FLOWS.filter((f) => f.kind === "payin").reduce((s, f) => s + f.amount, 0)
 
   const refreshRecyclerPackages = useCallback(async () => {
     try {
@@ -127,24 +147,43 @@ export default function RecyclerHome() {
 
     void refreshRecyclerPackages()
 
-    void fetchSyncedHandoverOrders("recycler").then((synced) => {
-      if (!active || synced.length === 0) return
-      const existingIds = new Set(MY_HANDOVERS.map((m) => m.id))
-      const fresh: UpcomingRow[] = synced
-        .filter((s) => !existingIds.has(s.id))
-        .map((s) => ({
-          id: s.id,
-          address: s.address,
-          date: s.date,
-          slot: s.slot,
-          status: s.status === "accepted" ? "accepted" : "pending",
-          pickupLat: s.pickupLat,
-          pickupLng: s.pickupLng,
-        }))
-      if (fresh.length > 0) {
-        setHandovers([...fresh, ...MY_HANDOVERS.filter((h) => h.status !== "done")])
-      }
-    })
+    void fetchHandoverOrdersResult("recycler")
+      .then((res) => {
+        if (!active) return
+        if (res.fromBackend) {
+          const openRows: UpcomingRow[] = res.orders
+            .filter((s) => s.status === "pending" || s.status === "accepted")
+            .map((s) => ({
+              id: s.id,
+              address: s.address,
+              date: s.date,
+              slot: s.slot,
+              status: s.status === "accepted" ? "accepted" : "pending",
+              pickupLat: s.pickupLat,
+              pickupLng: s.pickupLng,
+            }))
+          setHandovers(openRows)
+        } else {
+          const existingIds = new Set(MY_HANDOVERS.map((m) => m.id))
+          const fresh: UpcomingRow[] = res.orders
+            .filter((s) => !existingIds.has(s.id))
+            .map((s) => ({
+              id: s.id,
+              address: s.address,
+              date: s.date,
+              slot: s.slot,
+              status: s.status === "accepted" ? "accepted" : "pending",
+              pickupLat: s.pickupLat,
+              pickupLng: s.pickupLng,
+            }))
+          if (fresh.length > 0) {
+            setHandovers([...fresh, ...MY_HANDOVERS.filter((h) => h.status !== "done")])
+          }
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingHandovers(false)
+      })
 
     return () => {
       active = false
@@ -685,7 +724,9 @@ export default function RecyclerHome() {
             Xem tất cả yêu cầu →
           </Link>
         </div>
-        {handovers.length === 0 ? (
+        {loadingHandovers ? (
+          <p className="text-sm text-muted">Đang tải lịch thu gom...</p>
+        ) : handovers.length === 0 ? (
           <p className="text-sm text-muted">Chưa có lịch nào đang mở.</p>
         ) : (
           <ul className="flex flex-col gap-2">

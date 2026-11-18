@@ -1,6 +1,16 @@
-import { ApiError, apiRequest } from "@/lib/api"
+import {
+  ApiError,
+  apiRequest,
+  clearSessionOnUnauthorized,
+  rotateRefreshTokenSingleFlight,
+} from "@/lib/api"
 import type { CollectionPartnerDto } from "@/lib/recyclerDiscoveryApi"
-import { getSession, type Role } from "@/lib/session"
+import {
+  getRefreshToken,
+  getSession,
+  isStoredAccessTokenExpired,
+  type Role,
+} from "@/lib/session"
 import { APPLICATIONS, type Application } from "@/data/ops"
 
 /* ------------------------------------------------------------------ DTOs */
@@ -211,6 +221,7 @@ export interface TradeOrderApiDto {
   note?: string | null
   cancelReason?: string | null
   lines?: TradeOrderLineApiDto[] | null
+  isInquiryOnly?: boolean
   qrCodeValue: string
 }
 
@@ -326,7 +337,26 @@ export async function ensureRoleJwt(role: Role): Promise<string | null> {
     currentSession &&
     (currentSession.role === role || (role === "staff" && currentSession.role === "admin"))
   ) {
+    if (isStoredAccessTokenExpired(10)) {
+      if (getRefreshToken()) {
+        return rotateRefreshTokenSingleFlight()
+      }
+      clearSessionOnUnauthorized()
+      return null
+    }
     return existingGlobal
+  }
+
+  // Nếu người dùng đã đăng nhập Backend thật theo đúng vai trò này nhưng token đã bị xóa -> không tráo sang tài khoản demo khác
+  if (
+    currentSession?.fromBackend &&
+    (currentSession.role === role || (role === "staff" && currentSession.role === "admin"))
+  ) {
+    if (getRefreshToken()) {
+      return rotateRefreshTokenSingleFlight()
+    }
+    clearSessionOnUnauthorized()
+    return null
   }
 
   const roleTokenKey = `ecolink:jwt:${role}`
@@ -370,6 +400,11 @@ async function authorizedRequest<T>(
   path: string,
   options: RequestInit = {},
 ) {
+  const activeSession = getSession()
+  const isActingRealUser = Boolean(
+    activeSession?.fromBackend &&
+      (activeSession.role === role || (role === "staff" && activeSession.role === "admin")),
+  )
   let token = await ensureRoleJwt(role)
   const makeHeaders = (jwt: string | null) => {
     const h = new Headers(options.headers)
@@ -383,7 +418,12 @@ async function authorizedRequest<T>(
       headers: makeHeaders(token),
     })
   } catch (err) {
-    if (err instanceof ApiError && err.status === 401 && typeof localStorage !== "undefined") {
+    if (
+      !isActingRealUser &&
+      err instanceof ApiError &&
+      err.status === 401 &&
+      typeof localStorage !== "undefined"
+    ) {
       localStorage.removeItem(`ecolink:jwt:${role}`)
       token = await ensureRoleJwt(role)
       if (token) {
@@ -883,6 +923,7 @@ export interface SyncedHandoverOrder {
   /** Mã rút gọn thân thiện hiển thị trên giao diện (VD: BH-A3F18C) */
   displayCode: string
   citizenName?: string
+  partnerId?: string
   recyclerId?: string
   recycler: string
   address: string
@@ -891,9 +932,12 @@ export interface SyncedHandoverOrder {
   date: string
   slot: string
   lines: { wasteId: string; kg: number }[]
+  categoryCode?: string
   initialPricePerKg?: number
   agreedPricePerKg?: number
   status: HandoverUiStatus
+  rawStatus?: string
+  isInquiryOnly?: boolean
   reason?: string
   fromBackend?: boolean
 }
@@ -927,6 +971,7 @@ function mapApiOrderToSynced(o: TradeOrderApiDto): SyncedHandoverOrder {
     id: o.id,
     displayCode: formatOrderDisplayCode(o.id),
     citizenName: o.citizenName?.trim() || undefined,
+    partnerId: o.partnerId,
     recyclerId: o.recyclerUserId || o.partnerId,
     recycler: o.partnerName?.trim() || "Cơ sở thu mua EcoLink",
     address: o.pickupAddress?.trim() || "Điểm hẹn bàn giao",
@@ -935,11 +980,14 @@ function mapApiOrderToSynced(o: TradeOrderApiDto): SyncedHandoverOrder {
     date: formatDateVi(o.scheduledAt),
     slot: o.confirmedTimeSlot || o.proposedTimeSlot || "09:00 - 11:00",
     lines: mappedLines,
+    categoryCode: o.categoryCode ?? undefined,
     initialPricePerKg:
       typeof o.initialPricePerKg === "number" ? Number(o.initialPricePerKg) : undefined,
     agreedPricePerKg:
       typeof o.agreedPricePerKg === "number" ? Number(o.agreedPricePerKg) : undefined,
     status: mapBackendOrderStatus(o.status, Boolean(o.cancelReason)),
+    rawStatus: o.status,
+    isInquiryOnly: Boolean(o.isInquiryOnly),
     reason: o.cancelReason ?? undefined,
     fromBackend: true,
   }
@@ -953,6 +1001,7 @@ export interface CreateHandoverInput {
   pickupAddress: string
   pickupLat: number
   pickupLng: number
+  isInquiryDraft?: boolean
 }
 
 export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
@@ -963,9 +1012,14 @@ export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
   partnerName?: string
   citizenName?: string
 }> {
-  const totalKg = input.rows.reduce((sum, r) => sum + r.kg, 0)
-  const primary = input.rows[0]
-  const categoryCode = primary ? (WASTE_ID_TO_CATEGORY[primary.wasteId] ?? "plastic") : "plastic"
+  const isInquiryDraft = Boolean(input.isInquiryDraft)
+  const totalKg = isInquiryDraft ? 0 : input.rows.reduce((sum, r) => sum + r.kg, 0)
+  const primary = isInquiryDraft ? undefined : input.rows[0]
+  const categoryCode = isInquiryDraft
+    ? undefined
+    : primary
+      ? (WASTE_ID_TO_CATEGORY[primary.wasteId] ?? "plastic")
+      : "plastic"
   const partnerGuid =
     input.partnerId && /^[0-9a-fA-F-]{36}$/.test(input.partnerId)
       ? input.partnerId
@@ -989,14 +1043,16 @@ export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
         partnerId: partnerGuid,
         scheduledAt: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
         estimatedWeightKg: totalKg,
-        categoryCode,
-        initialPricePerKg: primary?.unitPrice ?? 5500,
-        proposedTimeSlot: input.slot,
-        pickupAddress: input.pickupAddress.trim(),
-        pickupLatitude: input.pickupLat,
-        pickupLongitude: input.pickupLng,
-        lines: input.rows.map((r) => ({ wasteId: r.wasteId, kg: r.kg })),
-        note: `Điểm hẹn bàn giao đầu ngõ/sảnh đã ghim trên bản đồ`,
+        ...(categoryCode ? { categoryCode } : {}),
+        ...(isInquiryDraft ? {} : { initialPricePerKg: primary?.unitPrice ?? 5500 }),
+        ...(isInquiryDraft ? {} : { proposedTimeSlot: input.slot }),
+        pickupAddress: isInquiryDraft ? "" : input.pickupAddress.trim(),
+        ...(isInquiryDraft ? {} : { pickupLatitude: input.pickupLat, pickupLongitude: input.pickupLng }),
+        ...(isInquiryDraft ? {} : { lines: input.rows.map((r) => ({ wasteId: r.wasteId, kg: r.kg })) }),
+        note: isInquiryDraft
+          ? "Phiên trao đổi hỏi giá từ Chat (BR-NEG-01)"
+          : "Điểm hẹn bàn giao đầu ngõ/sảnh đã ghim trên bản đồ",
+        isInquiryDraft,
       }),
     })
 
@@ -1017,28 +1073,30 @@ export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
     syncedWithBackend = false
   }
 
-  const state = readSyncState()
-  writeSyncState({
-    ...state,
-    handoverOrders: [
-      {
-        id: orderId,
-        displayCode,
-        citizenName: resolvedCitizenName,
-        recyclerId: partnerGuid,
-        recycler: resolvedPartnerName,
-        address: input.pickupAddress.trim(),
-        pickupLat: input.pickupLat,
-        pickupLng: input.pickupLng,
-        date: `${dd}/${mm}/${yyyy}`,
-        slot: input.slot,
-        lines: input.rows.map((r) => ({ wasteId: r.wasteId, kg: r.kg })),
-        initialPricePerKg: primary?.unitPrice ?? 5500,
-        status: "pending",
-      },
-      ...state.handoverOrders.filter((x) => x.id !== orderId),
-    ],
-  })
+  if (!isInquiryDraft) {
+    const state = readSyncState()
+    writeSyncState({
+      ...state,
+      handoverOrders: [
+        {
+          id: orderId,
+          displayCode,
+          citizenName: resolvedCitizenName,
+          recyclerId: partnerGuid,
+          recycler: resolvedPartnerName,
+          address: input.pickupAddress.trim(),
+          pickupLat: input.pickupLat,
+          pickupLng: input.pickupLng,
+          date: `${dd}/${mm}/${yyyy}`,
+          slot: input.slot,
+          lines: input.rows.map((r) => ({ wasteId: r.wasteId, kg: r.kg })),
+          initialPricePerKg: primary?.unitPrice ?? 5500,
+          status: "pending",
+        },
+        ...state.handoverOrders.filter((x) => x.id !== orderId),
+      ],
+    })
+  }
 
   return {
     id: orderId,
@@ -1050,10 +1108,14 @@ export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
   }
 }
 
-export async function fetchHandoverOrdersResult(role: "user" | "recycler"): Promise<{
+export async function fetchHandoverOrdersResult(
+  role: "user" | "recycler",
+  options?: { includeInquiries?: boolean },
+): Promise<{
   orders: SyncedHandoverOrder[]
   fromBackend: boolean
 }> {
+  const includeInquiries = Boolean(options?.includeInquiries)
   const state = readSyncState()
   try {
     // Lấy đơn theo đúng JWT của tài khoản đang đăng nhập (không truyền cứng userId seed)
@@ -1061,7 +1123,8 @@ export async function fetchHandoverOrdersResult(role: "user" | "recycler"): Prom
       method: "GET",
     })
 
-    const apiItems = (res.data ?? []).map(mapApiOrderToSynced)
+    const mapped = (res.data ?? []).map(mapApiOrderToSynced)
+    const apiItems = includeInquiries ? mapped : mapped.filter((o) => !o.isInquiryOnly)
     return {
       orders: apiItems,
       fromBackend: true,
@@ -1082,8 +1145,9 @@ export async function fetchHandoverOrdersResult(role: "user" | "recycler"): Prom
 
 export async function fetchSyncedHandoverOrders(
   role: "user" | "recycler",
+  options?: { includeInquiries?: boolean },
 ): Promise<SyncedHandoverOrder[]> {
-  const res = await fetchHandoverOrdersResult(role)
+  const res = await fetchHandoverOrdersResult(role, options)
   return res.orders
 }
 

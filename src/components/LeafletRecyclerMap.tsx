@@ -80,6 +80,8 @@ export default function LeafletRecyclerMap({
     let cancelled = false
     let resizeObserver: ResizeObserver | null = null
     let detachSovereignty: (() => void) | null = null
+    let rafId: number | null = null
+    let removeResizeListener: (() => void) | null = null
 
     void import("leaflet").then((mod) => {
       if (cancelled || !containerRef.current) return
@@ -119,19 +121,30 @@ export default function LeafletRecyclerMap({
         onMapPinClickRef.current(evt.latlng.lat, evt.latlng.lng)
       })
 
-      if (typeof ResizeObserver !== "undefined" && containerRef.current) {
-        resizeObserver = new ResizeObserver(() => {
+      const scheduleInvalidate = () => {
+        if (rafId !== null) cancelAnimationFrame(rafId)
+        rafId = requestAnimationFrame(() => {
+          rafId = null
           map.invalidateSize({ pan: false })
         })
+      }
+
+      if (typeof ResizeObserver !== "undefined" && containerRef.current) {
+        resizeObserver = new ResizeObserver(scheduleInvalidate)
         resizeObserver.observe(containerRef.current)
       }
+      window.addEventListener("resize", scheduleInvalidate)
+      removeResizeListener = () => window.removeEventListener("resize", scheduleInvalidate)
+      scheduleInvalidate()
 
       setMapReady(true)
     })
 
     return () => {
       cancelled = true
+      if (rafId !== null) cancelAnimationFrame(rafId)
       resizeObserver?.disconnect()
+      removeResizeListener?.()
       detachSovereignty?.()
       if (mapRef.current) {
         mapRef.current.remove()
@@ -279,7 +292,7 @@ export default function LeafletRecyclerMap({
   }
 
   return (
-    <div className="relative size-full">
+    <div className="absolute inset-0 size-full">
       {/* Khung bản đồ cô lập stacking context (isolate z-0) để không đè lên thanh công cụ nổi */}
       <div
         ref={containerRef}
