@@ -1,57 +1,122 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { PageHead, Field, Status } from "@/components/Portal"
 import { ECO_FACTS, type EcoFact } from "@/data/ops"
+import {
+  createStaffEcoFact,
+  deleteStaffEcoFact,
+  fetchStaffEcoFacts,
+  setStaffEcoFactStatus,
+  updateStaffEcoFact,
+  type EcoFactItemDto,
+} from "@/lib/gamificationApi"
+import { hasLiveBackendAuth } from "@/lib/session"
 
-/** S-09 Quản lý nội dung Eco Fact.
- *
- *  Nội dung Eco Fact là thứ người dùng đọc để biết vì sao họ làm đúng, nên
- *  phải có nguồn và phải mở được bằng điểm. Form bắt buộc có "chi phí mở
- *  khoá" vì đó là con số A-07 dùng chung — không nhập thì Eco Fact mới sẽ
- *  không ai mở nổi. */
+/** S-09 Quản lý nội dung Eco Fact. */
 export default function EcoFacts() {
-  const [list, setList] = useState<EcoFact[]>(ECO_FACTS)
+  const [liveMode] = useState(() => hasLiveBackendAuth())
+  const [offlineList, setOfflineList] = useState<EcoFact[]>(ECO_FACTS)
+  const [liveList, setLiveList] = useState<EcoFactItemDto[]>([])
+  const [loading, setLoading] = useState(liveMode)
+
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [title, setTitle] = useState("")
   const [body, setBody] = useState("")
-  const [cost, setCost] = useState(500)
+  const [unlockLevel, setUnlockLevel] = useState(2)
+  const [sourceUrl, setSourceUrl] = useState("")
+  const [offlineCost, setOfflineCost] = useState(500)
+  const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState("")
 
-  const add = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (title.trim().length < 8) {
-      setFlash("Tiêu đề cần ít nhất 8 ký tự.")
-      return
+  const loadFacts = async () => {
+    setLoading(true)
+    try {
+      const res = await fetchStaffEcoFacts({ pageSize: 50 })
+      if (res.data?.items) setLiveList(res.data.items)
+    } catch {
+      // Giữ danh sách hiện có
+    } finally {
+      setLoading(false)
     }
-    if (body.trim().length < 40) {
-      setFlash("Nội dung cần ít nhất 40 ký tự để đủ một kiến thức dùng được.")
-      return
-    }
-    const id = `EF-${String(list.length + 1).padStart(2, "0")}`
-    setList((ls) => [
-      ...ls,
-      { id, title: title.trim(), body: body.trim(), cost, open: false },
-    ])
+  }
+
+  useEffect(() => {
+    if (liveMode) void loadFacts()
+  }, [liveMode])
+
+  const resetForm = () => {
+    setEditingId(null)
     setTitle("")
     setBody("")
-    setFlash(`Đã thêm ${id}. Nội dung mới mở sau khi người dùng đủ điểm.`)
+    setUnlockLevel(2)
+    setSourceUrl("")
   }
 
-  const remove = (id: string) => {
-    setList((ls) => ls.filter((f) => f.id !== id))
-    setFlash(`Đã xoá ${id}.`)
-  }
+  const submitForm = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!liveMode) {
+      if (title.trim().length < 8) {
+        setFlash("Tiêu đề cần ít nhất 8 ký tự.")
+        return
+      }
+      if (body.trim().length < 40) {
+        setFlash("Nội dung cần ít nhất 40 ký tự để đủ một kiến thức dùng được.")
+        return
+      }
+      const id = `EF-${String(offlineList.length + 1).padStart(2, "0")}`
+      setOfflineList((ls) => [
+        ...ls,
+        { id, title: title.trim(), body: body.trim(), cost: offlineCost, open: false },
+      ])
+      setTitle("")
+      setBody("")
+      setFlash(`Đã thêm ${id}. Nội dung mới mở sau khi người dùng đủ điểm.`)
+      return
+    }
 
-  const toggle = (id: string) =>
-    setList((ls) => ls.map((f) => (f.id === id ? { ...f, open: !f.open } : f)))
+    if (busy) return
+    setBusy(true)
+    setFlash("")
+    try {
+      const payload = {
+        title: title.trim(),
+        content: body.trim(),
+        unlockTreeLevel: unlockLevel,
+        sourceUrl: sourceUrl.trim() || null,
+      }
+      if (editingId) {
+        await updateStaffEcoFact(editingId, payload)
+        setFlash("Đã cập nhật Eco Fact.")
+      } else {
+        const res = await createStaffEcoFact(payload)
+        setFlash(`Đã thêm ${res.data?.code ?? "Eco Fact mới"}.`)
+      }
+      resetForm()
+      await loadFacts()
+    } catch (err) {
+      setFlash(err instanceof Error ? err.message : "Lưu Eco Fact thất bại.")
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
       <PageHead
         eyebrow="NỘI DUNG"
         title="Quản lý Eco Fact"
-        body="Kiến thức ngắn gắn với cây ảo: người dùng mở bằng điểm đã tích luỹ. Nội dung sai thì cả cây ảo mất ý nghĩa."
+        body="Kiến thức ngắn gắn với cấp độ cây ảo: người dùng mở khoá khi cây đạt cấp tương ứng. Nội dung chuẩn xác giúp lan tỏa thói quen phân loại đúng."
       />
 
-      <form onSubmit={add} noValidate className="card flex flex-col gap-5 p-5 md:p-6">
+      <form onSubmit={(e) => void submitForm(e)} noValidate className="card flex flex-col gap-5 p-5 md:p-6">
+        {editingId && (
+          <div className="flex items-center justify-between rounded-lg bg-brand/6 px-3.5 py-2 text-xs font-semibold text-brand-deep">
+            <span>Đang chỉnh sửa Eco Fact</span>
+            <button type="button" onClick={resetForm} className="text-muted hover:text-ink">
+              Huỷ sửa
+            </button>
+          </div>
+        )}
+
         <Field label="Tiêu đề kiến thức">
           <input
             className="input"
@@ -61,29 +126,53 @@ export default function EcoFacts() {
           />
         </Field>
 
-        <Field label="Nội dung" hint="Tối đa 3 câu. Có con số thì ghi rõ con số và nguồn của nó.">
+        <Field label="Nội dung" hint="Tối đa 300 ký tự. Ghi rõ số liệu và tác động môi trường.">
           <textarea
             className="input h-auto resize-y py-3 leading-6"
             rows={3}
+            maxLength={300}
             value={body}
             onChange={(e) => setBody(e.target.value)}
           />
         </Field>
 
-        <Field label="Điểm cần để mở" hint="Số điểm tiêu dùng, tức là sẽ bị trừ một lần khi mở.">
-          <input
-            className="input w-40 tabular-nums"
-            type="number"
-            min={0}
-            step={100}
-            value={cost}
-            onChange={(e) => setCost(Number(e.target.value))}
-          />
-        </Field>
+        {liveMode ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Mốc cấp Cây Ảo mở khoá" hint="Từ cấp 1 trở lên theo cấu hình A-07.">
+              <input
+                className="input w-40 tabular-nums"
+                type="number"
+                min={1}
+                max={10}
+                value={unlockLevel}
+                onChange={(e) => setUnlockLevel(Number(e.target.value))}
+              />
+            </Field>
+            <Field label="URL nguồn tham khảo (tuỳ chọn)">
+              <input
+                className="input"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
+                placeholder="https://..."
+              />
+            </Field>
+          </div>
+        ) : (
+          <Field label="Điểm cần để mở" hint="Số điểm tiêu dùng, tức là sẽ bị trừ một lần khi mở.">
+            <input
+              className="input w-40 tabular-nums"
+              type="number"
+              min={0}
+              step={100}
+              value={offlineCost}
+              onChange={(e) => setOfflineCost(Number(e.target.value))}
+            />
+          </Field>
+        )}
 
         <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
-          <button type="submit" className="btn-primary h-11 px-6">
-            Thêm Eco Fact
+          <button type="submit" disabled={busy} className="btn-primary h-11 px-6">
+            {busy ? "Đang lưu..." : editingId ? "Cập nhật Eco Fact" : "Thêm Eco Fact"}
           </button>
           {flash && (
             <p role="status" className="text-[13px] font-semibold text-brand">
@@ -93,41 +182,125 @@ export default function EcoFacts() {
         </div>
       </form>
 
-      <ul className="grid gap-4 md:grid-cols-2">
-        {list.map((f) => (
-          <li key={f.id} className="card flex flex-col gap-3 p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold text-brand">{f.id}</p>
-                <h2 className="text-base leading-6 font-bold text-ink">{f.title}</h2>
+      {liveMode ? (
+        loading && liveList.length === 0 ? (
+          <p className="text-sm text-muted">Đang tải danh sách Eco Fact...</p>
+        ) : (
+          <ul className="grid gap-4 md:grid-cols-2">
+            {liveList.map((f) => {
+              const active = f.status === "ACTIVE"
+              return (
+                <li key={f.id} className="card flex flex-col gap-3 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-brand">{f.code}</p>
+                      <h2 className="text-base leading-6 font-bold text-ink">{f.title}</h2>
+                    </div>
+                    <Status tone={active ? "ok" : "off"}>
+                      {active ? "Đang bật" : "Đang tắt"}
+                    </Status>
+                  </div>
+                  <p className="text-[13px] leading-5 text-body">{f.content}</p>
+                  <p className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-line-soft pt-3 text-[13px]">
+                    <span className="tabular-nums text-muted">
+                      Mở ở Cây Cấp {f.unlockTreeLevel}
+                    </span>
+                    <span className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingId(f.id)
+                          setTitle(f.title)
+                          setBody(f.content)
+                          setUnlockLevel(f.unlockTreeLevel)
+                          setSourceUrl(f.sourceUrl ?? "")
+                          window.scrollTo({ top: 0, behavior: "smooth" })
+                        }}
+                        className="font-semibold text-brand-deep hover:underline"
+                      >
+                        Sửa
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await setStaffEcoFactStatus(f.id, active ? "INACTIVE" : "ACTIVE")
+                            setFlash(`Đã chuyển ${f.code} sang ${active ? "INACTIVE" : "ACTIVE"}.`)
+                            await loadFacts()
+                          } catch (err) {
+                            setFlash(err instanceof Error ? err.message : "Thao tác thất bại.")
+                          }
+                        }}
+                        className="font-semibold text-brand hover:text-brand-deep"
+                      >
+                        {active ? "Tắt" : "Bật"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await deleteStaffEcoFact(f.id)
+                            setFlash(`Đã xoá / gỡ ${f.code}.`)
+                            await loadFacts()
+                          } catch (err) {
+                            setFlash(err instanceof Error ? err.message : "Không thể xoá.")
+                          }
+                        }}
+                        className="font-semibold text-warn hover:underline"
+                      >
+                        Xoá
+                      </button>
+                    </span>
+                  </p>
+                </li>
+              )
+            })}
+          </ul>
+        )
+      ) : (
+        <ul className="grid gap-4 md:grid-cols-2">
+          {offlineList.map((f) => (
+            <li key={f.id} className="card flex flex-col gap-3 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-brand">{f.id}</p>
+                  <h2 className="text-base leading-6 font-bold text-ink">{f.title}</h2>
+                </div>
+                <Status tone={f.open ? "ok" : "off"}>{f.open ? "Đang mở" : "Đang khoá"}</Status>
               </div>
-              <Status tone={f.open ? "ok" : "off"}>{f.open ? "Đang mở" : "Đang khoá"}</Status>
-            </div>
-            <p className="text-[13px] leading-5 text-body">{f.body}</p>
-            <p className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-line-soft pt-3 text-[13px]">
-              <span className="tabular-nums text-muted">
-                {f.cost.toLocaleString("vi-VN")} điểm để mở
-              </span>
-              <span className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => toggle(f.id)}
-                  className="font-semibold text-brand hover:text-brand-deep"
-                >
-                  {f.open ? "Khoá" : "Mở miễn phí"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => remove(f.id)}
-                  className="font-semibold text-warn hover:underline"
-                >
-                  Xoá
-                </button>
-              </span>
-            </p>
-          </li>
-        ))}
-      </ul>
+              <p className="text-[13px] leading-5 text-body">{f.body}</p>
+              <p className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-line-soft pt-3 text-[13px]">
+                <span className="tabular-nums text-muted">
+                  {f.cost.toLocaleString("vi-VN")} điểm để mở
+                </span>
+                <span className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOfflineList((ls) =>
+                        ls.map((x) => (x.id === f.id ? { ...x, open: !x.open } : x)),
+                      )
+                    }
+                    className="font-semibold text-brand hover:text-brand-deep"
+                  >
+                    {f.open ? "Khoá" : "Mở miễn phí"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOfflineList((ls) => ls.filter((x) => x.id !== f.id))
+                      setFlash(`Đã xoá ${f.id}.`)
+                    }}
+                    className="font-semibold text-warn hover:underline"
+                  >
+                    Xoá
+                  </button>
+                </span>
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

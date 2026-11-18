@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import CheckIn from "@/components/CheckIn"
 import {
   EARN,
@@ -8,14 +8,24 @@ import {
   RANK_POINTS,
   REDEEMED,
   REWARDS,
+  TIERS,
   getSpendPoints,
   addSpendPoints,
   tierProgress,
   type Reward,
 } from "@/data/rewards"
+import {
+  fetchAvailableGifts,
+  fetchMyRedemptions,
+  fetchMyVirtualTree,
+  fetchPointWallet,
+  redeemGift,
+  type GiftItemDto,
+  type RedemptionDto,
+  type VirtualTreeDto,
+} from "@/lib/gamificationApi"
+import { getSession, hasLiveBackendAuth } from "@/lib/session"
 
-/** Icon điểm. Dùng chung với CheckIn để "điểm" luôn là một biểu tượng duy
- *  nhất, không phải chỗ này chữ "điểm" chỗ kia số trần trụi. */
 const COIN = "/assets/AI/ecolink-coin.webp"
 
 const stroke = {
@@ -51,20 +61,18 @@ function RewardIcon({ kind }: { kind: Reward["kind"] }) {
   )
 }
 
-/** Ảnh hỏng hoặc thiếu file thì lùi về icon, không để lỗ hổng trắng.
- *  aspect cố định nên ảnh tải chậm không làm trang nhảy. */
-function Thumb({ reward }: { reward: Reward }) {
+function Thumb({ img, name, kind }: { img?: string | null; name: string; kind: Reward["kind"] }) {
   const [broken, setBroken] = useState(false)
   return (
     <div className="relative aspect-[4/3] w-full overflow-hidden bg-surface-2">
-      {broken ? (
+      {!img || broken ? (
         <span className="grid h-full place-items-center text-body">
-          <RewardIcon kind={reward.kind} />
+          <RewardIcon kind={kind} />
         </span>
       ) : (
         <img
-          src={reward.img}
-          alt={reward.name}
+          src={img}
+          alt={name}
           loading="lazy"
           decoding="async"
           width={800}
@@ -77,10 +85,81 @@ function Thumb({ reward }: { reward: Reward }) {
   )
 }
 
+function computeTierFromPoints(points: number) {
+  const cur = TIERS.filter((t) => points >= t.min).at(-1) ?? TIERS[0]
+  const next = TIERS.find((t) => points < t.min) ?? null
+  if (!next) return { cur, next: null, pct: 100, need: 0 }
+  const span = next.min - cur.min
+  const done = Math.max(0, points - cur.min)
+  return {
+    cur,
+    next,
+    pct: span > 0 ? Math.min(100, Math.round((done / span) * 100)) : 100,
+    need: Math.max(0, next.min - points),
+  }
+}
+
+const REDEMPTION_STATUS_LABEL: Record<string, string> = {
+  Pending: "Chờ giao quà",
+  Redeemed: "Đã phát mã voucher",
+  Delivered: "Đã hoàn tất bàn giao",
+  Expired: "Hết hạn",
+  Cancelled: "Đã hủy & hoàn điểm",
+}
+
 export default function Rewards() {
-  const { cur, next, pct, need } = tierProgress()
-  // Số dư nằm trong state vì điểm danh cộng vào đây. Đồng bộ với điểm tiêu dùng EcoFacts.
-  const [spend, setSpend] = useState(() => getSpendPoints())
+  const session = getSession()
+  const liveRewardsUser =
+    hasLiveBackendAuth() &&
+    (session?.role === "user" || session?.role === "recycler")
+
+  const offlineTier = tierProgress()
+  const [spend, setSpend] = useState(() => (liveRewardsUser ? 0 : getSpendPoints()))
+  const [rankPoints, setRankPoints] = useState(() => (liveRewardsUser ? 0 : RANK_POINTS))
+  const [spentTotal, setSpentTotal] = useState(() => (liveRewardsUser ? 0 : REDEEMED))
+  const [gifts, setGifts] = useState<GiftItemDto[]>([])
+  const [redemptions, setRedemptions] = useState<RedemptionDto[]>([])
+  const [tree, setTree] = useState<VirtualTreeDto | null>(null)
+  const [loading, setLoading] = useState(liveRewardsUser)
+  const [redeemingId, setRedeemingId] = useState<string | null>(null)
+  const [addressPromptId, setAddressPromptId] = useState<string | null>(null)
+  const [deliveryAddress, setDeliveryAddress] = useState("")
+  const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null)
+
+  const loadLiveData = async () => {
+    setLoading(true)
+    try {
+      const [walletRes, giftRes, redRes] = await Promise.all([
+        fetchPointWallet(),
+        fetchAvailableGifts({ sort: "points_asc" }),
+        fetchMyRedemptions({ pageSize: 12 }),
+      ])
+      if (walletRes.data) {
+        setSpend(walletRes.data.balance)
+        setRankPoints(walletRes.data.totalEarned)
+        setSpentTotal(walletRes.data.totalSpent)
+      }
+      if (giftRes.data) setGifts(giftRes.data)
+      if (redRes.data?.items) setRedemptions(redRes.data.items)
+      if (session?.role === "user") {
+        fetchMyVirtualTree()
+          .then((tr) => {
+            if (tr.data) setTree(tr.data)
+          })
+          .catch(() => {})
+      }
+    } catch {
+      // Giữ trạng thái an toàn nếu lỗi mạng tạm thời
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (liveRewardsUser) {
+      void loadLiveData()
+    }
+  }, [liveRewardsUser])
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -90,9 +169,46 @@ export default function Rewards() {
     window.addEventListener("ecolink:points-change", handler)
     return () => window.removeEventListener("ecolink:points-change", handler)
   }, [])
-  // rẻ nhất trước: người vào trang này để đổi được ngay. Đổi quà bằng điểm
-  // tiêu dùng, không phải điểm xếp hạng.
-  const list = [...REWARDS].sort((a, b) => a.cost - b.cost)
+
+  const { cur, next, pct, need } = liveRewardsUser
+    ? computeTierFromPoints(rankPoints)
+    : offlineTier
+
+  const offlineSorted = [...REWARDS].sort((a, b) => a.cost - b.cost)
+
+  const handleLiveRedeem = async (gift: GiftItemDto, address?: string) => {
+    if (redeemingId) return
+    setRedeemingId(gift.id)
+    setNotice(null)
+    try {
+      const res = await redeemGift({
+        giftId: gift.id,
+        quantity: 1,
+        deliveryAddress: address?.trim() || undefined,
+      })
+      if (res.data) {
+        setSpend(res.data.walletBalance)
+        const r = res.data.redemption
+        const voucherMsg = r.voucherCode
+          ? ` Mã E-Voucher của bạn: ${r.voucherCode}.`
+          : " Bộ phận vận hành sẽ xác nhận giao quà theo địa chỉ đã nhập."
+        setNotice({
+          tone: "ok",
+          text: `Đổi "${gift.name}" thành công (Mã đơn ${r.redemptionCode}).${voucherMsg}`,
+        })
+        setAddressPromptId(null)
+        setDeliveryAddress("")
+        await loadLiveData()
+      }
+    } catch (err) {
+      setNotice({
+        tone: "err",
+        text: err instanceof Error ? err.message : "Đổi quà thất bại.",
+      })
+    } finally {
+      setRedeemingId(null)
+    }
+  }
 
   return (
     <div className="page flex flex-col pb-16">
@@ -106,15 +222,14 @@ export default function Rewards() {
         </p>
       </header>
 
-      {/* Số dư: cột tiêu dùng rộng hơn cột xếp hạng vì đó mới là tiền trong
-          túi, còn xếp hạng chỉ là thông tin tham chiếu. */}
+      {/* Số dư + Điểm danh */}
       <section className="mt-7 grid overflow-hidden rounded-2xl border border-line bg-surface lg:grid-cols-[1.15fr_1fr]">
         <div className="px-5 py-6 md:px-8 md:py-7">
           <p className="text-xs font-semibold tracking-[0.16em] text-muted uppercase">
             Điểm tiêu dùng
           </p>
           <p className="mt-1 text-4xl leading-none font-bold tracking-tight tabular-nums text-brand md:text-5xl">
-            {fmt(spend)}
+            {loading ? "—" : fmt(spend)}
           </p>
           <p className="mt-3 text-[13px] leading-5 text-muted">
             Dùng để đổi quà bên dưới. Đổi xong mới trừ.
@@ -125,275 +240,441 @@ export default function Rewards() {
               Điểm xếp hạng
             </p>
             <p className="mt-1 text-3xl leading-none font-bold tracking-tight tabular-nums text-ink md:text-4xl">
-              {fmt(RANK_POINTS)}
+              {loading ? "—" : fmt(rankPoints)}
             </p>
 
             <p className="mt-3 text-sm font-semibold text-ink">
-              Hạng {cur.name}
-              {next && <span className="font-normal text-muted"> → {next.name}</span>}
+              {tree ? `Cây ảo cấp ${tree.level}: ${tree.levelTitle}` : `Hạng ${cur.name}`}
+              {!tree && next && <span className="font-normal text-muted"> → {next.name}</span>}
+              {tree && tree.nextLevelTitle && (
+                <span className="font-normal text-muted"> → {tree.nextLevelTitle}</span>
+              )}
             </p>
             <div
               className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3"
               role="progressbar"
-              aria-valuenow={pct}
+              aria-valuenow={tree ? tree.progressPercent : pct}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label={next ? `Tiến độ lên hạng ${next.name}` : "Đã đạt hạng cao nhất"}
+              aria-label={next ? `Tiến độ lên hạng ${next.name}` : "Tiến độ cây ảo"}
             >
-              <div className="h-full rounded-full bg-brand" style={{ width: `${pct}%` }} />
+              <div
+                className="h-full rounded-full bg-brand"
+                style={{ width: `${tree ? tree.progressPercent : pct}%` }}
+              />
             </div>
             <p className="mt-2 text-[13px] leading-5 text-muted">
-              {next
-                ? `Cần thêm ${fmt(need)} điểm để lên hạng ${next.name}`
-                : "Đã đạt hạng cao nhất"}
+              {tree
+                ? tree.isMaxLevel
+                  ? "Cây ảo đã đạt cấp tối đa"
+                  : `Cần ${fmt(tree.upgradeCost ?? 0)} điểm tiêu dùng để nâng cấp tiếp`
+                : next
+                  ? `Cần thêm ${fmt(need)} điểm để lên hạng ${next.name}`
+                  : "Đã đạt hạng cao nhất"}
               {" · "}
-              đã đổi {fmt(REDEEMED)} điểm
+              đã chi {fmt(spentTotal)} điểm
             </p>
           </div>
         </div>
 
-        {/* Cột phải: điểm danh nằm ngay cạnh con số nó sẽ làm tăng. Bấm xong
-            nhìn thấy ngay ở cùng một khối, không phải cuộn đi tìm. Cột này
-            thấp hơn cột trái nên canh giữa theo chiều dọc cho cân. */}
         <div className="flex flex-col justify-center border-t border-line-soft px-5 py-6 md:px-8 md:py-7 lg:border-t-0 lg:border-l">
-          <CheckIn balance={spend} onEarn={(n) => setSpend(addSpendPoints(n))} />
+          <CheckIn
+            balance={spend}
+            onEarn={(n) => setSpend(addSpendPoints(n))}
+            onSyncBalance={(b) => {
+              setSpend(b)
+              if (liveRewardsUser) void loadLiveData()
+            }}
+          />
         </div>
       </section>
 
-      {/* QUÀ LỚN — khối nền nhạt riêng, đứng ngay dưới số dư, tách khỏi danh mục
-          quà thường bằng nền chứ không bằng đường kẻ.
-
-          Bố cục theo mẫu "ưu đãi nổi bật": thẻ trắng nổi trên nền nhạt, ảnh
-          chiếm đầu thẻ, mép trên khối chữ bị cắt tròn (khuyết vé), rồi tới
-          thanh tiến trình và hàng giá có icon coin. Trước đây là thẻ tối xanh
-          đậm — số tiền 150.000 điểm nổi lên nhưng người dùng không thấy mình
-          còn thiếu bao nhiêu; thanh tiến trình trả lời đúng câu hỏi đó. */}
-      <section className="relative mt-10 overflow-hidden rounded-3xl bg-surface-2 px-5 py-6 md:px-8 md:py-8">
-        {/* Vòng cung trang trí — hoa văn đường đồng của mẫu. Hai vòng, không
-            cần ảnh. pointer-events-none để không chặn chọn chữ. */}
+      {notice && (
         <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -top-28 -right-20 size-[440px] rounded-full border border-brand/12"
-        />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -top-14 -right-6 size-[280px] rounded-full border border-brand/12"
-        />
+          role="status"
+          className={`mt-6 rounded-xl border px-4 py-3 text-sm font-semibold ${
+            notice.tone === "ok"
+              ? "border-brand/30 bg-brand/8 text-brand-deep"
+              : "border-rose-300 bg-rose-50 text-rose-800"
+          }`}
+        >
+          {notice.text}
+        </div>
+      )}
 
-        <header className="relative flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-          <h2 className="text-2xl leading-8 font-bold tracking-tight text-brand">
-            Giải lớn mùa này
-          </h2>
-          <p className="text-sm text-muted">Điểm gấp 4 đến 13 lần quà thường</p>
-        </header>
-        <p className="relative mt-1.5 max-w-[62ch] text-sm leading-6 text-body">
-          Dành riêng cho người giữ chuỗi điểm dài. Đổi bằng điểm tiêu dùng như
-          mọi món khác, điểm xếp hạng của bạn không bị trừ.
-        </p>
-
-        <ul className="relative mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {GRAND_PRIZES.map((g) => {
-            const short = Math.max(g.cost - spend, 0)
-            const can = short === 0
-            const pct = can ? 100 : Math.round((spend / g.cost) * 100)
-            return (
-              <li
-                key={g.id}
-                className="flex flex-col rounded-2xl bg-white shadow-[0_18px_40px_-26px_rgba(15,31,21,0.38)]"
-              >
-                <div className="relative">
-                  <img
-                    src={g.img}
-                    alt={g.name}
-                    loading="lazy"
-                    decoding="async"
-                    width={400}
-                    height={300}
-                    className="aspect-[4/3] w-full rounded-t-2xl object-cover"
-                  />
-                  {/* Khuyết vé: nửa tròn màu nền khối cắt vào mép trên khối
-                      chữ. Nằm trong div bọc ảnh nên "đáy" của nó luôn trùng đáy
-                      ảnh, không phải tính tỉ lệ 4/3 bằng tay. */}
-                  <span
-                    aria-hidden="true"
-                    className="absolute bottom-0 left-1/2 size-5 -translate-x-1/2 translate-y-1/2 rounded-full bg-surface-2"
-                  />
-                </div>
-
-                <div className="flex flex-1 flex-col p-4 pt-6">
-                  <h3 className="text-[15px] leading-6 font-bold text-ink">
-                    {g.name}
-                  </h3>
-                  <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted">
-                    {g.desc}
-                  </p>
-
-                  {/* Thanh tiến trình = điểm đang có trên tổng điểm món này.
-                      Một câu "Cần thêm 137.600 điểm" không cho biết mình đã
-                      gần tới nỗi bao nhiêu; thanh thì có. */}
-                  <div
-                    className="mt-4 h-1.5 overflow-hidden rounded-full bg-surface-3"
-                    role="progressbar"
-                    aria-valuenow={pct}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-label={`Tiến độ đổi ${g.name}`}
-                  >
-                    <div
-                      className={`h-full rounded-full ${can ? "bg-brand-deep" : "bg-brand"}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <p
-                    className={`mt-2 text-[13px] leading-5 ${
-                      can ? "font-semibold text-brand-deep" : "text-muted"
-                    }`}
-                  >
-                    {can ? "Đủ điểm, đổi được ngay" : `Cần thêm ${fmt(short)} điểm`}
-                  </p>
-
-                  {/* Danh sách chi tiết gấp lại. Để mở sẵn thì thẻ này cao hơn
-                      hai thẻ kia và lệch cả hàng — mà danh sách này phần lớn
-                      người dùng không cần đọc mỗi lần vào trang. */}
-                  {g.details && (
-                    <details className="mt-3">
-                      <summary className="cursor-pointer text-[13px] font-semibold text-brand">
-                        Phần quà gồm gì
-                      </summary>
-                      <ul className="mt-2 flex flex-col gap-1.5">
-                        {g.details.map((d) => (
-                          <li
-                            key={d}
-                            className="flex gap-2 text-[12px] leading-5 text-muted"
-                          >
-                            <span
-                              aria-hidden="true"
-                              className="mt-2 size-1 shrink-0 rounded-full bg-mint"
-                            />
-                            <span>{d}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
-
-                  {/* mt-auto: 3 thẻ cao bằng nhau nên giá phải bấm đáy, hàng giá
-                      thẳng hàng. */}
-                  <p className="mt-auto flex items-center gap-2 pt-4">
-                    <img
-                      src={COIN}
-                      alt=""
-                      width={24}
-                      height={24}
-                      className="size-6 shrink-0"
-                    />
-                    <span className="text-lg leading-6 font-bold tabular-nums text-ink">
-                      {fmt(g.cost)}
-                    </span>
-                    <span className="text-xs font-medium text-muted">điểm</span>
-                  </p>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      </section>
-
-      {/* Danh mục: ảnh là nội dung chính nên mỗi món một thẻ, ảnh chiếm phần
-          lớn diện tích. Trước đây là 6 icon trong card rỗng, không ai biết
-          món quà trông như thế nào. */}
+      {/* Phần quà đang mở */}
       <section className="mt-10">
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
           <h2 className="text-lg leading-7 font-bold tracking-tight text-ink">
             Phần quà đang mở
           </h2>
-          <p className="text-sm text-muted">{list.length} món, sắp theo giá tăng dần</p>
+          <p className="text-sm text-muted">
+            {liveRewardsUser
+              ? loading
+                ? "Đang tải kho quà..."
+                : `${gifts.length} món từ hệ thống`
+              : `${offlineSorted.length} món, sắp theo giá tăng dần`}
+          </p>
         </div>
 
-        <ul className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {list.map((r) => {
-            const enough = spend >= r.cost
-            const soldOut = r.stock === 0
-            const can = enough && !soldOut
+        {liveRewardsUser ? (
+          loading && gifts.length === 0 ? (
+            <p className="card mt-5 px-5 py-8 text-center text-sm text-muted">
+              Đang tải danh mục quà từ máy chủ...
+            </p>
+          ) : gifts.length === 0 ? (
+            <p className="card mt-5 px-5 py-8 text-center text-sm text-muted">
+              Hiện chưa có phần quà nào đang mở bán.
+            </p>
+          ) : (
+            <ul className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {gifts.map((g) => {
+                const enough = spend >= g.pointsRequired
+                const soldOut = !g.inStock || g.stockQuantity <= 0
+                const can = enough && !soldOut && redeemingId !== g.id
+                const isPhysical = g.type === "Physical"
+                const showingPrompt = addressPromptId === g.id
 
-            const stock =
-              r.stock === null
-                ? "Không giới hạn"
-                : soldOut
+                const stockText = soldOut
                   ? "Hết hàng"
-                  : r.stock <= LOW_STOCK
-                    ? `Chỉ còn ${r.stock}`
-                    : `Còn ${r.stock}`
+                  : g.stockQuantity <= LOW_STOCK
+                    ? `Chỉ còn ${g.stockQuantity}`
+                    : `Còn ${g.stockQuantity}`
 
-            return (
-              <li key={r.id} className="card flex flex-col overflow-hidden">
-                <div className="relative">
-                  <Thumb reward={r} />
-                  {r.stock !== null && (
-                    <span
-                      className={`absolute top-3 left-3 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                        soldOut
-                          ? "bg-surface-3 text-ink"
-                          : r.stock <= LOW_STOCK
-                            ? "bg-brand text-white"
-                            : "bg-surface text-body"
-                      }`}
-                    >
-                      {stock}
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex flex-1 flex-col p-4 sm:p-5">
-                  <h3 className="text-[15px] leading-6 font-bold text-ink">{r.name}</h3>
-                  <p className="mt-1 text-sm leading-6 text-body">{r.desc}</p>
-
-                  <div className="mt-auto flex items-end justify-between gap-3 pt-5">
-                    <div>
-                      <p
-                        className={`text-[15px] leading-6 font-bold tabular-nums ${
-                          can ? "text-brand" : "text-muted"
+                return (
+                  <li key={g.id} className="card flex flex-col overflow-hidden">
+                    <div className="relative">
+                      <Thumb
+                        img={g.imageUrl}
+                        name={g.name}
+                        kind={g.type === "Voucher" ? "discount" : "gift"}
+                      />
+                      <span
+                        className={`absolute top-3 left-3 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                          soldOut
+                            ? "bg-surface-3 text-ink"
+                            : g.stockQuantity <= LOW_STOCK
+                              ? "bg-brand text-white"
+                              : "bg-surface text-body"
                         }`}
                       >
-                        {fmt(r.cost)}{" "}
-                        <span className="text-xs font-medium">điểm</span>
-                      </p>
-                      {!enough && (
-                        <p className="text-xs text-muted">
-                          Thiếu {fmt(r.cost - spend)} điểm
-                        </p>
-                      )}
+                        {stockText}
+                      </span>
+                      <span className="absolute top-3 right-3 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-ink">
+                        {g.type === "Voucher" ? "E-Voucher" : "Quà vật lý"}
+                      </span>
                     </div>
 
-                    {/* nhãn giữ nguyên mọi thẻ, đổi chữ theo trạng thái làm
-                        hàng nút lệch nhau. Phần thiếu nằm ở dòng phụ. */}
-                    <button
-                      type="button"
-                      disabled={!can}
-                      onClick={() => {
-                        if (can) {
-                          setSpend(addSpendPoints(-r.cost))
-                        }
-                      }}
-                      className="btn btn-primary h-10 min-w-[104px]"
-                    >
-                      {soldOut ? "Hết hàng" : "Đổi ngay"}
-                    </button>
-                  </div>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
+                    <div className="flex flex-1 flex-col p-4 sm:p-5">
+                      <h3 className="text-[15px] leading-6 font-bold text-ink">{g.name}</h3>
+                      {g.description && (
+                        <p className="mt-1 text-sm leading-6 text-body">{g.description}</p>
+                      )}
 
-        {/* ponytail: chữ này mô tả luồng đổi quà, backend chưa có. Có backend
-            thì lấy từ cấu hình điểm thu gom chứ đừng hardcode ở đây. */}
+                      {showingPrompt && (
+                        <div className="mt-4 flex flex-col gap-2 rounded-xl border border-line bg-surface-2 p-3">
+                          <label className="text-xs font-semibold text-ink">
+                            Địa chỉ nhận quà:
+                            <input
+                              className="input mt-1 h-9 text-xs"
+                              value={deliveryAddress}
+                              onChange={(e) => setDeliveryAddress(e.target.value)}
+                              placeholder="Số nhà, đường, phường/xã, quận/huyện..."
+                            />
+                          </label>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              disabled={!deliveryAddress.trim() || redeemingId === g.id}
+                              onClick={() => void handleLiveRedeem(g, deliveryAddress)}
+                              className="btn-primary h-9 flex-1 text-xs"
+                            >
+                              {redeemingId === g.id ? "Đang đổi..." : "Xác nhận đổi"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAddressPromptId(null)
+                                setDeliveryAddress("")
+                              }}
+                              className="btn-ghost h-9 px-3 text-xs"
+                            >
+                              Huỷ
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="mt-auto flex items-end justify-between gap-3 pt-5">
+                        <div>
+                          <p
+                            className={`text-[15px] leading-6 font-bold tabular-nums ${
+                              can ? "text-brand" : "text-muted"
+                            }`}
+                          >
+                            {fmt(g.pointsRequired)}{" "}
+                            <span className="text-xs font-medium">điểm</span>
+                          </p>
+                          {!enough && (
+                            <p className="text-xs text-muted">
+                              Thiếu {fmt(g.pointsRequired - spend)} điểm
+                            </p>
+                          )}
+                        </div>
+
+                        {!showingPrompt && (
+                          <button
+                            type="button"
+                            disabled={!can}
+                            onClick={() => {
+                              if (!can) return
+                              if (isPhysical) {
+                                setAddressPromptId(g.id)
+                                setNotice(null)
+                              } else {
+                                void handleLiveRedeem(g)
+                              }
+                            }}
+                            className="btn btn-primary h-10 min-w-[104px]"
+                          >
+                            {redeemingId === g.id
+                              ? "Đang xử lý..."
+                              : soldOut
+                                ? "Hết hàng"
+                                : "Đổi ngay"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )
+        ) : (
+          <ul className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {offlineSorted.map((r) => {
+              const enough = spend >= r.cost
+              const soldOut = r.stock === 0
+              const can = enough && !soldOut
+
+              const stock =
+                r.stock === null
+                  ? "Không giới hạn"
+                  : soldOut
+                    ? "Hết hàng"
+                    : r.stock <= LOW_STOCK
+                      ? `Chỉ còn ${r.stock}`
+                      : `Còn ${r.stock}`
+
+              return (
+                <li key={r.id} className="card flex flex-col overflow-hidden">
+                  <div className="relative">
+                    <Thumb img={r.img} name={r.name} kind={r.kind} />
+                    {r.stock !== null && (
+                      <span
+                        className={`absolute top-3 left-3 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                          soldOut
+                            ? "bg-surface-3 text-ink"
+                            : r.stock <= LOW_STOCK
+                              ? "bg-brand text-white"
+                              : "bg-surface text-body"
+                        }`}
+                      >
+                        {stock}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-1 flex-col p-4 sm:p-5">
+                    <h3 className="text-[15px] leading-6 font-bold text-ink">{r.name}</h3>
+                    <p className="mt-1 text-sm leading-6 text-body">{r.desc}</p>
+
+                    <div className="mt-auto flex items-end justify-between gap-3 pt-5">
+                      <div>
+                        <p
+                          className={`text-[15px] leading-6 font-bold tabular-nums ${
+                            can ? "text-brand" : "text-muted"
+                          }`}
+                        >
+                          {fmt(r.cost)} <span className="text-xs font-medium">điểm</span>
+                        </p>
+                        {!enough && (
+                          <p className="text-xs text-muted">
+                            Thiếu {fmt(r.cost - spend)} điểm
+                          </p>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={!can}
+                        onClick={() => {
+                          if (can) setSpend(addSpendPoints(-r.cost))
+                        }}
+                        className="btn btn-primary h-10 min-w-[104px]"
+                      >
+                        {soldOut ? "Hết hàng" : "Đổi ngay"}
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+
         <p className="mt-6 max-w-[68ch] text-sm leading-6 text-muted">
           Đổi quà chỉ trừ điểm tiêu dùng, điểm xếp hạng giữ nguyên nên bạn không
-          bị tụt hạng. Quà vật lý được giao tại nhà trong 3 đến 5 ngày làm việc;
-          phiếu giảm giá có hiệu lực từ lần thanh toán kế tiếp.
+          bị tụt hạng. Quà vật lý được giao theo địa chỉ nhận hàng; phiếu giảm giá
+          hiển thị mã E-Voucher ngay trong mục lịch sử bên dưới.
         </p>
       </section>
+
+      {/* Lịch sử đổi quà cá nhân khi kết nối Backend */}
+      {liveRewardsUser && redemptions.length > 0 && (
+        <section className="mt-10">
+          <h2 className="text-lg leading-7 font-bold tracking-tight text-ink">
+            Quà bạn đã đổi gần đây
+          </h2>
+          <div className="mt-4 overflow-x-auto rounded-xl border border-line bg-surface">
+            <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+              <thead>
+                <tr className="border-b border-line bg-surface-2">
+                  <th className="px-4 py-2.5 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
+                    Mã đơn
+                  </th>
+                  <th className="px-4 py-2.5 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
+                    Quà tặng
+                  </th>
+                  <th className="px-4 py-2.5 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
+                    Chi tiết / Mã Voucher
+                  </th>
+                  <th className="px-4 py-2.5 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
+                    Điểm
+                  </th>
+                  <th className="px-4 py-2.5 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
+                    Trạng thái
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line-soft">
+                {redemptions.map((r) => (
+                  <tr key={r.id}>
+                    <td className="px-4 py-3 font-mono text-xs font-semibold text-ink">
+                      {r.redemptionCode}
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-ink">{r.gift?.name}</td>
+                    <td className="px-4 py-3 text-xs text-body">
+                      {r.voucherCode ? (
+                        <span className="rounded bg-brand/10 px-2 py-0.5 font-mono font-bold text-brand-deep">
+                          {r.voucherCode}
+                        </span>
+                      ) : (
+                        r.deliveryAddress || "—"
+                      )}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums text-body">
+                      -{fmt(r.pointsSpent)}
+                    </td>
+                    <td className="px-4 py-3 text-xs font-semibold text-brand-deep">
+                      {REDEMPTION_STATUS_LABEL[r.status] ?? r.status}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* Giải lớn mùa này (chỉ hiển thị bản showcase ở chế độ offline hoặc tham khảo) */}
+      {!liveRewardsUser && (
+        <section className="relative mt-10 overflow-hidden rounded-3xl bg-surface-2 px-5 py-6 md:px-8 md:py-8">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-28 -right-20 size-[440px] rounded-full border border-brand/12"
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-14 -right-6 size-[280px] rounded-full border border-brand/12"
+          />
+
+          <header className="relative flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+            <h2 className="text-2xl leading-8 font-bold tracking-tight text-brand">
+              Giải lớn mùa này
+            </h2>
+            <p className="text-sm text-muted">Điểm gấp 4 đến 13 lần quà thường</p>
+          </header>
+          <p className="relative mt-1.5 max-w-[62ch] text-sm leading-6 text-body">
+            Dành riêng cho người giữ chuỗi điểm dài. Đổi bằng điểm tiêu dùng như
+            mọi món khác, điểm xếp hạng của bạn không bị trừ.
+          </p>
+
+          <ul className="relative mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {GRAND_PRIZES.map((g) => {
+              const short = Math.max(g.cost - spend, 0)
+              const can = short === 0
+              const pctItem = can ? 100 : Math.round((spend / g.cost) * 100)
+              return (
+                <li
+                  key={g.id}
+                  className="flex flex-col rounded-2xl bg-white shadow-[0_18px_40px_-26px_rgba(15,31,21,0.38)]"
+                >
+                  <div className="relative">
+                    <img
+                      src={g.img}
+                      alt={g.name}
+                      loading="lazy"
+                      decoding="async"
+                      width={400}
+                      height={300}
+                      className="aspect-[4/3] w-full rounded-t-2xl object-cover"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="absolute bottom-0 left-1/2 size-5 -translate-x-1/2 translate-y-1/2 rounded-full bg-surface-2"
+                    />
+                  </div>
+
+                  <div className="flex flex-1 flex-col p-4 pt-6">
+                    <h3 className="text-[15px] leading-6 font-bold text-ink">{g.name}</h3>
+                    <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted">
+                      {g.desc}
+                    </p>
+                    <div
+                      className="mt-4 h-1.5 overflow-hidden rounded-full bg-surface-3"
+                      role="progressbar"
+                      aria-valuenow={pctItem}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                    >
+                      <div
+                        className={`h-full rounded-full ${can ? "bg-brand-deep" : "bg-brand"}`}
+                        style={{ width: `${pctItem}%` }}
+                      />
+                    </div>
+                    <p
+                      className={`mt-2 text-[13px] leading-5 ${
+                        can ? "font-semibold text-brand-deep" : "text-muted"
+                      }`}
+                    >
+                      {can ? "Đủ điểm, đổi được ngay" : `Cần thêm ${fmt(short)} điểm`}
+                    </p>
+                    <p className="mt-auto flex items-center gap-2 pt-4">
+                      <img src={COIN} alt="" width={24} height={24} className="size-6 shrink-0" />
+                      <span className="text-lg leading-6 font-bold tabular-nums text-ink">
+                        {fmt(g.cost)}
+                      </span>
+                      <span className="text-xs font-medium text-muted">điểm</span>
+                    </p>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
 
       <section className="mt-10">
         <h2 className="text-lg leading-7 font-bold tracking-tight text-ink">

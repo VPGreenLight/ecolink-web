@@ -2,26 +2,48 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { PageHead, Stat } from "@/components/Portal"
 import { ECO_FACTS, GIFTS, POSTS, STATS, DATASET, fmtInt } from "@/data/ops"
-import { getAccessToken } from "@/lib/session"
+import { hasLiveBackendAuth } from "@/lib/session"
 import {
   fetchAiDatasetDashboard,
   fetchStaffAiFeedbackQueue,
 } from "@/lib/aiCurationApi"
+import { fetchStaffBlogs } from "@/lib/blogApi"
+import { fetchStaffEcoFacts, fetchStaffGifts } from "@/lib/gamificationApi"
 import { fetchStaffComplaints } from "@/lib/reviewComplaintApi"
 
 /** Tổng quan nhân viên (Staff). */
 export default function StaffHome() {
-  const [pendingAiCount, setPendingAiCount] = useState<number>(STATS.pending.aiCases)
-  const [openComplaintCount, setOpenComplaintCount] = useState<number>(STATS.pending.complaints)
+  const [liveAuth] = useState(() => hasLiveBackendAuth())
+  const [pendingAiCount, setPendingAiCount] = useState<number>(liveAuth ? 0 : STATS.pending.aiCases)
+  const [openComplaintCount, setOpenComplaintCount] = useState<number>(
+    liveAuth ? 0 : STATS.pending.complaints,
+  )
+  const [pendingBlogCount, setPendingBlogCount] = useState<number>(
+    liveAuth ? 0 : STATS.pending.posts,
+  )
+  const [publishedBlogCount, setPublishedBlogCount] = useState<number>(
+    liveAuth ? 0 : POSTS.filter((p) => p.status === "published").length,
+  )
+  const [activeGiftsCount, setActiveGiftsCount] = useState<number>(
+    liveAuth ? 0 : GIFTS.filter((g) => g.active).length,
+  )
+  const [outOfStockCount, setOutOfStockCount] = useState<number>(
+    liveAuth ? 0 : GIFTS.filter((g) => g.stock === 0).length,
+  )
+  const [activeFactsCount, setActiveFactsCount] = useState<number>(
+    liveAuth ? 0 : ECO_FACTS.filter((f) => f.open).length,
+  )
+  const [totalFactsCount, setTotalFactsCount] = useState<number>(
+    liveAuth ? 0 : ECO_FACTS.length,
+  )
   const [datasetStats, setDatasetStats] = useState({
-    accuracy: DATASET.accuracy,
-    labeled: DATASET.labeled,
-    total: DATASET.total,
+    accuracy: liveAuth ? 0 : DATASET.accuracy,
+    labeled: liveAuth ? 0 : DATASET.labeled,
+    total: liveAuth ? 0 : DATASET.total,
   })
 
   useEffect(() => {
-    const token = getAccessToken()
-    if (!token) return
+    if (!liveAuth) return
 
     fetchStaffAiFeedbackQueue({ pageSize: 1 })
       .then((res) => {
@@ -50,13 +72,50 @@ export default function StaffHome() {
         }
       })
       .catch(() => {})
-  }, [])
+
+    fetchStaffBlogs({ pageSize: 50 })
+      .then((res) => {
+        if (res.data?.items) {
+          setPendingBlogCount(
+            res.data.items.filter((b) => b.status === "Pending_Approval").length,
+          )
+          setPublishedBlogCount(
+            res.data.items.filter((b) => b.status === "Approved").length,
+          )
+        }
+      })
+      .catch(() => {})
+
+    fetchStaffGifts({ pageSize: 50 })
+      .then((res) => {
+        if (res.data?.items) {
+          setActiveGiftsCount(
+            res.data.items.filter((g) => g.status === "ACTIVE").length,
+          )
+          setOutOfStockCount(
+            res.data.items.filter((g) => g.stockQuantity <= 0).length,
+          )
+        }
+      })
+      .catch(() => {})
+
+    fetchStaffEcoFacts({ pageSize: 50 })
+      .then((res) => {
+        if (res.data?.items) {
+          setTotalFactsCount(res.data.totalCount)
+          setActiveFactsCount(
+            res.data.items.filter((f) => f.status === "ACTIVE").length,
+          )
+        }
+      })
+      .catch(() => {})
+  }, [liveAuth])
 
   const queue = [
     { to: "/staff/ai-review", label: "Ảnh AI nhận diện sai", n: pendingAiCount, unit: "ảnh" },
-    { to: "/staff/applications", label: "Hồ sơ đối tác thu mua", n: STATS.pending.applications, unit: "hồ sơ" },
+    { to: "/staff/applications", label: "Hồ sơ đối tác thu mua", n: liveAuth ? 0 : STATS.pending.applications, unit: "hồ sơ" },
     { to: "/staff/complaints", label: "Khiếu nại giao dịch", n: openComplaintCount, unit: "khiếu nại" },
-    { to: "/staff/blog", label: "Bài blog chờ duyệt", n: STATS.pending.posts, unit: "bài" },
+    { to: "/staff/blog", label: "Bài blog chờ duyệt", n: pendingBlogCount, unit: "bài" },
   ]
 
   return (
@@ -96,13 +155,13 @@ export default function StaffHome() {
         />
         <Stat
           label="Kho quà đang mở"
-          value={String(GIFTS.filter((g) => g.active).length)}
-          note={`${GIFTS.filter((g) => g.stock === 0).length} món hết hàng`}
+          value={String(activeGiftsCount)}
+          note={`${outOfStockCount} món hết hàng`}
         />
         <Stat
-          label="Eco Fact đang mở"
-          value={`${ECO_FACTS.filter((f) => f.open).length} / ${ECO_FACTS.length}`}
-          note={`${POSTS.filter((p) => p.status === "published").length} bài blog đã xuất bản`}
+          label="Eco Fact đang bật"
+          value={`${activeFactsCount} / ${totalFactsCount}`}
+          note={`${publishedBlogCount} bài blog đã xuất bản`}
         />
       </div>
 

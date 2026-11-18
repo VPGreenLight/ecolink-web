@@ -4,6 +4,11 @@ import { PageHead, Stat, Table, Td } from "@/components/Portal"
 import SponsoredAdBanner from "@/components/SponsoredAdBanner"
 import { MY_HANDOVERS } from "@/data/handover"
 import { LEADERBOARD, RANK_POINTS, getSpendPoints, fmt, tierProgress } from "@/data/rewards"
+import {
+  fetchLeaderboard,
+  fetchMyEcoProfile,
+  type EcoProfileDto,
+} from "@/lib/gamificationApi"
 import { fetchHandoverOrdersResult, type SyncedHandoverOrder } from "@/lib/recyclerWorkflowApi"
 import { refreshMyEntitlementsSafely, useEntitlements } from "@/lib/servicePackageApi"
 import { hasLiveBackendAuth, useUser } from "@/lib/session"
@@ -19,19 +24,23 @@ const DEFAULT_OFFLINE_OPEN: OpenHandoverPreview[] = MY_HANDOVERS.filter(
   (h) => h.status === "pending" || h.status === "accepted" || h.status === "collected",
 ).map((h) => ({ id: h.id, recycler: h.recycler, date: h.date, slot: h.slot }))
 
-/** Trang chủ sau đăng nhập của người dân: nối 3 việc đang dở thành một màn
- *  hình — có yêu cầu nào đang chờ, điểm đang ở hạng nào, bước kế tiếp là gì.
- *  Không lặp lại nội dung các trang chuyên biệt, chỉ dẫn tới. */
+/** Trang chủ sau đăng nhập của người dân. */
 export default function UserHome() {
   const user = useUser()
   const entitlements = useEntitlements()
-  const { cur, next, pct, need } = tierProgress()
+  const offlineTier = tierProgress()
+  const [liveAuth] = useState(() => hasLiveBackendAuth())
+
   const [open, setOpen] = useState<OpenHandoverPreview[]>(() =>
-    hasLiveBackendAuth() ? [] : DEFAULT_OFFLINE_OPEN,
+    liveAuth ? [] : DEFAULT_OFFLINE_OPEN,
   )
-  const [loadingOpen, setLoadingOpen] = useState<boolean>(() => hasLiveBackendAuth())
-  const inRank = LEADERBOARD.find((r) => r.you)
-  const above = LEADERBOARD.find((r) => r.points > RANK_POINTS)
+  const [loadingOpen, setLoadingOpen] = useState<boolean>(liveAuth)
+  const [ecoProfile, setEcoProfile] = useState<EcoProfileDto | null>(null)
+  const [myRank, setMyRank] = useState<{ rank: number; gap: number } | null>(null)
+  const [loadingStats, setLoadingStats] = useState<boolean>(liveAuth)
+
+  const offlineInRank = LEADERBOARD.find((r) => r.you)
+  const offlineAbove = LEADERBOARD.find((r) => r.points > RANK_POINTS)
 
   useEffect(() => {
     let active = true
@@ -52,10 +61,75 @@ export default function UserHome() {
       .finally(() => {
         if (active) setLoadingOpen(false)
       })
+
+    if (liveAuth) {
+      Promise.all([
+        fetchMyEcoProfile().catch(() => null),
+        fetchLeaderboard({ top: 10 }).catch(() => null),
+      ])
+        .then(([profRes, lbRes]) => {
+          if (!active) return
+          if (profRes?.data) setEcoProfile(profRes.data)
+          const me = lbRes?.data?.myEntry
+          if (me) {
+            setMyRank({ rank: me.rank, gap: me.pointsNeededForNextRank })
+          }
+        })
+        .finally(() => {
+          if (active) setLoadingStats(false)
+        })
+    }
+
     return () => {
       active = false
     }
-  }, [])
+  }, [liveAuth])
+
+  const spendValue = liveAuth
+    ? loadingStats
+      ? "—"
+      : fmt(ecoProfile?.currentGreenPoints ?? 0)
+    : fmt(getSpendPoints())
+
+  const treeTitle = liveAuth
+    ? loadingStats
+      ? "—"
+      : ecoProfile
+        ? `Cấp ${ecoProfile.treeLevel} · ${ecoProfile.treeStageTitle}`
+        : "Cấp 1"
+    : offlineTier.cur.name
+
+  const treeNote = liveAuth
+    ? ecoProfile
+      ? `${fmt(ecoProfile.totalLifetimePoints)} điểm tích luỹ · ${Number(ecoProfile.totalRecycledKg).toFixed(1)} kg tái chế`
+      : "Đang đồng bộ..."
+    : offlineTier.next
+      ? `Cần ${fmt(offlineTier.need)} điểm lên ${offlineTier.next.name}`
+      : "Đã đạt hạng cao nhất"
+
+  const rankValue = liveAuth
+    ? loadingStats
+      ? "—"
+      : myRank
+        ? `#${myRank.rank}`
+        : "#—"
+    : `#${offlineInRank ? LEADERBOARD.indexOf(offlineInRank) + 1 : "—"}`
+
+  const rankNote = liveAuth
+    ? myRank
+      ? myRank.gap > 0
+        ? `Cần ${fmt(myRank.gap)} điểm để vượt`
+        : "Đang dẫn đầu bảng"
+      : "Hoàn tất đơn thu gom để lên bảng"
+    : offlineAbove
+      ? `Cần ${fmt(offlineAbove.points - RANK_POINTS)} điểm để vượt`
+      : "Bạn đang dẫn đầu"
+
+  const progressPct = liveAuth
+    ? ecoProfile && ecoProfile.experienceToNextLevel > 0
+      ? Math.min(100, Math.round((ecoProfile.treeExperience / ecoProfile.experienceToNextLevel) * 100))
+      : 100
+    : offlineTier.pct
 
   return (
     <div className="flex flex-col gap-6">
@@ -79,9 +153,9 @@ export default function UserHome() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Yêu cầu đang mở" value={String(open.length)} note="Chờ hoặc đã nhận" />
-        <Stat label="Điểm tiêu dùng" value={fmt(getSpendPoints())} note="Dùng để đổi quà" />
-        <Stat label="Hạng cây ảo" value={cur.name} note={next ? `Cần ${fmt(need)} điểm lên ${next.name}` : "Đã đạt hạng cao nhất"} />
-        <Stat label="Xếp hạng" value={`#${inRank ? LEADERBOARD.indexOf(inRank) + 1 : "—"}`} note={above ? `Cần ${fmt(above.points - RANK_POINTS)} điểm để vượt` : "Bạn đang dẫn đầu"} />
+        <Stat label="Điểm tiêu dùng" value={spendValue} note="Dùng để đổi quà" />
+        <Stat label="Hạng cây ảo" value={treeTitle} note={treeNote} />
+        <Stat label="Xếp hạng" value={rankValue} note={rankNote} />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -116,23 +190,29 @@ export default function UserHome() {
         <section className="card flex flex-col gap-4 p-5">
           <h2 className="text-base font-bold text-ink">Tiến trình lên hạng</h2>
           <p className="text-sm font-semibold text-ink">
-            {cur.name}
-            {next && <span className="font-normal text-muted"> → {next.name}</span>}
+            {treeTitle}
+            {!liveAuth && offlineTier.next && (
+              <span className="font-normal text-muted"> → {offlineTier.next.name}</span>
+            )}
           </p>
           <div
             className="h-2 overflow-hidden rounded-full bg-surface-3"
             role="progressbar"
-            aria-valuenow={pct}
+            aria-valuenow={progressPct}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={next ? `Tiến độ lên hạng ${next.name}` : "Đã đạt hạng cao nhất"}
+            aria-label="Tiến trình lên hạng"
           >
-            <div className="h-full rounded-full bg-brand" style={{ width: `${pct}%` }} />
+            <div className="h-full rounded-full bg-brand" style={{ width: `${progressPct}%` }} />
           </div>
           <p className="text-[13px] leading-5 text-muted">
-            {next
-              ? `Cần thêm ${fmt(need)} điểm để lên ${next.name}. Điểm sinh ra từ giao rác đúng phân loại và điểm danh hằng ngày.`
-              : "Bạn đã ở hạng cao nhất."}
+            {liveAuth
+              ? ecoProfile
+                ? `Bạn đã giảm thải ước tính ${ecoProfile.co2SavedKg} kg CO₂ qua EcoLink.`
+                : "Điểm sinh ra từ giao rác đúng phân loại và điểm danh hằng ngày."
+              : offlineTier.next
+                ? `Cần thêm ${fmt(offlineTier.need)} điểm để lên ${offlineTier.next.name}. Điểm sinh ra từ giao rác đúng phân loại và điểm danh hằng ngày.`
+                : "Bạn đã ở hạng cao nhất."}
           </p>
         </section>
       </div>

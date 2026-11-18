@@ -1,6 +1,15 @@
 import { useState, useEffect, useRef } from "react"
 import { PageHead } from "@/components/Portal"
-import { getSpendPoints, addSpendPoints } from "@/data/rewards"
+import { getSpendPoints, addSpendPoints, fmt } from "@/data/rewards"
+import {
+  fetchMyUnlockedEcoFacts,
+  fetchMyVirtualTree,
+  fetchPointWallet,
+  upgradeVirtualTree,
+  type EcoFactItemDto,
+  type VirtualTreeDto,
+} from "@/lib/gamificationApi"
+import { getSession, hasLiveBackendAuth } from "@/lib/session"
 import {
   Droplet,
   Droplets,
@@ -61,14 +70,23 @@ function getFrameSrc(frame: number): string {
   return `/assets/tree/tree_frame_${String(safeFrame).padStart(3, "0")}.webp`
 }
 
-function loadInitialState(): TreeState {
-  const currentPoints = getSpendPoints()
+function stageForBackendLevel(level: number): TreeStage {
+  if (level <= 1) return "seed"
+  if (level === 2) return "sprout"
+  if (level === 3) return "sapling"
+  if (level === 4) return "mature"
+  if (level === 5) return "flowering"
+  return "fruiting"
+}
 
-  if (typeof window === "undefined") {
+function loadInitialState(liveUser: boolean): TreeState {
+  const currentPoints = liveUser ? 0 : getSpendPoints()
+
+  if (typeof window === "undefined" || liveUser) {
     return {
-      stage: "sprout",
-      exp: 20,
-      maxExp: 80,
+      stage: liveUser ? "seed" : "sprout",
+      exp: liveUser ? 0 : 20,
+      maxExp: liveUser ? 40 : 80,
       water: 75,
       coins: currentPoints,
       harvestReady: false,
@@ -101,7 +119,13 @@ function loadInitialState(): TreeState {
 }
 
 export default function EcoFactsPage() {
-  const [tree, setTree] = useState<TreeState>(loadInitialState)
+  const session = getSession()
+  const liveTreeUser = hasLiveBackendAuth() && session?.role === "user"
+  const [tree, setTree] = useState<TreeState>(() => loadInitialState(liveTreeUser))
+  const [backendTree, setBackendTree] = useState<VirtualTreeDto | null>(null)
+  const [unlockedFacts, setUnlockedFacts] = useState<EcoFactItemDto[]>([])
+  const [upgradingOfficial, setUpgradingOfficial] = useState(false)
+  const [officialMsg, setOfficialMsg] = useState("")
   const [currentFrame, setCurrentFrame] = useState<number>(() => {
     if (typeof window === "undefined") return 1
     return getDefaultFrameForStage(tree.stage)
@@ -111,6 +135,64 @@ export default function EcoFactsPage() {
   const [isFertilizing, setIsFertilizing] = useState(false)
   const [showRewardInfo, setShowRewardInfo] = useState(false)
   const treeContainerRef = useRef<HTMLDivElement>(null)
+
+  const syncOfficialTree = async () => {
+    if (!liveTreeUser) return
+    try {
+      const [wRes, tRes, fRes] = await Promise.all([
+        fetchPointWallet(),
+        fetchMyVirtualTree(),
+        fetchMyUnlockedEcoFacts(),
+      ])
+      if (wRes.data) {
+        setTree((prev) => ({ ...prev, coins: wRes.data.balance }))
+      }
+      if (tRes.data) {
+        setBackendTree(tRes.data)
+        const nextStage = stageForBackendLevel(tRes.data.level)
+        setTree((prev) => ({
+          ...prev,
+          stage: nextStage,
+          coins: tRes.data.walletBalance,
+        }))
+        setCurrentFrame(getDefaultFrameForStage(nextStage))
+      }
+      if (fRes.data) setUnlockedFacts(fRes.data)
+    } catch {
+      // Giữ trạng thái cục bộ nếu mất kết nối
+    }
+  }
+
+  useEffect(() => {
+    if (liveTreeUser) void syncOfficialTree()
+  }, [liveTreeUser])
+
+  const handleOfficialUpgrade = async () => {
+    if (!liveTreeUser || upgradingOfficial) return
+    setUpgradingOfficial(true)
+    setOfficialMsg("")
+    try {
+      const res = await upgradeVirtualTree()
+      if (res.data) {
+        const t = res.data.tree
+        setBackendTree(t)
+        const nextStage = stageForBackendLevel(t.level)
+        setTree((prev) => ({ ...prev, stage: nextStage, coins: t.walletBalance }))
+        setCurrentFrame(getDefaultFrameForStage(nextStage))
+        setOfficialMsg(
+          res.data.unlockedFacts.length > 0
+            ? `Cây đã thăng cấp ${t.level} (${t.levelTitle}) và mở ${res.data.unlockedFacts.length} Eco Fact mới!`
+            : `Cây đã thăng cấp ${t.level} (${t.levelTitle})!`,
+        )
+        const fRes = await fetchMyUnlockedEcoFacts()
+        if (fRes.data) setUnlockedFacts(fRes.data)
+      }
+    } catch (err) {
+      setOfficialMsg(err instanceof Error ? err.message : "Chưa đủ điểm để nâng cấp cây.")
+    } finally {
+      setUpgradingOfficial(false)
+    }
+  }
 
   // Preload toàn bộ 70 frames vào bộ nhớ đệm trình duyệt để chuyển đổi mượt mà
   useEffect(() => {
@@ -664,6 +746,66 @@ export default function EcoFactsPage() {
           </div>
         </div>
       </div>
+
+      {/* Đồng bộ Cây Ảo chính thức & Thư viện Eco Fact khi đã đăng nhập */}
+      {liveTreeUser && (
+        <section className="card flex flex-col gap-4 p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-ink">
+                {backendTree
+                  ? `Cấp độ chính thức: Cấp ${backendTree.level} — ${backendTree.levelTitle}`
+                  : "Đang tải tiến độ Cây Ảo..."}
+              </h2>
+              {backendTree && (
+                <p className="mt-1 text-sm text-muted">
+                  Đã đầu tư {fmt(backendTree.growthPoints)} điểm · Mở{" "}
+                  {backendTree.unlockedFactCount}/{backendTree.totalFactCount} Eco Fact · Lượt hôm nay{" "}
+                  {backendTree.dailyWaterCount}/{backendTree.dailyLimit}
+                </p>
+              )}
+            </div>
+            {backendTree && !backendTree.isMaxLevel && (
+              <button
+                type="button"
+                disabled={!backendTree.canUpgrade || upgradingOfficial}
+                onClick={() => void handleOfficialUpgrade()}
+                className="btn-primary h-10 px-4 text-sm"
+              >
+                {upgradingOfficial
+                  ? "Đang nâng cấp..."
+                  : `Nâng lên Cấp ${backendTree.nextLevel} (-${fmt(backendTree.upgradeCost ?? 0)} điểm)`}
+              </button>
+            )}
+          </div>
+
+          {officialMsg && (
+            <p role="status" className="text-sm font-semibold text-brand-deep">
+              {officialMsg}
+            </p>
+          )}
+
+          {unlockedFacts.length > 0 && (
+            <ul className="grid gap-3 pt-2 md:grid-cols-2">
+              {unlockedFacts.map((fact) => (
+                <li
+                  key={fact.id}
+                  className="rounded-2xl border border-brand/20 bg-brand/5 p-4"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-brand">{fact.code}</span>
+                    <span className="rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-brand-deep">
+                      Mốc Cấp {fact.unlockTreeLevel}
+                    </span>
+                  </div>
+                  <h3 className="mt-1 text-sm font-bold text-ink">{fact.title}</h3>
+                  <p className="mt-1 text-xs leading-5 text-body">{fact.content}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </div>
   )
 }
