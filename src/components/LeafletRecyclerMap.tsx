@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from "react"
 import type * as LeafletTypes from "leaflet"
+import { Crosshair, LocateFixed, Minus, Plus } from "lucide-react"
 import { formatDistance, type CollectionPartnerDto } from "@/lib/recyclerDiscoveryApi"
 import { attachVietnamSovereigntyOverlay } from "@/lib/vietnamMapSovereignty"
 
 export type SearchCoordinateSource = "preset" | "search" | "gps" | "pin"
+
+/** Màu tương ứng token brand trong index.css; Leaflet nhận màu qua SVG attribute. */
+const MAP_BRAND = "#278733"
+const MAP_BRAND_DEEP = "#006516"
 
 interface LeafletRecyclerMapProps {
   centerLat: number
@@ -174,10 +179,10 @@ export default function LeafletRecyclerMap({
     // Vòng bán kính tìm kiếm tổng (2km / 5km / 10km / 25km)
     L.circle([centerLat, centerLng], {
       radius: Math.max(radiusKm, 0.5) * 1000,
-      color: "#278733",
+      color: MAP_BRAND,
       weight: 1.5,
       dashArray: "6 6",
-      fillColor: "#67dc99",
+      fillColor: MAP_BRAND,
       fillOpacity: 0.06,
       interactive: false,
     }).addTo(group)
@@ -186,9 +191,9 @@ export default function LeafletRecyclerMap({
     if (privacyMode) {
       L.circle([centerLat, centerLng], {
         radius: 520,
-        color: "#006516",
+        color: MAP_BRAND_DEEP,
         weight: 1.5,
-        fillColor: "#278733",
+        fillColor: MAP_BRAND,
         fillOpacity: 0.13,
         interactive: false,
       }).addTo(group)
@@ -196,7 +201,7 @@ export default function LeafletRecyclerMap({
 
     const centerBadgeText = privacyMode
       ? source === "gps" || source === "pin"
-        ? "Vùng lân cận ẩn danh (~500m)"
+        ? "Vùng ẩn danh ~500m"
         : "Tâm khu vực tra cứu"
       : "Tâm vị trí đã chọn"
 
@@ -206,8 +211,8 @@ export default function LeafletRecyclerMap({
       iconAnchor: [0, 0],
       html: `
         <div style="transform: translate(-50%, -50%); pointer-events: none;" class="flex flex-col items-center">
-          <span class="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#278733]/35 bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-[#0f1f15] shadow-[0_4px_10px_rgba(0,0,0,0.14)]">
-            <span class="inline-block size-2 rounded-full bg-[#278733]"></span>
+          <span class="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#cdded3] bg-white/95 px-2.5 py-1 text-[11px] font-medium text-[#404b44] shadow-[0_2px_6px_rgba(15,31,21,0.12)]">
+            <span class="inline-block size-1.5 rounded-full bg-[#278733]"></span>
             ${escapeHtml(centerBadgeText)}
           </span>
         </div>
@@ -220,35 +225,31 @@ export default function LeafletRecyclerMap({
       zIndexOffset: 150,
     }).addTo(group)
 
-    // Các ghim cơ sở thu mua đã xác minh (Verified + Online)
-    partners.forEach((partner) => {
+    // Ghim đánh số khớp thứ tự danh sách bên phải để tránh nhãn chồng nhau
+    partners.forEach((partner, index) => {
       const isSelected = partner.id === selectedPartnerId
-      const isFeatured = Boolean(partner.isFeatured)
-      const isVerified = Boolean(partner.hasVerifiedBadge)
-      const label = `${escapeHtml(partner.facilityName)} (${escapeHtml(formatDistance(partner.distanceKm))})`
-      const badgeDot = isFeatured
-        ? `<span class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-amber-400 text-[9px] font-black text-[#0f1f15]">★</span>`
-        : isVerified
-          ? `<span class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[#0284c7] text-[8px] font-bold text-white">✓</span>`
-          : `<span class="inline-block size-2 shrink-0 rounded-full ${isSelected ? "bg-[#8df9b8]" : "bg-[#278733]"}"></span>`
+      const isFeatured = Boolean(partner.isFeatured) // Ghim cơ sở Pro tô đặc brand để nổi bật
+      const pinNumber = index + 1
+      const label = escapeHtml(partner.facilityName)
+      const distance = escapeHtml(formatDistance(partner.distanceKm))
 
       const pinHtml = isSelected
         ? `
-          <div style="transform: translate(-50%, -100%);" class="flex flex-col items-center cursor-pointer select-none">
-            <span class="flex max-w-[245px] items-center gap-1.5 rounded-full border ${isFeatured ? "border-amber-300 ring-2 ring-amber-300/60" : "border-white/30"} bg-[#006516] px-3 py-1.5 text-[11px] font-semibold text-white shadow-[0_10px_18px_-3px_rgba(0,0,0,0.28)]">
-              ${badgeDot}
+          <div style="transform: translate(-50%, -100%);" class="flex cursor-pointer flex-col items-center select-none">
+            <span class="flex max-w-[230px] items-center gap-1.5 rounded-full bg-[#006516] px-3 py-1.5 text-[11px] font-semibold text-white shadow-[0_6px_14px_rgba(15,31,21,0.28)]">
+              <span class="tabular-nums opacity-70">${pinNumber}</span>
               <span class="truncate">${label}</span>
+              <span class="shrink-0 tabular-nums opacity-70">${distance}</span>
             </span>
             <span class="-mt-1 size-2.5 rotate-45 bg-[#006516]"></span>
           </div>
         `
         : `
-          <div style="transform: translate(-50%, -100%);" class="flex flex-col items-center cursor-pointer select-none transition-transform hover:scale-105">
-            <span class="flex max-w-[225px] items-center gap-1.5 rounded-full border ${isFeatured ? "border-amber-400 bg-amber-50 ring-2 ring-amber-300/50" : "border-[#cdded3] bg-white"} px-2.5 py-1 text-[11px] font-semibold text-[#0f1f15] shadow-[0_4px_8px_rgba(0,0,0,0.14)]">
-              ${badgeDot}
-              <span class="truncate">${label}</span>
+          <div style="transform: translate(-50%, -100%);" class="flex cursor-pointer flex-col items-center select-none">
+            <span class="flex size-6 items-center justify-center rounded-full border ${isFeatured ? "border-[#278733] bg-[#278733] text-white" : "border-[#cdded3] bg-white text-[#006516]"} text-[11px] font-semibold tabular-nums shadow-[0_2px_6px_rgba(15,31,21,0.2)]">
+              ${pinNumber}
             </span>
-            <span class="-mt-1 size-2 rotate-45 border-r border-b ${isFeatured ? "border-amber-400 bg-amber-50" : "border-[#cdded3] bg-white"}"></span>
+            <span class="-mt-1 size-2 rotate-45 border-r border-b ${isFeatured ? "border-[#278733] bg-[#278733]" : "border-[#cdded3] bg-white"}"></span>
           </div>
         `
 
@@ -259,7 +260,7 @@ export default function LeafletRecyclerMap({
           iconAnchor: [0, 0],
           html: pinHtml,
         }),
-        zIndexOffset: isSelected ? 900 : isFeatured ? 650 : 400,
+        zIndexOffset: isSelected ? 900 : isFeatured ? 650 : 400 + pinNumber,
       })
 
       marker.on("click", (evt: LeafletTypes.LeafletMouseEvent) => {
@@ -295,26 +296,26 @@ export default function LeafletRecyclerMap({
         </div>
       )}
 
-      {/* Cụm nút Phóng to / Thu nhỏ / Về tâm / Định vị GPS ở góc dưới phải */}
-      <div className="absolute right-3.5 bottom-7 z-20 flex flex-col gap-1.5">
-        <div className="flex flex-col overflow-hidden rounded-xl border border-line bg-white/95 shadow-[0_2px_6px_rgba(0,0,0,0.12)] backdrop-blur-md">
+      {/* Cụm điều khiển Phóng to / Thu nhỏ / Về tâm / Định vị GPS ở góc dưới phải */}
+      <div className="absolute right-4 bottom-8 z-20 flex flex-col gap-2">
+        <div className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface/95 shadow-sm backdrop-blur-md">
           <button
             type="button"
             onClick={handleZoomIn}
             title="Phóng to bản đồ"
             aria-label="Phóng to bản đồ"
-            className="grid size-9 place-items-center border-b border-line-soft text-base font-bold text-ink hover:bg-surface-2"
+            className="grid size-9 place-items-center border-b border-line-soft text-ink transition-colors hover:bg-surface-2"
           >
-            +
+            <Plus className="size-4" strokeWidth={1.5} />
           </button>
           <button
             type="button"
             onClick={handleZoomOut}
             title="Thu nhỏ bản đồ"
             aria-label="Thu nhỏ bản đồ"
-            className="grid size-9 place-items-center text-base font-bold text-ink hover:bg-surface-2"
+            className="grid size-9 place-items-center text-ink transition-colors hover:bg-surface-2"
           >
-            −
+            <Minus className="size-4" strokeWidth={1.5} />
           </button>
         </div>
 
@@ -323,9 +324,9 @@ export default function LeafletRecyclerMap({
           onClick={handleRecenter}
           title="Đưa bản đồ về tâm khu vực đang chọn"
           aria-label="Về tâm khu vực đang chọn"
-          className="grid size-9 place-items-center rounded-xl border border-line bg-white/95 text-ink shadow-[0_2px_6px_rgba(0,0,0,0.12)] backdrop-blur-md transition hover:bg-white"
+          className="grid size-9 place-items-center rounded-lg border border-line bg-surface/95 text-ink shadow-sm backdrop-blur-md transition-colors hover:bg-surface-2"
         >
-          <RecenterIcon />
+          <Crosshair className="size-4" strokeWidth={1.5} />
         </button>
 
         <button
@@ -334,45 +335,20 @@ export default function LeafletRecyclerMap({
           disabled={locatingGps}
           title="Lấy vị trí GPS hiện tại (tự động làm mờ ~500m nếu bật bảo mật)"
           aria-label="Lấy vị trí GPS hiện tại"
-          className="grid size-9 place-items-center rounded-xl border border-line bg-white/95 text-brand-deep shadow-[0_2px_6px_rgba(0,0,0,0.12)] backdrop-blur-md transition hover:bg-white disabled:opacity-60"
+          className="grid size-9 place-items-center rounded-lg border border-line bg-surface/95 text-brand-deep shadow-sm backdrop-blur-md transition-colors hover:bg-surface-2 disabled:opacity-60"
         >
-          <CrosshairIcon />
+          <LocateFixed className="size-4" strokeWidth={1.5} />
         </button>
       </div>
 
       {/* Nhãn hướng dẫn Click-to-Pin gọn ở góc dưới trái */}
-      <div className="pointer-events-none absolute bottom-7 left-3.5 z-20 hidden sm:block">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white/92 px-3 py-1 text-[11px] font-medium text-body shadow-2xs backdrop-blur-md">
+      <div className="pointer-events-none absolute bottom-8 left-4 z-20 hidden sm:block">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface/95 px-3 py-1 text-[11px] font-medium text-body shadow-2xs backdrop-blur-md">
           <span className="size-1.5 rounded-full bg-brand" />
           Bấm lên bản đồ để dời tâm quét bán kính
         </span>
       </div>
     </div>
-  )
-}
-
-const iconStroke = {
-  stroke: "currentColor",
-  strokeWidth: 1.5,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-}
-
-function CrosshairIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <circle cx="7" cy="7" r="3.4" {...iconStroke} />
-      <path d="M7 1v1.8M7 11.2V13M1 7h1.8M11.2 7H13" {...iconStroke} />
-    </svg>
-  )
-}
-
-function RecenterIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" {...iconStroke} />
-      <circle cx="8" cy="8" r="1.8" fill="currentColor" />
-    </svg>
   )
 }
 
