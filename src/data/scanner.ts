@@ -75,7 +75,7 @@ export const HOW_TO = [
   },
   {
     title: "AI quét và nhận diện",
-    desc: "Hệ thống tìm vật liệu, trả về đơn giá tham khảo kèm độ tin cậy.",
+    desc: "Hệ thống tự động phân tích đặc trưng, xác định đúng loại vật liệu và gợi ý đơn giá tham khảo.",
   },
   {
     title: "Xem cách xử lý, đặt lịch thu gom",

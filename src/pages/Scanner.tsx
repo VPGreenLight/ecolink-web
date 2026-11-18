@@ -13,13 +13,11 @@ import { ApiError } from "@/lib/api"
 import {
   AI_CLASS_OPTIONS,
   classifyWasteImage,
-  DEFAULT_AI_MODELS,
   fetchAiModels,
   getCategoryMeta,
   loadSampleImageAsFile,
   parsePreparationSteps,
   submitAiFeedback,
-  type AiModelOption,
   type DetectedWasteObjectDto,
   type WasteScanResponseDto,
   type WasteSortingGuideDto,
@@ -37,7 +35,6 @@ interface DetectedBoxItem {
   categoryCode: string
   shortGroup: string
   displayName: string
-  confidencePct: number
   rawConfidence: number
   isPrimary: boolean
   isOod: boolean
@@ -69,10 +66,7 @@ interface ViewModelResult {
   hazardWarning?: string | null
   steps: string[]
   price: { label: string; value: string; unit: string }
-  confidencePct: number
   rawConfidence: number
-  modelLabel: string
-  breakdown: { label: string; value: number; color: string }[]
   recyclable: boolean
   imageWidth?: number
   imageHeight?: number
@@ -81,12 +75,6 @@ interface ViewModelResult {
   objects: DetectedBoxItem[]
   activeRank?: number
 }
-
-const BAR_COLORS = [
-  "var(--color-brand)",
-  "var(--color-mint)",
-  "var(--color-sage-line)",
-] as const
 
 function toValidBbox(raw?: number[] | null): [number, number, number, number] | null {
   if (!Array.isArray(raw) || raw.length < 4) return null
@@ -113,7 +101,6 @@ function buildBoxItem(
       : null)
 
   const rawConf = dto.confidence ?? 0
-  const confPct = Math.round(rawConf * 100)
   const isOod = rawConf < threshold
   const parsedSteps = parsePreparationSteps(guide?.preparationSteps)
 
@@ -122,16 +109,15 @@ function buildBoxItem(
     categoryCode: code,
     shortGroup: meta.group,
     displayName: dto.displayName || meta.shortName,
-    confidencePct: confPct,
     rawConfidence: rawConf,
     isPrimary: Boolean(dto.isPrimary),
     isOod,
     recyclable: !isOod && meta.recyclable,
     bbox,
     material: guide?.categoryName || dto.displayName || meta.shortName,
-    badge: isOod ? "Độ tin cậy thấp (< 60%) — Cần chụp rõ hơn" : meta.badge,
+    badge: isOod ? "Chưa đủ rõ để kết luận — Cần chụp gần hơn" : meta.badge,
     description: isOod
-      ? `Vật thể #${dto.id || 1} có độ tin cậy ${confPct}% (< ${Math.round(threshold * 100)}%). Bạn có thể chọn khung khác hoặc chụp gần hơn.`
+      ? `Vật thể #${dto.id || 1} bị mờ hoặc khuất sáng nên hệ thống chưa đưa ra kết luận. Bạn có thể chọn khung khác hoặc chụp gần hơn.`
       : guide?.handlingAction ||
         "Phân loại đúng quy định giúp tăng giá trị thu mua và tích Điểm Xanh.",
     binColor: guide?.standardBinColor || meta.defaultBinColor,
@@ -147,14 +133,12 @@ function buildBoxItem(
 
 function mapApiToViewModel(
   payload: WasteScanResponseDto,
-  messageCode: string | null | undefined,
-  selectedModelName: string,
+  messageCode?: string | null,
 ): ViewModelResult {
   const { aiResult, sortingGuide } = payload
   const threshold = aiResult.confidenceThreshold || 0.6
   const top = aiResult.topPrediction
   const rawConf = top?.confidence ?? 0
-  const confPct = Math.round(rawConf * 1000) / 10
   const isOod =
     messageCode === "MSG-CLS-02" ||
     aiResult.isOutOfDistribution ||
@@ -163,19 +147,6 @@ function mapApiToViewModel(
 
   const code = (sortingGuide?.categoryCode || top?.label || "unknown").toLowerCase()
   const meta = getCategoryMeta(code)
-
-  const preds =
-    aiResult.predictions && aiResult.predictions.length > 0
-      ? aiResult.predictions.slice(0, 3)
-      : top
-        ? [top]
-        : []
-
-  const breakdown = preds.map((p, idx) => ({
-    label: p.displayName || p.label,
-    value: Math.max(0, Math.min(100, Math.round(p.confidence * 100))),
-    color: BAR_COLORS[idx] ?? BAR_COLORS[2],
-  }))
 
   // Dựng danh sách vật thể đóng khung (hỗ trợ cả multi-object mới lẫn fallback croppedBbox đơn lẻ)
   const mappedObjects: DetectedBoxItem[] = []
@@ -215,10 +186,6 @@ function mapApiToViewModel(
         }, {})
 
   const steps = parsePreparationSteps(sortingGuide?.preparationSteps)
-  const latencyText =
-    aiResult.inferenceTimeMs > 0 ? ` • ${aiResult.inferenceTimeMs.toFixed(1)} ms` : ""
-  const resolvedModelName =
-    aiResult.modelName || selectedModelName || aiResult.modelUsed || "YOLOv8 Detection"
 
   return {
     scanId: payload.scanId ?? null,
@@ -230,7 +197,7 @@ function mapApiToViewModel(
     categoryCode: code,
     material: sortingGuide?.categoryName || top?.displayName || meta.shortName,
     tag: top?.displayName || meta.shortName,
-    badge: isOod ? "Độ tin cậy thấp (< 60%) — Cần chụp rõ hơn" : meta.badge,
+    badge: isOod ? "Chưa đủ rõ để kết luận — Cần chụp gần hơn" : meta.badge,
     description: isOod
       ? payload.message
       : sortingGuide?.handlingAction ||
@@ -243,10 +210,7 @@ function mapApiToViewModel(
       value: meta.priceRange,
       unit: meta.priceUnit,
     },
-    confidencePct: Math.round(confPct),
     rawConfidence: rawConf,
-    modelLabel: `${resolvedModelName}${latencyText}`,
-    breakdown,
     recyclable: !isOod && meta.recyclable,
     imageWidth: aiResult.imageWidth || undefined,
     imageHeight: aiResult.imageHeight || undefined,
@@ -266,28 +230,13 @@ function resolveSelectedViewModel(
   const chosen = base.objects[selectedIndex] ?? base.objects[0]
   if (!chosen) return base
 
-  // Nếu đang xem vật thể #1 mặc định, giữ nguyên phân phối Top-3 gốc
+  // Vật thể #1 mặc định giữ nguyên bản đồ hiển thị gốc
   if (selectedIndex === 0) {
     return {
       ...base,
       activeRank: chosen.id,
     }
   }
-
-  const altBreakdown = [
-    {
-      label: `${chosen.displayName} (Khung #${chosen.id})`,
-      value: chosen.confidencePct,
-      color: BAR_COLORS[0],
-    },
-    ...base.breakdown
-      .filter((b) => b.label !== chosen.displayName)
-      .slice(0, 2)
-      .map((b, i) => ({
-        ...b,
-        color: BAR_COLORS[i + 1] ?? BAR_COLORS[2],
-      })),
-  ]
 
   return {
     ...base,
@@ -303,9 +252,7 @@ function resolveSelectedViewModel(
     hazardWarning: chosen.hazardWarning,
     steps: chosen.steps,
     price: chosen.price,
-    confidencePct: chosen.confidencePct,
     rawConfidence: chosen.rawConfidence,
-    breakdown: altBreakdown,
     recyclable: chosen.recyclable,
     activeRank: chosen.id,
   }
@@ -317,7 +264,6 @@ function buildOfflineDemoViewModel(): ViewModelResult {
     categoryCode: "plastic",
     shortGroup: "Nhựa",
     displayName: r.tag,
-    confidencePct: r.confidence,
     rawConfidence: r.confidence / 100,
     isPrimary: true,
     isOod: false,
@@ -347,10 +293,7 @@ function buildOfflineDemoViewModel(): ViewModelResult {
     hazardWarning: "Không trộn lẫn chai nhựa từng chứa hóa chất độc hại.",
     steps: r.steps,
     price: r.price,
-    confidencePct: r.confidence,
     rawConfidence: r.confidence / 100,
-    modelLabel: `${r.model} (Offline Preview)`,
-    breakdown: r.breakdown,
     recyclable: true,
     imageWidth: 512,
     imageHeight: 279,
@@ -367,8 +310,6 @@ export default function Scanner() {
   const [useSample, setUseSample] = useState(false)
   const [camera, setCamera] = useState(false)
 
-  const [models, setModels] = useState<AiModelOption[]>(DEFAULT_AI_MODELS)
-  const [selectedModel, setSelectedModel] = useState<string>("yolov8_detect")
   const [apiOnline, setApiOnline] = useState<boolean | null>(null)
 
   const [scanResult, setScanResult] = useState<ViewModelResult | null>(null)
@@ -404,18 +345,11 @@ export default function Scanner() {
     refreshMyFeedbacks()
   }, [])
 
-  // Nạp danh sách mô hình AI thực tế từ Backend khi mở trang
+  // Kiểm tra trạng thái sẵn sàng của AI Service khi mở trang
   useEffect(() => {
     const controller = new AbortController()
     fetchAiModels(controller.signal)
-      .then((payload) => {
-        if (payload.models.length > 0) {
-          setModels(payload.models)
-        }
-        if (payload.default_model) {
-          const hasDetect = payload.models.some((m) => m.id === "yolov8_detect" && m.is_ready !== false)
-          setSelectedModel(hasDetect ? "yolov8_detect" : payload.default_model)
-        }
+      .then(() => {
         setApiOnline(true)
       })
       .catch(() => {
@@ -487,7 +421,7 @@ export default function Scanner() {
         explicitFile ??
         file ??
         (await loadSampleImageAsFile(r.image, "sample-pet-bottle.png"))
-      const res = await classifyWasteImage(targetFile, selectedModel, controller.signal)
+      const res = await classifyWasteImage(targetFile, "yolov8_detect", controller.signal)
 
       // Giữ hiệu ứng tia quét tối thiểu 550ms để mắt người dùng kịp quan sát nhịp quét
       const elapsed = Date.now() - startedAt
@@ -496,8 +430,7 @@ export default function Scanner() {
       }
       if (controller.signal.aborted) return
 
-      const modelMeta = models.find((m) => m.id === selectedModel)
-      const vm = mapApiToViewModel(res.data, res.messageCode, modelMeta?.name ?? selectedModel)
+      const vm = mapApiToViewModel(res.data, res.messageCode)
       setApiOnline(true)
       setScanResult(vm)
       setSelectedObjectIndex(0)
@@ -550,24 +483,6 @@ export default function Scanner() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <label className="flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-body">
-            <span className="font-semibold text-ink">Mô hình AI:</span>
-            <select
-              aria-label="Chọn mô hình nhận diện AI"
-              value={selectedModel}
-              disabled={phase === "scanning"}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="max-w-[230px] truncate bg-transparent font-medium text-brand-deep focus:outline-none disabled:opacity-60"
-            >
-              {models.map((m) => (
-                <option key={m.id} value={m.id} disabled={m.is_ready === false}>
-                  {m.name}
-                  {m.is_ready === false ? " (Chưa nạp)" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-
           <p className="chip bg-surface-2 text-body">
             <i
               className={`size-1.5 rounded-full ${
@@ -575,8 +490,8 @@ export default function Scanner() {
               }`}
             />
             {apiOnline === false
-              ? "Chưa kết nối AI Server"
-              : "AI Vision & Rule Engine sẵn sàng"}
+              ? "Chưa kết nối máy chủ nhận diện"
+              : "Hệ thống nhận diện thông minh sẵn sàng"}
           </p>
         </div>
       </header>
@@ -840,7 +755,7 @@ function Preview({
                     key={`${box.id}-${idx}`}
                     type="button"
                     onClick={() => onSelectObject(idx)}
-                    aria-label={`Chọn vật thể #${box.id}: ${box.displayName}, độ tin cậy ${box.confidencePct}%`}
+                    aria-label={`Chọn vật thể #${box.id}: ${box.displayName}`}
                     style={{
                       left: `${leftPct}%`,
                       top: `${topPct}%`,
@@ -870,7 +785,6 @@ function Preview({
                     >
                       <span>#{box.id}</span>
                       <span>{box.shortGroup}</span>
-                      <span className="opacity-85">• {box.confidencePct}%</span>
                     </span>
                   </button>
                 )
@@ -936,9 +850,6 @@ function Preview({
               {result.activeRank ? `#${result.activeRank} ` : ""}
               {result.isOod ? "Chưa xác định rõ" : result.tag}
             </b>
-            <em className="shrink-0 text-[11px] font-medium text-muted not-italic">
-              • {result.confidencePct}% độ tin cậy
-            </em>
           </span>
         )}
       </div>
@@ -992,7 +903,6 @@ function Preview({
                           {box.id}
                         </span>
                         <span>{box.shortGroup}</span>
-                        <span className="text-[11px] opacity-80">{box.confidencePct}%</span>
                       </button>
                     )
                   })}
@@ -1101,9 +1011,9 @@ function AiPanel({
     phase === "done" && result?.isOod
       ? {
           src: AI_IDLE,
-          alt: "AI cần góc chụp rõ hơn",
-          title: "Độ tin cậy chưa đạt 60%",
-          note: "Vật thể lạ hoặc góc chụp mờ, bạn có thể chụp lại hoặc báo nhãn đúng.",
+          alt: "Chưa thể xác định chính xác",
+          title: "Chưa thể xác định chính xác",
+          note: "Hình ảnh mờ hoặc vật thể ngoài danh mục hỗ trợ, bạn có thể chụp lại hoặc báo nhãn đúng.",
         }
       : phase === "done" && result && result.objects.length > 1
         ? {
@@ -1273,6 +1183,7 @@ function ScanResult({ result }: { result: ViewModelResult }) {
     result.recyclable && isDiscoverableCategory(result.categoryCode)
       ? `/map?category=${encodeURIComponent(result.categoryCode)}`
       : "/map"
+  const summaryEntries = Object.entries(result.categorySummary)
 
   return (
     <div className="flex flex-col gap-3">
@@ -1317,55 +1228,49 @@ function ScanResult({ result }: { result: ViewModelResult }) {
       </div>
 
       <div
+        data-message-code={result.messageCode || undefined}
         className="reveal rounded-lg border border-line-soft bg-surface-2 p-4"
         style={{ animationDelay: `${T.conf}ms` }}
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <p className="flex items-center gap-1.5 text-xs font-semibold text-ink">
             <ShieldIcon />
-            Độ tin cậy nhận diện AI
+            Kết luận phân loại
             {result.objects.length > 1 && result.activeRank
-              ? ` (Khung #${result.activeRank})`
+              ? ` (Vật thể #${result.activeRank})`
               : ""}
           </p>
           <span className="rounded-full border border-brand/20 bg-mint/25 px-2.5 py-1 text-[11px] font-semibold text-brand-deep">
-            Chính xác {result.confidencePct}%
+            {result.binColor
+              ? `Thùng ${result.binColor}`
+              : result.recyclable
+                ? "Có thể tái chế"
+                : "Rác sinh hoạt"}
           </span>
         </div>
 
-        <ul className="mt-3 flex flex-col gap-2.5">
-          {result.breakdown.map((b, i) => (
-            <li key={`${b.label}-${i}`}>
-              <p className="flex items-center justify-between text-[13px]">
-                <span className="flex items-center gap-1.5 font-semibold text-ink">
-                  <i className="size-2 rounded-full" style={{ background: b.color }} />
-                  {b.label}
+        {result.detectedCount > 1 && summaryEntries.length > 0 ? (
+          <div className="mt-3 flex flex-col gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {summaryEntries.map(([code, count]) => (
+                <span
+                  key={code}
+                  className="inline-flex items-center gap-1 rounded-full border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink"
+                >
+                  <span>{getCategoryMeta(code).group}</span>
+                  <span className="text-brand-deep">×{count}</span>
                 </span>
-                <b className={b.value >= 50 ? "text-brand-deep" : "text-body"}>
-                  {b.value}%
-                </b>
-              </p>
-              <div className="mt-1 h-1.5 overflow-clip rounded-full bg-line/70">
-                <div
-                  className="bar-grow h-full rounded-full"
-                  style={{
-                    width: `${b.value}%`,
-                    background: b.color,
-                    animationDelay: `${T.bar + i * T.barStep}ms`,
-                  }}
-                />
-              </div>
-            </li>
-          ))}
-        </ul>
-
-        <p
-          data-message-code={result.messageCode || undefined}
-          className="mt-3 flex items-center gap-1.5 truncate border-t border-line-soft pt-2.5 text-[11px] text-muted"
-        >
-          <InfoIcon />
-          <span className="truncate">{result.modelLabel}</span>
-        </p>
+              ))}
+            </div>
+            <p className="text-[12px] leading-4 text-muted">
+              Đã tìm thấy {result.detectedCount} vật rác trong ảnh. Bấm vào từng khung đánh số trên ảnh để xem hướng dẫn sơ chế riêng cho từng món.
+            </p>
+          </div>
+        ) : (
+          <p className="mt-2.5 text-[12px] leading-5 text-body">
+            Đã xác định loại vật liệu phù hợp nhất và đối chiếu quy chuẩn phân loại hiện hành.
+          </p>
+        )}
       </div>
 
       <div className="reveal flex flex-col gap-2" style={{ animationDelay: `${T.actions}ms` }}>
@@ -1390,7 +1295,7 @@ function ScanResult({ result }: { result: ViewModelResult }) {
   )
 }
 
-/** Hiển thị cảnh báo Out-of-Distribution (MSG-CLS-02) khi độ tin cậy < 60%. */
+/** Hiển thị cảnh báo Out-of-Distribution (MSG-CLS-02) khi hình ảnh chưa đủ rõ để kết luận. */
 function OodResult({
   result,
   onSelectPrimary,
@@ -1406,18 +1311,12 @@ function OodResult({
       <div className="rounded-xl border border-warn/30 bg-warn/5 p-4">
         <p className="flex items-center justify-between gap-2 text-xs font-semibold text-warn">
           <span>
-            Cảnh báo ngưỡng nhận diện AI
+            Chưa đủ cơ sở kết luận
             {result.activeRank ? ` • Khung #${result.activeRank}` : ""}
           </span>
-          <span>Độ tin cậy: {result.confidencePct}% (&lt; 60%)</span>
+          <span>Cần chụp rõ hơn</span>
         </p>
         <p className="mt-1.5 text-[13px] leading-5 text-ink">{result.message}</p>
-        {result.breakdown.length > 0 && (
-          <p className="mt-2 text-xs text-muted">
-            Dự đoán gần nhất: <b className="text-ink">{result.breakdown[0].label}</b> (
-            {result.breakdown[0].value}%) • {result.modelLabel}
-          </p>
-        )}
         {onSelectPrimary && (
           <button
             type="button"
@@ -1430,11 +1329,11 @@ function OodResult({
       </div>
 
       <div className="rounded-xl border border-line-soft bg-surface-2 p-3.5 text-[13px] leading-5 text-body">
-        <p className="font-semibold text-ink">Mẹo chụp lại để đạt độ chính xác cao:</p>
+        <p className="font-semibold text-ink">Mẹo chụp lại để hệ thống kết luận chính xác:</p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-body">
           <li>Đặt món rác vào <b>khung ngắm trung tâm</b> trên camera, cách 20–40 cm.</li>
           <li>Tránh chụp ngược sáng hoặc để tay che khuất phần lớn nhãn/thân chai.</li>
-          <li>Hoặc thử chuyển sang mô hình <b>EfficientNet-B0</b> ở góc phải phía trên.</li>
+          <li>Đặt vật rác trên nền thoáng, đủ sáng để hệ thống nhận diện chính xác nhất.</li>
         </ul>
       </div>
 
@@ -1631,8 +1530,6 @@ const T = {
   desc: 860,
   price: 960,
   conf: 1060,
-  bar: 1160,
-  barStep: 110,
   actions: 1440,
 } as const
 
@@ -1847,15 +1744,6 @@ function ShieldIcon() {
   return (
     <svg width="13" height="14" viewBox="0 0 14 15" fill="none" aria-hidden="true" className="text-brand-deep">
       <path d="M7 1l5 2v4c0 3.2-2.1 5.8-5 7-2.9-1.2-5-3.8-5-7V3l5-2z" {...stroke} />
-    </svg>
-  )
-}
-
-function InfoIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <circle cx="7" cy="7" r="6" {...stroke} />
-      <path d="M7 6.2v3.4M7 4.4v.6" {...stroke} />
     </svg>
   )
 }
