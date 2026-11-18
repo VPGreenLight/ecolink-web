@@ -190,12 +190,12 @@ export const GRAND_PRIZES: GrandPrize[] = [
  *
  *  Bạn cố tình đứng giữa bảng chứ không phải đầu: đầu bảng thì không có ai
  *  để vượt, mà mục đích của bảng xếp hạng là tạo cái đích để với tới. */
-export type Rank = { name: string; area: string; points: number; you?: boolean }
+export type Rank = { name: string; area: string; points: number; avatar?: string; you?: boolean }
 
 export const LEADERBOARD: Rank[] = [
-  { name: "Trần Minh Khoa", area: "Bình Thạnh", points: 48_200 },
-  { name: "Lê Thị Ngọc Hân", area: "Quận 7", points: 39_800 },
-  { name: "Phạm Quốc Việt", area: "Thủ Đức", points: 31_500 },
+  { name: "Trần Thanh Tâm", area: "Bình Thạnh", points: 48_200, avatar: "https://randomuser.me/api/portraits/women/68.jpg" },
+  { name: "Lê Thị Ngọc Hân", area: "Quận 7", points: 39_800, avatar: "https://randomuser.me/api/portraits/women/65.jpg" },
+  { name: "Phạm Thu Hằng", area: "Thủ Đức", points: 31_500, avatar: "https://randomuser.me/api/portraits/women/44.jpg" },
   { name: "Huỳnh Thị Mai Anh", area: "Tân Bình", points: 27_900 },
   { name: "Nguyễn Đức", area: "Quận 3", points: RANK_POINTS, you: true },
   { name: "Đặng Thu Hà", area: "Gò Vấp", points: 19_300 },

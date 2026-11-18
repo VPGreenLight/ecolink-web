@@ -15,103 +15,174 @@ export default function Leaderboard() {
 
   return (
     <section className="mt-10 first:mt-0">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <h2 className="text-lg leading-7 font-bold tracking-tight text-ink">
-          Xếp hạng người dùng
-        </h2>
-        <p className="text-sm text-muted">Theo điểm xếp hạng, cập nhật hằng ngày</p>
+      {/* Top 3 + list bao bằng một khung chung border; cap 100 rows */}
+      <div className="mt-5 overflow-hidden rounded-2xl border border-line bg-white shadow-[0_1px_2px_rgba(15,31,21,0.05)]">
+        {/* Băng nền dọc giữa, chữ trắng trên brand-deep, 2 lá vàng phẳng hai bên */}
+        <div className="flex items-center justify-center gap-2.5 border-b border-line-soft bg-brand-deep px-4 py-2.5 text-center">
+          <LaurelIcon className="size-4 text-[#d9ae52]" />
+          <p className="text-[11px] font-bold tracking-[0.12em] text-white sm:text-xs">
+            TOP {Math.min(LEADERBOARD.length, 100)} ĐIỂM XANH
+          </p>
+          <LaurelIcon className="size-4 -scale-x-100 text-[#d9ae52]" />
+        </div>
+
+        {/* Podium */}
+        <ol className="grid grid-cols-3 items-end gap-2 border-b border-line-soft px-3 pt-[34px] pb-5 sm:gap-4 sm:px-6">
+          <PodiumCard rank={2} person={second} />
+          <PodiumCard rank={1} person={first} />
+          <PodiumCard rank={3} person={third} />
+        </ol>
+
+        {/* Bảng 4+: hàng nhãn cột; hiển thị tối đa top 100 */}
+        <ol className="divide-y divide-line-soft">
+          <li
+            aria-hidden="true"
+            className="grid grid-cols-[52px_1fr_auto] items-center gap-3 px-4 py-2 text-[11px] font-semibold text-muted sm:px-5"
+          >
+            <span>#</span>
+            <span>Thành viên</span>
+            <span className="flex items-center justify-end gap-1.5 text-right">
+              Điểm
+              <img src="/assets/AI/ecolink-coin.png" alt="EcoLink coin" className="size-[35px] object-contain" />
+            </span>
+          </li>
+          {rest.slice(0, 97).map((r, i) => {
+            const rank = i + 4
+            const above = LEADERBOARD[i + 2]?.points
+            return (
+              <li
+                key={r.name}
+                className={`grid grid-cols-[52px_1fr_auto] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2/70 sm:px-5 ${
+                  r.you ? "bg-brand/8" : ""
+                }`}
+              >
+                <span className="text-sm font-semibold tabular-nums text-muted">
+                  {String(rank).padStart(2, "0")}
+                </span>
+                <div className="flex min-w-0 items-center gap-3">
+                  <span
+                    aria-hidden="true"
+                    className="grid size-9 shrink-0 place-items-center rounded-full bg-surface-2 text-[11px] font-bold text-brand-deep"
+                  >
+                    {initials(r.name)}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-ink">
+                      {r.name}
+                      {r.you && <span className="ml-1.5 text-[11px] font-semibold text-brand">Bạn</span>}
+                    </p>
+                    <p className="truncate text-[11px] text-muted">
+                      {r.you && above ? `Cần ${fmt(above - r.points)} điểm để vượt` : r.area}
+                    </p>
+                  </div>
+                </div>
+                <span className="flex items-center justify-end gap-1.5 text-sm font-semibold tabular-nums text-ink">
+                  {fmt(r.points)}
+                  <img src="/assets/AI/ecolink-coin.png" alt="EcoLink coin" className="size-[30px] object-contain" />
+                </span>
+              </li>
+            )
+          })}
+        </ol>
       </div>
-
-      {/* Bục. items-end cho đáy 3 thẻ thẳng nhau; translate nâng thẻ lên —
-          dùng translate chứ không margin vì margin trong grid đáy sẽ dịch cả
-          hẳn, hai bậc dưới bị bằng nhau. */}
-      <ol className="mt-6 grid grid-cols-3 items-end gap-2 sm:gap-4">
-        <PodiumCard rank={2} person={second} />
-        <PodiumCard rank={1} person={first} />
-        <PodiumCard rank={3} person={third} />
-      </ol>
-
-      <ol className="card mt-4 divide-y divide-line-soft overflow-hidden">
-        {rest.map((r, i) => {
-          const rank = i + 4
-          const above = LEADERBOARD[i + 2]?.points
-          return (
-            <li
-              key={r.name}
-              className={`flex items-center gap-3 px-4 py-3 sm:px-5 ${
-                r.you ? "bg-brand/8" : ""
-              }`}
-            >
-              <span className="w-6 shrink-0 text-sm font-semibold tabular-nums text-muted">
-                {rank}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-ink">
-                  {r.name}
-                  {r.you && <span className="ml-1.5 text-xs text-brand">(bạn)</span>}
-                </p>
-                <p className="truncate text-xs text-muted">
-                  {r.you && above
-                    ? `Cần ${fmt(above - r.points)} điểm để vượt người trên`
-                    : r.area}
-                </p>
-              </div>
-              <span className="shrink-0 text-sm font-bold tabular-nums text-ink">
-                {fmt(r.points)}
-              </span>
-            </li>
-          )
-        })}
-      </ol>
     </section>
   )
 }
 
 function PodiumCard({ rank, person }: { rank: 1 | 2 | 3; person: Rank }) {
   const top = rank === 1
-  // Hạng nhất nền brand chữ trắng; 2 và 3 nền sáng chữ ink. Không thêm màu mới.
-  const shell = top
-    ? "bg-brand text-white shadow-[0_10px_28px_rgba(15,31,21,0.16)]"
-    : "border border-line bg-surface text-ink"
-  // Chênh cao giữa 3 bậc phải THẤY ĐƯỢC. Hạng nhất nâng cao nhất và thêm
-  // đệm dưới (đáy vẫn thẳng hàng với hai bậc sau), 3 không nâng.
-  const rise = top
-    ? "-translate-y-8 pb-8 sm:-translate-y-10 sm:pb-12"
+  // Medal phẳng vàng/bạc/đồng, số đậm tối màu, viền trắng mảnh — không gradient.
+  const medal =
+    rank === 1
+      ? "bg-[#e9c15b] text-[#3f2d02]"
+      : rank === 2
+        ? "bg-[#cdd3d0] text-[#3b4a43]"
+        : "bg-[#d9a069] text-[#46280d]"
+  const size = top
+    ? "size-28 sm:size-[155px]"
     : rank === 2
-      ? "-translate-y-2"
+      ? "size-24 sm:size-[132px]"
+      : "size-20 sm:size-[110px]"
+  const font = top
+    ? "text-4xl sm:text-5xl"
+    : rank === 2
+      ? "text-3xl sm:text-4xl"
+      : "text-2xl sm:text-3xl"
+  const points = top ? "text-2xl sm:text-3xl" : "text-lg sm:text-xl"
+  const avatar = top
+    ? "bg-brand-deep text-white"
+    : rank === 2
+      ? "bg-brand/16 text-brand-deep"
+      : "bg-surface-3 text-ink"
+
+  const rise = top
+    ? "-translate-y-4 sm:-translate-y-6"
+    : rank === 2
+      ? "-translate-y-1.5"
       : ""
-  const size = top ? "size-16 sm:size-20" : rank === 2 ? "size-11 sm:size-14" : "size-9 sm:size-12"
-  const font = top ? "text-2xl" : rank === 2 ? "text-base sm:text-lg" : "text-sm sm:text-base"
-  const name = top ? "text-[15px] sm:text-base" : "text-xs sm:text-sm"
-  const points = top ? "text-2xl sm:text-3xl" : "text-sm sm:text-base"
 
   return (
-    <li
-      className={`flex flex-col items-center rounded-2xl px-2 pt-4 pb-4 text-center sm:px-4 sm:pt-5 sm:pb-5 ${rise} ${shell}`}
-    >
-      <span
-        className={`grid shrink-0 place-items-center rounded-full font-bold tabular-nums ${
-          top
-            ? "bg-white/22 text-white ring-2 ring-white/40"
-            : rank === 2
-              ? "bg-brand/14 text-brand"
-              : "bg-surface-3 text-ink"
-        } ${size} ${font}`}
-      >
-        {rank}
-      </span>
+    <li className={`flex flex-col items-center justify-start px-2 pb-1 text-center sm:px-4 ${rise}`}>
+      <div className="relative">
+        <span
+          className={`grid shrink-0 place-items-center overflow-hidden rounded-full font-bold ${avatar} ${size} ${font}`}
+        >
+          {person.avatar ? (
+            <img
+              src={person.avatar}
+              alt={person.name}
+              className="size-full rounded-full object-cover"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            initials(person.name)
+          )}
+        </span>
+        <span
+          className={`absolute -bottom-1 -right-1 grid size-7 place-items-center rounded-full border-2 border-white text-[11px] font-extrabold tabular-nums sm:size-8 sm:text-xs ${medal}`}
+        >
+          {rank}
+        </span>
+      </div>
 
-      <p className={`mt-3 w-full truncate font-bold ${name}`}>{person.name}</p>
-      <p className={`w-full truncate text-[11px] sm:text-xs ${top ? "text-white/70" : "text-muted"}`}>
-        {person.area}
+      <p className="mt-4 w-full truncate text-sm text-center font-bold text-brand-deep sm:text-base">
+        {person.name}
       </p>
-      <p
-        className={`mt-2 w-full truncate font-bold tabular-nums ${
-          top ? "text-white" : "text-ink"
-        } ${points}`}
-      >
+      <p className="w-full truncate text-[11px] text-muted">{person.area}</p>
+      <p className={`mt-1.5 w-full truncate font-bold tabular-nums text-ink ${points}`}>
         {fmt(person.points)}
       </p>
     </li>
   )
+}
+
+function LaurelIcon({ className = "size-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M5 19c1-5 4.5-8.6 10.5-10M10.5 8.5C9 11 9 14 10 17"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M15.5 3.5c.3 2.8-.6 5.5-2.3 7.8"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeDasharray="1.5 2.4"
+      />
+    </svg>
+  )
+}
+
+function initials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(-2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("")
 }
