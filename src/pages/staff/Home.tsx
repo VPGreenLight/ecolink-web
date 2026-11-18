@@ -7,10 +7,12 @@ import {
   fetchAiDatasetDashboard,
   fetchStaffAiFeedbackQueue,
 } from "@/lib/aiCurationApi"
+import { fetchStaffComplaints } from "@/lib/reviewComplaintApi"
 
 /** Tổng quan nhân viên (Staff). */
 export default function StaffHome() {
   const [pendingAiCount, setPendingAiCount] = useState<number>(STATS.pending.aiCases)
+  const [openComplaintCount, setOpenComplaintCount] = useState<number>(STATS.pending.complaints)
   const [datasetStats, setDatasetStats] = useState({
     accuracy: DATASET.accuracy,
     labeled: DATASET.labeled,
@@ -40,12 +42,20 @@ export default function StaffHome() {
         }
       })
       .catch(() => {})
+
+    fetchStaffComplaints({ pageSize: 1, includeReportedReviews: false })
+      .then((res) => {
+        if (res.success && res.data) {
+          setOpenComplaintCount(res.data.openCount + res.data.investigatingCount)
+        }
+      })
+      .catch(() => {})
   }, [])
 
   const queue = [
     { to: "/staff/ai-review", label: "Ảnh AI nhận diện sai", n: pendingAiCount, unit: "ảnh" },
     { to: "/staff/applications", label: "Hồ sơ đối tác thu mua", n: STATS.pending.applications, unit: "hồ sơ" },
-    { to: "/staff/complaints", label: "Khiếu nại giao dịch", n: STATS.pending.complaints, unit: "khiếu nại" },
+    { to: "/staff/complaints", label: "Khiếu nại giao dịch", n: openComplaintCount, unit: "khiếu nại" },
     { to: "/staff/blog", label: "Bài blog chờ duyệt", n: STATS.pending.posts, unit: "bài" },
   ]
 

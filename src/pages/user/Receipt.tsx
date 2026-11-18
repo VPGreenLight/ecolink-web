@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
 import { INCOMING, STATUS_LABEL, TONE, calc, type Handover } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
+import { ApiError } from "@/lib/api"
 import {
   confirmHandoverReceipt,
   disputeHandoverReceipt,
@@ -11,6 +12,14 @@ import {
   findCachedHandoverOrder,
   type ReceiptDto,
 } from "@/lib/recyclerWorkflowApi"
+import {
+  createHandoverReview,
+  deleteMyReview,
+  fetchMyReviews,
+  uploadComplaintEvidence,
+  type TransactionReviewDto,
+} from "@/lib/reviewComplaintApi"
+import { getAccessToken } from "@/lib/session"
 
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
@@ -53,12 +62,29 @@ export default function Receipt() {
   const [processing, setProcessing] = useState(false)
   const [stars, setStars] = useState(0)
   const [note, setNote] = useState("")
+  const [submittedReview, setSubmittedReview] = useState<TransactionReviewDto | null>(null)
+  const [reviewBusy, setReviewBusy] = useState(false)
+  const [showDisputeForm, setShowDisputeForm] = useState(false)
+  const [disputeReason, setDisputeReason] = useState("")
+  const [disputeFiles, setDisputeFiles] = useState<File[]>([])
   const [receiptInfo, setReceiptInfo] = useState<ReceiptDto | null>(null)
   const [flashMessage, setFlashMessage] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
     async function loadData() {
+      if (getAccessToken() && orderId) {
+        try {
+          const myRevs = await fetchMyReviews(1, 50)
+          if (active && myRevs.success) {
+            const matched = myRevs.data.items.find((rv) => rv.requestId === orderId)
+            if (matched) setSubmittedReview(matched)
+          }
+        } catch {
+          // bỏ qua nếu chưa đăng nhập hoặc offline
+        }
+      }
+
       if (!orderId) return
 
       // Tải thông tin biên nhận từ backend
@@ -129,21 +155,93 @@ export default function Receipt() {
     }
   }
 
-  const handleDispute = async () => {
-    const reason = window.prompt("Nhập lý do khiếu nại sai lệch khối lượng hoặc số tiền:")
-    if (!reason?.trim()) return
+  const handleDisputeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const clean = disputeReason.trim()
+    if (clean.length < 10) {
+      setFlashMessage("Vui lòng nhập lý do khiếu nại tối thiểu 10 ký tự.")
+      return
+    }
 
     setProcessing(true)
     try {
-      const res = await disputeHandoverReceipt(h.id, reason.trim())
+      const uploadedUrls: string[] = []
+      for (const file of disputeFiles.slice(0, 5)) {
+        try {
+          const up = await uploadComplaintEvidence(file)
+          if (up.data?.fileUrl) uploadedUrls.push(up.data.fileUrl)
+        } catch {
+          // bỏ qua ảnh lỗi nếu chạy offline
+        }
+      }
+      const res = await disputeHandoverReceipt(h.id, clean, uploadedUrls)
       setDisputed(true)
+      setShowDisputeForm(false)
       setFlashMessage(
         res.syncedWithBackend
-          ? "Khiếu nại biên nhận đã được ghi nhận và gửi đến bộ phận vận hành thẩm định (đã cập nhật PostgreSQL)."
+          ? "Khiếu nại biên nhận và bằng chứng ảnh đã được chuyển tới hàng đợi trọng tài Staff."
           : "Khiếu nại đã được ghi nhận (chế độ dự phòng ngoại tuyến).",
       )
+    } catch (err) {
+      setFlashMessage(err instanceof ApiError ? err.message : "Không thể gửi khiếu nại biên nhận.")
     } finally {
       setProcessing(false)
+    }
+  }
+
+  const handleSubmitReview = async () => {
+    if (stars < 1 || stars > 5) return
+    setReviewBusy(true)
+    try {
+      const res = await createHandoverReview(h.id, {
+        ratingStars: stars,
+        comment: note.trim() || undefined,
+      })
+      setSubmittedReview(res.data)
+      setFlashMessage(
+        res.message || "Cảm ơn bạn đã đánh giá! Điểm uy tín của cơ sở thu mua đã được cập nhật.",
+      )
+    } catch (err) {
+      if (err instanceof ApiError && !err.isNetworkError) {
+        setFlashMessage(err.message)
+      } else {
+        setSubmittedReview({
+          reviewId: `local-${Date.now()}`,
+          requestId: h.id,
+          reviewerId: "local",
+          reviewerDisplayName: "Bạn",
+          recyclerId: "local",
+          facilityName: h.recycler,
+          ratingStars: stars,
+          comment: note.trim() || null,
+          status: "Visible",
+          reportCount: 0,
+          createdAt: new Date().toISOString(),
+        })
+        setFlashMessage("Đã lưu đánh giá sao (chế độ dự phòng ngoại tuyến).")
+      }
+    } finally {
+      setReviewBusy(false)
+    }
+  }
+
+  const handleDeleteReview = async () => {
+    if (!submittedReview) return
+    setReviewBusy(true)
+    try {
+      if (!submittedReview.reviewId.startsWith("local-")) {
+        const res = await deleteMyReview(submittedReview.reviewId)
+        setFlashMessage(res.message || "Đã xóa vĩnh viễn bài đánh giá của bạn.")
+      } else {
+        setFlashMessage("Đã xóa bài đánh giá cục bộ.")
+      }
+      setSubmittedReview(null)
+      setStars(0)
+      setNote("")
+    } catch (err) {
+      setFlashMessage(err instanceof ApiError ? err.message : "Không thể xóa đánh giá.")
+    } finally {
+      setReviewBusy(false)
     }
   }
 
@@ -248,7 +346,7 @@ export default function Receipt() {
             <button
               type="button"
               disabled={processing}
-              onClick={() => void handleDispute()}
+              onClick={() => setShowDisputeForm((v) => !v)}
               className="btn-ghost h-11 px-5"
             >
               Sai rồi, tôi muốn khiếu nại
@@ -267,6 +365,47 @@ export default function Receipt() {
         </div>
       </form>
 
+      {showDisputeForm && !confirmed && !disputed && (
+        <form onSubmit={(e) => void handleDisputeSubmit(e)} className="card flex flex-col gap-4 border-warn/40 p-5 md:p-6">
+          <h2 className="text-base font-bold text-ink">
+            Gửi khiếu nại sai lệch biên nhận (U-11)
+          </h2>
+          <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
+            Lý do sai lệch khối lượng / thanh toán
+            <textarea
+              className="input h-auto resize-y py-2.5 leading-6"
+              rows={3}
+              value={disputeReason}
+              onChange={(e) => setDisputeReason(e.target.value)}
+              placeholder="Ví dụ: Đồng hồ cân tại điểm thu mua hiển thị 12.5 kg nhưng biên nhận chỉ ghi 9.0 kg."
+            />
+          </label>
+          <div className="flex flex-col gap-1.5 text-sm">
+            <span className="font-semibold text-ink">
+              Ảnh bằng chứng mặt cân / biên lai (tùy chọn, tối đa 5 ảnh)
+            </span>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => setDisputeFiles(Array.from(e.target.files ?? []).slice(0, 5))}
+              className="text-xs text-muted"
+            />
+            {disputeFiles.length > 0 && (
+              <p className="text-xs text-brand-deep">Đã chọn {disputeFiles.length} ảnh bằng chứng.</p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button type="submit" disabled={processing} className="btn-primary h-10 px-5 text-sm">
+              {processing ? "Đang gửi..." : "Gửi phiếu khiếu nại"}
+            </button>
+            <button type="button" onClick={() => setShowDisputeForm(false)} className="btn-ghost h-10 px-4 text-sm">
+              Hủy
+            </button>
+          </div>
+        </form>
+      )}
+
       {confirmed && (
         <section className="card flex flex-col gap-4 p-5 md:p-6">
           <h2 className="text-base font-bold text-ink">
@@ -274,57 +413,92 @@ export default function Receipt() {
           </h2>
           <p className="text-sm text-muted">
             Điểm của bạn quyết định cơ sở này có được đề xuất cho khu vực của bạn
-            không.
+            không (mỗi đơn chỉ gửi 1 lần trong 14 ngày; không chỉnh sửa sau khi đăng).
           </p>
 
-          <div
-            role="radiogroup"
-            aria-label="Chấm điểm"
-            className="flex items-center gap-1.5"
-          >
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                type="button"
-                role="radio"
-                aria-checked={stars === n}
-                aria-label={`${n} sao`}
-                onClick={() => setStars(n)}
-                className={`grid size-11 place-items-center rounded-lg border text-lg transition-colors ${
-                  n <= stars
-                    ? "border-brand bg-brand/12 text-brand"
-                    : "border-line bg-surface text-muted hover:bg-surface-2"
-                }`}
+          {submittedReview ? (
+            <div className="rounded-xl border border-brand/25 bg-surface-2 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-base font-bold text-brand-deep">
+                  {"★".repeat(submittedReview.ratingStars)}
+                  {"☆".repeat(Math.max(0, 5 - submittedReview.ratingStars))} ({submittedReview.ratingStars}/5 sao)
+                </span>
+                <span className="chip bg-white text-xs text-muted">
+                  Trạng thái: {submittedReview.status}
+                </span>
+              </div>
+              {submittedReview.comment && (
+                <p className="mt-2 text-sm text-body">{submittedReview.comment}</p>
+              )}
+              {typeof submittedReview.updatedRecyclerAverageRating === "number" && (
+                <p className="mt-2 text-xs text-muted">
+                  Điểm uy tín mới của cơ sở: {submittedReview.updatedRecyclerAverageRating.toFixed(2)}★ ({submittedReview.updatedRecyclerTotalReviews ?? 1} đánh giá)
+                </p>
+              )}
+              <div className="mt-3">
+                <button
+                  type="button"
+                  disabled={reviewBusy}
+                  onClick={() => void handleDeleteReview()}
+                  className="btn-ghost h-9 px-3.5 text-xs text-warn"
+                >
+                  {reviewBusy ? "Đang xóa..." : "Tự xóa vĩnh viễn đánh giá này"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div
+                role="radiogroup"
+                aria-label="Chấm điểm"
+                className="flex items-center gap-1.5"
               >
-                ★
-              </button>
-            ))}
-          </div>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    role="radio"
+                    aria-checked={stars === n}
+                    aria-label={`${n} sao`}
+                    onClick={() => setStars(n)}
+                    className={`grid size-11 place-items-center rounded-lg border text-lg transition-colors ${
+                      n <= stars
+                        ? "border-brand bg-brand/12 text-brand"
+                        : "border-line bg-surface text-muted hover:bg-surface-2"
+                    }`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
 
-          <textarea
-            className="input h-auto resize-y py-3 leading-6"
-            rows={3}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Ghi lại điều gì tốt, hoặc điều gì nên sửa. Cụ thể thì cơ sở sửa được."
-          />
+              <textarea
+                className="input h-auto resize-y py-3 leading-6"
+                rows={3}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Ghi lại điều gì tốt, hoặc điều gì nên sửa. Cụ thể thì cơ sở sửa được."
+              />
 
-          <div className="flex flex-wrap items-center gap-4">
-            <button
-              type="button"
-              disabled={stars === 0}
-              className="btn-primary h-11 px-6"
-            >
-              Gửi đánh giá
-            </button>
-            {stars > 0 && (
-              <p className="text-[13px] text-muted">
-                {stars === 5
-                  ? "Cảm ơn bạn, đánh giá này giúp khu vực của bạn."
-                  : "Cảm ơn bạn, chúng tôi sẽ xem lại điểm thấp."}
-              </p>
-            )}
-          </div>
+              <div className="flex flex-wrap items-center gap-4">
+                <button
+                  type="button"
+                  disabled={stars === 0 || reviewBusy}
+                  onClick={() => void handleSubmitReview()}
+                  className="btn-primary h-11 px-6"
+                >
+                  {reviewBusy ? "Đang gửi..." : "Gửi đánh giá"}
+                </button>
+                {stars > 0 && (
+                  <p className="text-[13px] text-muted">
+                    {stars === 5
+                      ? "Cảm ơn bạn, đánh giá này giúp khu vực của bạn."
+                      : "Cảm ơn bạn, chúng tôi sẽ xem lại điểm thấp."}
+                  </p>
+                )}
+              </div>
+            </>
+          )}
         </section>
       )}
     </div>

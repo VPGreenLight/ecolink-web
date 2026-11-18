@@ -1,101 +1,626 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
 import { COMPLAINTS, type Complaint } from "@/data/ops"
+import { ApiError } from "@/lib/api"
+import {
+  COMPLAINT_CATEGORY_LABELS,
+  COMPLAINT_OUTCOME_LABELS,
+  fetchStaffComplaintDossier,
+  fetchStaffComplaints,
+  moderateReview,
+  resolveStaffComplaint,
+  type ComplaintResolutionOutcomeCode,
+  type ComplaintSummaryDto,
+  type StaffComplaintDossierDto,
+  type TransactionReviewDto,
+} from "@/lib/reviewComplaintApi"
+import { getAccessToken } from "@/lib/session"
 
-/** S-05 Xử lý khiếu nại giao dịch.
- *
- *  Khiếu nại mà đóng mà không có câu trả lời gửi cho người dùng thì người
- *  dùng sẽ hỏi lại. Ở đây bắt buộc nhập nội dung phản hồi khi chuyển sang
- *  "đã xử lý" — nếu cho đóng không cần trả lời thì hầu hết ca sẽ đóng im lặng. */
+const OUTCOME_OPTIONS: ComplaintResolutionOutcomeCode[] = [
+  "ConfirmReceiptAsIs",
+  "CompensateUser",
+  "UpholdComplainant",
+  "CancelDisputedOrder",
+  "Dismissed",
+]
+
+/** S-05 Xử lý khiếu nại giao dịch (Hồ sơ Trọng tài 360°) & Kiểm duyệt Đánh giá bị báo cáo (U-10, BR-RVW-03). */
 export default function Complaints() {
-  const [list, setList] = useState<Complaint[]>(COMPLAINTS)
-  const [reply, setReply] = useState<Record<string, string>>({})
-  const [flash, setFlash] = useState("")
+  // Chế độ offline dự phòng cho SSR & kiểm thử tĩnh
+  const [offlineList, setOfflineList] = useState<Complaint[]>(COMPLAINTS)
+  const [offlineReply, setOfflineReply] = useState<Record<string, string>>({})
 
-  const take = (id: string) =>
-    setList((ls) =>
+  // Dữ liệu thật từ PostgreSQL 16 (STT 108, 112-114)
+  const [usingLiveApi, setUsingLiveApi] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [tab, setTab] = useState<"complaints" | "reviews">("complaints")
+  const [statusFilter, setStatusFilter] = useState<string>("")
+  const [categoryFilter, setCategoryFilter] = useState<string>("")
+  const [search, setSearch] = useState<string>("")
+
+  const [liveComplaints, setLiveComplaints] = useState<ComplaintSummaryDto[]>([])
+  const [reportedReviews, setReportedReviews] = useState<TransactionReviewDto[]>([])
+  const [counts, setCounts] = useState({
+    openCount: 0,
+    investigatingCount: 0,
+    resolvedCount: 0,
+    dismissedCount: 0,
+    reportedReviewsCount: 0,
+  })
+
+  const [dossier, setDossier] = useState<StaffComplaintDossierDto | null>(null)
+  const [loadingDossier, setLoadingDossier] = useState(false)
+  const [outcome, setOutcome] = useState<ComplaintResolutionOutcomeCode>("ConfirmReceiptAsIs")
+  const [resolutionNote, setResolutionNote] = useState("")
+  const [issueWarning, setIssueWarning] = useState(false)
+  const [warningReason, setWarningReason] = useState("")
+  const [modReasons, setModReasons] = useState<Record<string, string>>({})
+  const [flash, setFlash] = useState("")
+  const [busyId, setBusyId] = useState("")
+
+  const loadLiveQueue = async () => {
+    setLoading(true)
+    try {
+      const res = await fetchStaffComplaints({
+        status: statusFilter || undefined,
+        category: categoryFilter || undefined,
+        search: search.trim() || undefined,
+        includeReportedReviews: true,
+        pageSize: 30,
+      })
+      if (res.success && res.data) {
+        setUsingLiveApi(true)
+        setLiveComplaints(res.data.complaints.items)
+        setReportedReviews(res.data.reportedReviews ?? [])
+        setCounts({
+          openCount: res.data.openCount,
+          investigatingCount: res.data.investigatingCount,
+          resolvedCount: res.data.resolvedCount,
+          dismissedCount: res.data.dismissedCount,
+          reportedReviewsCount: res.data.reportedReviewsCount,
+        })
+      }
+    } catch {
+      setUsingLiveApi(false)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!getAccessToken()) return
+    void loadLiveQueue()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, categoryFilter])
+
+  const openDossier = async (complaintId: string) => {
+    setLoadingDossier(true)
+    setFlash("")
+    try {
+      const res = await fetchStaffComplaintDossier(complaintId, true)
+      if (res.success && res.data) {
+        setDossier(res.data)
+        setResolutionNote(res.data.complaint.resolutionNote ?? "")
+        setOutcome(
+          (res.data.complaint.resolutionOutcome as ComplaintResolutionOutcomeCode) ||
+            "ConfirmReceiptAsIs",
+        )
+        setIssueWarning(false)
+        setWarningReason("")
+        await loadLiveQueue()
+      }
+    } catch (err) {
+      setFlash(err instanceof ApiError ? err.message : "Không thể tải hồ sơ trọng tài 360°.")
+    } finally {
+      setLoadingDossier(false)
+    }
+  }
+
+  const handleResolveLive = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!dossier) return
+    const cleanNote = resolutionNote.trim()
+    if (cleanNote.length < 10) {
+      setFlash("Biên bản giải trình phán quyết phải từ 10 ký tự trở lên (BR-DSP-04).")
+      return
+    }
+
+    setBusyId(dossier.complaint.complaintId)
+    setFlash("")
+    try {
+      const res = await resolveStaffComplaint(dossier.complaint.complaintId, {
+        resolutionOutcome: outcome,
+        resolutionNote: cleanNote,
+        issueWarningToRespondent: issueWarning,
+        warningReason: warningReason.trim() || undefined,
+      })
+      setFlash(res.message || "Đã ban hành phán quyết trọng tài thành công.")
+      setDossier(null)
+      await loadLiveQueue()
+    } catch (err) {
+      setFlash(err instanceof ApiError ? err.message : "Giải quyết khiếu nại thất bại.")
+    } finally {
+      setBusyId("")
+    }
+  }
+
+  const handleModerateReview = async (reviewId: string, action: "Hide" | "Restore") => {
+    const reason = (modReasons[reviewId] ?? "").trim()
+    if (reason.length < 5) {
+      setFlash("Vui lòng nhập lý do kiểm duyệt ít nhất 5 ký tự.")
+      return
+    }
+    setBusyId(reviewId)
+    setFlash("")
+    try {
+      const res = await moderateReview(reviewId, { action, moderationReason: reason })
+      setFlash(res.message || "Đã cập nhật kiểm duyệt đánh giá và tính lại điểm sao trung bình.")
+      await loadLiveQueue()
+    } catch (err) {
+      setFlash(err instanceof ApiError ? err.message : "Kiểm duyệt đánh giá thất bại.")
+    } finally {
+      setBusyId("")
+    }
+  }
+
+  // Fallback offline handlers
+  const takeOffline = (id: string) =>
+    setOfflineList((ls) =>
       ls.map((c) => (c.id === id && c.status === "new" ? { ...c, status: "working" } : c)),
     )
 
-  const resolve = (id: string) => {
-    const text = (reply[id] ?? "").trim()
+  const resolveOffline = (id: string) => {
+    const text = (offlineReply[id] ?? "").trim()
     if (text.length < 10) {
       setFlash("Cần viết phản hồi ít nhất 10 ký tự trước khi đóng khiếu nại.")
       return
     }
-    setList((ls) => ls.map((c) => (c.id === id ? { ...c, status: "resolved", reply: text } : c)))
+    setOfflineList((ls) =>
+      ls.map((c) => (c.id === id ? { ...c, status: "resolved", reply: text } : c)),
+    )
     setFlash("")
   }
 
-  const open = list.filter((c) => c.status !== "resolved")
-  const closed = list.filter((c) => c.status === "resolved")
+  const openOffline = offlineList.filter((c) => c.status !== "resolved")
+  const closedOffline = offlineList.filter((c) => c.status === "resolved")
 
   return (
     <div className="flex flex-col gap-6">
       <PageHead
-        eyebrow="HỖ TRỢ"
+        eyebrow="HỖ TRỢ & TRỌNG TÀI"
         title="Khiếu nại giao dịch"
-        body="Đối chiếu với biên nhận và lịch sử dòng tiền trước khi trả lời. Mọi ca đóng đều phải có phản hồi gửi cho người dùng."
+        body="Đối chiếu Hồ sơ Trọng tài 360° gồm ảnh bằng chứng hai bên, biên nhận cân điện tử và lịch sử chat bất biến trước khi ban hành phán quyết."
       />
 
-      {flash && <p className="text-[13px] font-semibold text-warn">{flash}</p>}
+      {flash && (
+        <p role="status" className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-[13px] font-semibold text-ink">
+          {flash}
+        </p>
+      )}
 
-      <ul className="flex flex-col gap-4">
-        {open.map((c) => (
-          <li key={c.id} className="card flex flex-col gap-4 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-bold text-ink">{c.title}</p>
-                <p className="mt-0.5 text-[13px] text-muted">
-                  {c.id} · {c.date} · {c.user} · liên quan {c.target}
-                </p>
-              </div>
-              <Status tone={c.status === "new" ? "wait" : "todo"}>
-                {c.status === "new" ? "Mới" : "Đang xử lý"}
-              </Status>
-            </div>
-
-            <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-              Phản hồi cho người dùng
-              <textarea
-                className="input h-auto resize-y py-3 leading-6"
-                rows={3}
-                value={reply[c.id] ?? ""}
-                onChange={(e) => setReply((r) => ({ ...r, [c.id]: e.target.value }))}
-                placeholder="Nêu rõ đã kiểm tra gì, kết luận gì, và người dùng cần làm gì tiếp."
-              />
-            </label>
-
-            <div className="flex flex-wrap gap-3 border-t border-line-soft pt-4">
-              {c.status === "new" && (
-                <button type="button" onClick={() => take(c.id)} className="btn-ghost h-11 px-5">
-                  Nhận xử lý
-                </button>
-              )}
-              <button type="button" onClick={() => resolve(c.id)} className="btn-primary h-11 px-6">
-                Đóng khiếu nại
+      {usingLiveApi ? (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setTab("complaints")}
+                className={`rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
+                  tab === "complaints"
+                    ? "bg-brand text-white"
+                    : "border border-line bg-surface text-ink hover:bg-surface-2"
+                }`}
+              >
+                Hàng đợi Khiếu nại ({counts.openCount + counts.investigatingCount} chờ xử lý / {counts.resolvedCount + counts.dismissedCount} đã đóng)
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab("reviews")}
+                className={`rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
+                  tab === "reviews"
+                    ? "bg-brand text-white"
+                    : "border border-line bg-surface text-ink hover:bg-surface-2"
+                }`}
+              >
+                Đánh giá bị báo cáo vi phạm ({counts.reportedReviewsCount})
               </button>
             </div>
-          </li>
-        ))}
-      </ul>
-
-      {closed.length > 0 && (
-        <section>
-          <h2 className="text-base font-bold text-ink">Đã đóng</h2>
-          <div className="mt-3">
-            <Table head={["Mã", "Vấn đề", "Người báo", "Kết quả"]}>
-              {closed.map((c) => (
-                <tr key={c.id}>
-                  <Td className="tabular-nums whitespace-nowrap">{c.id}</Td>
-                  <Td className="font-semibold text-ink">{c.title}</Td>
-                  <Td className="whitespace-nowrap">{c.user}</Td>
-                  <Td>{c.reply ?? "—"}</Td>
-                </tr>
-              ))}
-            </Table>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void loadLiveQueue()}
+              className="btn-outline h-9 px-3.5 text-xs"
+            >
+              {loading ? "Đang tải..." : "Làm mới"}
+            </button>
           </div>
-        </section>
+
+          {tab === "complaints" ? (
+            <>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void loadLiveQueue()
+                  }}
+                  placeholder="Tìm theo mã CMP-..., mã đơn HND-..., tên các bên..."
+                  className="input h-10 min-w-[220px] flex-1"
+                />
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="input h-10 w-44"
+                >
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="Open">Open ({counts.openCount})</option>
+                  <option value="Investigating">Investigating ({counts.investigatingCount})</option>
+                  <option value="Resolved">Resolved ({counts.resolvedCount})</option>
+                  <option value="Dismissed">Dismissed ({counts.dismissedCount})</option>
+                </select>
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  className="input h-10 w-48"
+                >
+                  <option value="">Tất cả nhóm lỗi</option>
+                  {Object.entries(COMPLAINT_CATEGORY_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void loadLiveQueue()}
+                  className="btn-primary h-10 px-4 text-xs"
+                >
+                  Lọc
+                </button>
+              </div>
+
+              {dossier && (
+                <section className="card flex flex-col gap-5 border-brand/40 p-5 md:p-6">
+                  <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line-soft pb-4">
+                    <div>
+                      <span className="eyebrow">HỒ SƠ TRỌNG TÀI 360°</span>
+                      <h2 className="mt-1 text-lg font-bold text-ink">
+                        {dossier.complaint.complaintCode} · Đơn {dossier.handoverRequestCode}
+                      </h2>
+                      <p className="mt-0.5 text-xs text-muted">
+                        Nhóm lỗi: {COMPLAINT_CATEGORY_LABELS[dossier.complaint.category] || dossier.complaint.category} · Trạng thái đơn: {dossier.handoverStatus}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDossier(null)}
+                      className="btn-ghost h-9 px-3 text-xs"
+                    >
+                      Đóng hồ sơ
+                    </button>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-xl border border-line bg-surface-2 p-4 text-xs">
+                      <p className="font-bold text-ink">
+                        Bên gửi khiếu nại ({dossier.complaint.complainantRole})
+                      </p>
+                      <p className="mt-1 font-semibold text-brand-deep">{dossier.complainant.fullName}</p>
+                      <p className="text-muted">
+                        {dossier.complainant.email} · Cảnh cáo: {dossier.complainant.warningCount}
+                      </p>
+                      <p className="mt-2 whitespace-pre-wrap text-body">{dossier.complaint.description}</p>
+                      {dossier.complaint.evidencePhotoUrls.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {dossier.complaint.evidencePhotoUrls.map((url, idx) => (
+                            <a
+                              key={url + idx}
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded border border-line bg-white px-2 py-1 text-[11px] font-semibold text-brand-deep hover:underline"
+                            >
+                              Bằng chứng #{idx + 1}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl border border-line bg-surface-2 p-4 text-xs">
+                      <p className="font-bold text-ink">Bên bị khiếu nại (Respondent)</p>
+                      <p className="mt-1 font-semibold text-ink">{dossier.respondent.fullName}</p>
+                      <p className="text-muted">
+                        {dossier.respondent.email} · Đã bị cảnh cáo: {dossier.respondent.warningCount} lần
+                      </p>
+                      {dossier.receipt ? (
+                        <div className="mt-2 border-t border-line-soft pt-2">
+                          <p className="font-semibold text-ink">
+                            Biên nhận #{dossier.receipt.receiptCode}: {dossier.receipt.totalWeightKg} kg ·{" "}
+                            {dossier.receipt.totalAmountCash.toLocaleString("vi-VN")} đ · +{dossier.receipt.pointsAwarded} điểm
+                          </p>
+                          <div className="mt-1.5 flex flex-wrap gap-2">
+                            {dossier.receipt.scaleProofPhotoUrls.map((url, idx) => (
+                              <a
+                                key={url + idx}
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded border border-line bg-white px-2 py-1 text-[11px] font-semibold text-ink hover:underline"
+                              >
+                                Ảnh cân #{idx + 1}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-muted">Đơn này chưa lập biên nhận điện tử.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-line bg-surface p-4">
+                    <h3 className="text-xs font-bold tracking-wide text-ink uppercase">
+                      Lịch sử Thương lượng &amp; Chat Bất biến ({dossier.negotiationMessages.length} tin nhắn)
+                    </h3>
+                    {dossier.negotiationMessages.length === 0 ? (
+                      <p className="mt-2 text-xs text-muted">Chưa có tin nhắn thương lượng nào trong đơn này.</p>
+                    ) : (
+                      <ul className="mt-2 flex max-h-48 flex-col gap-2 overflow-y-auto text-xs">
+                        {dossier.negotiationMessages.map((m) => (
+                          <li key={m.messageId} className="rounded-lg bg-surface-2 px-3 py-2">
+                            <div className="flex justify-between gap-2 text-[11px] text-muted">
+                              <span>
+                                <b className="text-ink">{m.senderName}</b> ({m.senderRole} · {m.messageType})
+                              </span>
+                              <span>{new Date(m.sentAt).toLocaleString("vi-VN")}</span>
+                            </div>
+                            <p className="mt-0.5 text-body">{m.content}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  {dossier.complaint.status === "Open" || dossier.complaint.status === "Investigating" ? (
+                    <form onSubmit={(e) => void handleResolveLive(e)} className="flex flex-col gap-3 border-t border-line-soft pt-4">
+                      <h3 className="text-sm font-bold text-ink">Ban hành Phán quyết Trọng tài (BR-DSP-04)</h3>
+                      <select
+                        value={outcome}
+                        onChange={(e) => setOutcome(e.target.value as ComplaintResolutionOutcomeCode)}
+                        className="input h-10"
+                      >
+                        {OUTCOME_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt} — {COMPLAINT_OUTCOME_LABELS[opt]}
+                          </option>
+                        ))}
+                      </select>
+                      <textarea
+                        className="input h-auto resize-y py-2.5 text-sm"
+                        rows={3}
+                        value={resolutionNote}
+                        onChange={(e) => setResolutionNote(e.target.value)}
+                        placeholder="Nhập biên bản giải trình phán quyết tối thiểu 10 ký tự..."
+                      />
+                      <label className="flex items-center gap-2 text-xs font-medium text-ink">
+                        <input
+                          type="checkbox"
+                          checked={issueWarning}
+                          onChange={(e) => setIssueWarning(e.target.checked)}
+                        />
+                        Ghi cảnh cáo vi phạm vào hồ sơ bên bị khiếu nại (AccountModerationLog)
+                      </label>
+                      {issueWarning && (
+                        <input
+                          type="text"
+                          value={warningReason}
+                          onChange={(e) => setWarningReason(e.target.value)}
+                          placeholder="Lý do cảnh cáo cụ thể (tùy chọn, mặc định dùng nội dung phán quyết)..."
+                          className="input h-9 text-xs"
+                        />
+                      )}
+                      <div>
+                        <button
+                          type="submit"
+                          disabled={busyId === dossier.complaint.complaintId}
+                          className="btn-primary h-10 px-5 text-xs"
+                        >
+                          {busyId === dossier.complaint.complaintId
+                            ? "Đang chốt phán quyết..."
+                            : "Xác nhận & Đóng khiếu nại"}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="rounded-xl border border-line-soft bg-surface-2 p-3 text-xs">
+                      <p className="font-bold text-ink">
+                        Đã giải quyết: {dossier.complaint.resolutionOutcome}
+                      </p>
+                      <p className="mt-1 text-body">{dossier.complaint.resolutionNote}</p>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {liveComplaints.length === 0 ? (
+                <p className="card px-5 py-8 text-center text-sm text-muted">
+                  Chưa có phiếu khiếu nại nào khớp bộ lọc hiện tại.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {liveComplaints.map((c) => (
+                    <li key={c.complaintId} className="card flex flex-wrap items-center justify-between gap-4 p-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-ink">{c.complaintCode}</span>
+                          <Status
+                            tone={
+                              c.status === "Open"
+                                ? "wait"
+                                : c.status === "Investigating"
+                                  ? "todo"
+                                  : "ok"
+                            }
+                          >
+                            {c.status}
+                          </Status>
+                          <span className="chip bg-surface-2 text-[11px] text-body">
+                            {COMPLAINT_CATEGORY_LABELS[c.category] || c.category}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-muted">
+                          Đơn {c.requestCode} · {c.complainantName} ({c.complainantRole}) kiện{" "}
+                          <b className="text-ink">{c.respondentName}</b> ·{" "}
+                          {new Date(c.createdAt).toLocaleString("vi-VN")}
+                        </p>
+                        <p className="mt-1 line-clamp-2 text-xs text-body">{c.description}</p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={loadingDossier}
+                        onClick={() => void openDossier(c.complaintId)}
+                        className="btn-primary h-9 shrink-0 px-4 text-xs"
+                      >
+                        {c.status === "Open" || c.status === "Investigating"
+                          ? "Mở Hồ sơ 360° & Xử lý"
+                          : "Xem lại Hồ sơ"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {reportedReviews.length === 0 ? (
+                <p className="card px-5 py-8 text-center text-sm text-muted">
+                  Hiện không có đánh giá nào bị báo cáo vi phạm.
+                </p>
+              ) : (
+                reportedReviews.map((rv) => (
+                  <div key={rv.reviewId} className="card flex flex-col gap-3 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-bold text-ink">
+                          {rv.facilityName} · {"★".repeat(rv.ratingStars)} ({rv.ratingStars}/5)
+                        </p>
+                        <p className="text-xs text-muted">
+                          Tác giả: {rv.reviewerDisplayName} · Số lần báo cáo: {rv.reportCount} · Trạng thái:{" "}
+                          <b>{rv.status}</b>
+                        </p>
+                      </div>
+                    </div>
+                    {rv.comment && <p className="text-sm text-body">{rv.comment}</p>}
+                    {rv.lastReportReason && (
+                      <p className="rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">
+                        Lý do báo cáo: {rv.lastReportReason}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        value={modReasons[rv.reviewId] ?? ""}
+                        onChange={(e) =>
+                          setModReasons((m) => ({ ...m, [rv.reviewId]: e.target.value }))
+                        }
+                        placeholder="Nhập lý do kiểm duyệt tối thiểu 5 ký tự..."
+                        className="input h-9 min-w-[240px] flex-1 text-xs"
+                      />
+                      <button
+                        type="button"
+                        disabled={busyId === rv.reviewId}
+                        onClick={() => void handleModerateReview(rv.reviewId, "Hide")}
+                        className="btn-primary h-9 px-3.5 text-xs"
+                      >
+                        Ẩn đánh giá
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyId === rv.reviewId}
+                        onClick={() => void handleModerateReview(rv.reviewId, "Restore")}
+                        className="btn-outline h-9 px-3.5 text-xs"
+                      >
+                        Khôi phục (Giữ lại)
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <ul className="flex flex-col gap-4">
+            {openOffline.map((c) => (
+              <li key={c.id} className="card flex flex-col gap-4 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-bold text-ink">{c.title}</p>
+                    <p className="mt-0.5 text-[13px] text-muted">
+                      {c.id} · {c.date} · {c.user} · liên quan {c.target}
+                    </p>
+                  </div>
+                  <Status tone={c.status === "new" ? "wait" : "todo"}>
+                    {c.status === "new" ? "Mới" : "Đang xử lý"}
+                  </Status>
+                </div>
+
+                <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+                  Phản hồi cho người dùng
+                  <textarea
+                    className="input h-auto resize-y py-3 leading-6"
+                    rows={3}
+                    value={offlineReply[c.id] ?? ""}
+                    onChange={(e) =>
+                      setOfflineReply((r) => ({ ...r, [c.id]: e.target.value }))
+                    }
+                    placeholder="Nêu rõ đã kiểm tra gì, kết luận gì, và người dùng cần làm gì tiếp."
+                  />
+                </label>
+
+                <div className="flex flex-wrap gap-3 border-t border-line-soft pt-4">
+                  {c.status === "new" && (
+                    <button
+                      type="button"
+                      onClick={() => takeOffline(c.id)}
+                      className="btn-ghost h-11 px-5"
+                    >
+                      Nhận xử lý
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => resolveOffline(c.id)}
+                    className="btn-primary h-11 px-6"
+                  >
+                    Đóng khiếu nại
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {closedOffline.length > 0 && (
+            <section>
+              <h2 className="text-base font-bold text-ink">Đã đóng</h2>
+              <div className="mt-3">
+                <Table head={["Mã", "Vấn đề", "Người báo", "Kết quả"]}>
+                  {closedOffline.map((c) => (
+                    <tr key={c.id}>
+                      <Td className="tabular-nums whitespace-nowrap">{c.id}</Td>
+                      <Td className="font-semibold text-ink">{c.title}</Td>
+                      <Td className="whitespace-nowrap">{c.user}</Td>
+                      <Td>{c.reply ?? "—"}</Td>
+                    </tr>
+                  ))}
+                </Table>
+              </div>
+            </section>
+          )}
+        </>
       )}
     </div>
   )

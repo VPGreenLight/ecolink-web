@@ -8,12 +8,35 @@ import {
   searchNearbyRecyclers,
   type CollectionPartnerDto,
 } from "@/lib/recyclerDiscoveryApi"
+import {
+  fetchRecyclerReviews,
+  type RecyclerReviewsSummaryDto,
+} from "@/lib/reviewComplaintApi"
 
 export default function Partners() {
   const [query, setQuery] = useState("")
   const [material, setMaterial] = useState(MATERIAL_TYPES[0])
   const [region, setRegion] = useState(REGIONS[0])
   const [liveRecyclers, setLiveRecyclers] = useState<CollectionPartnerDto[]>([])
+  const [reviewSummaries, setReviewSummaries] = useState<Record<string, RecyclerReviewsSummaryDto>>({})
+  const [openReviewId, setOpenReviewId] = useState<string | null>(null)
+
+  const togglePartnerReviews = (recyclerId: string) => {
+    if (openReviewId === recyclerId) {
+      setOpenReviewId(null)
+      return
+    }
+    setOpenReviewId(recyclerId)
+    if (!reviewSummaries[recyclerId]) {
+      void fetchRecyclerReviews(recyclerId, { pageSize: 5 })
+        .then((res) => {
+          if (res.success && res.data) {
+            setReviewSummaries((prev) => ({ ...prev, [recyclerId]: res.data }))
+          }
+        })
+        .catch(() => {})
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -103,9 +126,14 @@ export default function Partners() {
                   <div>
                     <div className="flex items-start justify-between gap-2">
                       <h3 className="text-base font-bold text-ink">{r.facilityName}</h3>
-                      <span className="shrink-0 rounded-full bg-surface-3 px-2.5 py-0.5 text-xs font-semibold text-brand-deep">
-                        {formatDistance(r.distanceKm)}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800">
+                          ★ {(r.averageRating ?? 0).toFixed(1)} ({r.totalReviews ?? 0})
+                        </span>
+                        <span className="rounded-full bg-surface-3 px-2.5 py-0.5 text-xs font-semibold text-brand-deep">
+                          {formatDistance(r.distanceKm)}
+                        </span>
+                      </div>
                     </div>
                     <p className="mt-1 text-xs text-muted">{r.address}</p>
                     <ul className="mt-2.5 flex flex-wrap gap-1.5">
@@ -120,15 +148,47 @@ export default function Partners() {
                       ))}
                     </ul>
                   </div>
-                  <div className="flex items-center justify-between border-t border-line-soft pt-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line-soft pt-3 text-xs">
                     <span className="text-muted">Giờ mở cửa: {r.operatingHours}</span>
-                    <Link
-                      to={`/map`}
-                      className="font-semibold text-brand-deep hover:underline"
-                    >
-                      Xem trên bản đồ →
-                    </Link>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => togglePartnerReviews(r.id)}
+                        className="font-semibold text-body hover:underline"
+                      >
+                        {openReviewId === r.id ? "Ẩn đánh giá" : "Xem đánh giá"}
+                      </button>
+                      <Link
+                        to={`/map`}
+                        className="font-semibold text-brand-deep hover:underline"
+                      >
+                        Xem trên bản đồ →
+                      </Link>
+                    </div>
                   </div>
+
+                  {openReviewId === r.id && reviewSummaries[r.id] && (
+                    <div className="rounded-lg border border-line-soft bg-surface p-3 text-xs">
+                      <p className="font-semibold text-ink">
+                        Phản hồi gần đây ({reviewSummaries[r.id].totalReviews} lượt)
+                      </p>
+                      {reviewSummaries[r.id].reviews.items.length === 0 ? (
+                        <p className="mt-1 text-muted">Chưa có nhận xét nào.</p>
+                      ) : (
+                        <ul className="mt-1.5 flex flex-col gap-1.5">
+                          {reviewSummaries[r.id].reviews.items.slice(0, 3).map((rv) => (
+                            <li key={rv.reviewId} className="rounded bg-white p-2">
+                              <span className="font-semibold text-brand-deep">
+                                {"★".repeat(rv.ratingStars)}
+                              </span>{" "}
+                              <span className="text-muted">· {rv.reviewerDisplayName}</span>
+                              {rv.comment && <p className="mt-0.5 text-body">{rv.comment}</p>}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

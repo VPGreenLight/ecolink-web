@@ -1,4 +1,17 @@
 import { useEffect, useRef, useState } from "react"
+import { ApiError } from "@/lib/api"
+import {
+  fetchSyncedHandoverOrders,
+  type SyncedHandoverOrder,
+} from "@/lib/recyclerWorkflowApi"
+import {
+  COMPLAINT_CATEGORY_LABELS,
+  fetchMyComplaints,
+  submitComplaint,
+  uploadComplaintEvidence,
+  type ComplaintCategoryCode,
+  type ComplaintSummaryDto,
+} from "@/lib/reviewComplaintApi"
 import {
   CATEGORIES,
   DESC_MAX,
@@ -15,10 +28,11 @@ import {
   type Errors,
 } from "@/data/feedback"
 import { SUPPORT } from "@/data/nav"
-import { useUser } from "@/lib/session"
+import { getAccessToken, useSession, useUser } from "@/lib/session"
 
 export default function Feedback() {
   const user = useUser()
+  const session = useSession()
   const [cat, setCat] = useState<Category>("complaint")
   const [issue, setIssue] = useState("")
   const [desc, setDesc] = useState("")
@@ -26,6 +40,28 @@ export default function Feedback() {
   const [photos, setPhotos] = useState<File[]>([])
   const [errs, setErrs] = useState<Errors>({})
   const [ref, setRef] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState("")
+
+  // Liên kết đơn bàn giao thật (U-11) & danh sách "Khiếu nại của tôi" (STT 110-111)
+  const [handoverOrders, setHandoverOrders] = useState<SyncedHandoverOrder[]>([])
+  const [selectedOrderId, setSelectedOrderId] = useState("")
+  const [backendCategory, setBackendCategory] =
+    useState<ComplaintCategoryCode>("ScaleDiscrepancy")
+  const [myComplaints, setMyComplaints] = useState<ComplaintSummaryDto[]>([])
+
+  useEffect(() => {
+    if (!getAccessToken()) return
+    const scope = session?.role === "recycler" ? "recycler" : "user"
+    void fetchSyncedHandoverOrders(scope).then((orders) => {
+      setHandoverOrders(orders.filter((o) => /^[0-9a-f-]{36}$/i.test(o.id)))
+    })
+    void fetchMyComplaints({ role: "all", pageSize: 20 })
+      .then((res) => {
+        if (res.success && res.data) setMyComplaints(res.data.items)
+      })
+      .catch(() => {})
+  }, [session?.role])
 
   const list = ISSUES[cat]
   const pickCat = (c: Category) => {
@@ -35,13 +71,45 @@ export default function Feedback() {
     setErrs((e) => ({ ...e, issue: undefined }))
   }
 
-  const send = (e: React.FormEvent) => {
+  const send = async (e: React.FormEvent) => {
     e.preventDefault()
+    setSubmitError("")
+
+    if (cat === "complaint" && selectedOrderId) {
+      const cleanDesc = desc.trim()
+      if (cleanDesc.length < 15) {
+        setErrs({ desc: "Nội dung mô tả khiếu nại giao dịch tối thiểu 15 ký tự." })
+        return
+      }
+      setSubmitting(true)
+      try {
+        const evidenceUrls: string[] = []
+        for (const f of photos.slice(0, 5)) {
+          const up = await uploadComplaintEvidence(f)
+          if (up.data?.fileUrl) evidenceUrls.push(up.data.fileUrl)
+        }
+        const created = await submitComplaint({
+          handoverRequestId: selectedOrderId,
+          category: backendCategory,
+          description: cleanDesc,
+          evidencePhotoUrls: evidenceUrls,
+        })
+        setRef(created.data.complaintCode)
+      } catch (err) {
+        setSubmitError(
+          err instanceof ApiError
+            ? err.message
+            : "Không thể gửi phiếu khiếu nại giao dịch.",
+        )
+      } finally {
+        setSubmitting(false)
+      }
+      return
+    }
+
     const found = validate({ category: cat, issue, desc, contact, photos })
     setErrs(found)
     if (Object.values(found).some(Boolean)) return
-    // ponytail: chưa có backend, chỉ sinh mã và hiện màn hình xác nhận. Nối
-    // API thì thay đúng dòng này, phần còn lại giữ nguyên.
     setRef(makeRef())
   }
 
@@ -103,6 +171,50 @@ export default function Feedback() {
               })}
             </div>
           </fieldset>
+
+          {/* 1b. Chọn đơn bàn giao nếu muốn gửi phiếu khiếu nại U-11 trực tiếp tới Staff */}
+          {cat === "complaint" && handoverOrders.length > 0 && (
+            <div className="mt-6 rounded-xl border border-brand/25 bg-surface-2/60 p-4">
+              <label htmlFor="fb-order" className="text-sm font-bold text-ink">
+                Đính kèm đơn bàn giao tranh chấp (tùy chọn — gửi thẳng Staff S-05)
+              </label>
+              <select
+                id="fb-order"
+                value={selectedOrderId}
+                onChange={(e) => setSelectedOrderId(e.target.value)}
+                className="input mt-2 h-10 bg-white text-sm"
+              >
+                <option value="">— Không chọn đơn (chỉ gửi phản hồi chung) —</option>
+                {handoverOrders.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.displayCode} · {o.recycler || o.citizenName || "Đối tác"} · {o.status}
+                  </option>
+                ))}
+              </select>
+
+              {selectedOrderId && (
+                <div className="mt-3">
+                  <label htmlFor="fb-cat-code" className="text-xs font-semibold text-ink">
+                    Nhóm nguyên nhân khiếu nại chính thức (BR-DSP-02)
+                  </label>
+                  <select
+                    id="fb-cat-code"
+                    value={backendCategory}
+                    onChange={(e) =>
+                      setBackendCategory(e.target.value as ComplaintCategoryCode)
+                    }
+                    className="input mt-1 h-10 bg-white text-sm"
+                  >
+                    {Object.entries(COMPLAINT_CATEGORY_LABELS).map(([k, v]) => (
+                      <option key={k} value={k}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 2. Loại vấn đề */}
           <fieldset className="mt-7">
@@ -229,9 +341,15 @@ export default function Feedback() {
             </div>
           </div>
 
+          {submitError && (
+            <p role="alert" className="mt-4 rounded-xl border border-warn/40 bg-warn/10 px-4 py-2.5 text-sm text-warn">
+              {submitError}
+            </p>
+          )}
+
           <div className="mt-8 flex flex-wrap items-center gap-4">
-            <button type="submit" className="btn btn-primary h-12 px-7">
-              Gửi nội dung
+            <button type="submit" disabled={submitting} className="btn btn-primary h-12 px-7">
+              {submitting ? "Đang gửi..." : "Gửi nội dung"}
             </button>
             <p className="text-[13px] text-muted">
               Miễn phí. Thông tin chỉ dùng để xử lý việc bạn báo.
@@ -294,6 +412,39 @@ export default function Feedback() {
           </div>
         </aside>
       </div>
+
+      {myComplaints.length > 0 && (
+        <section className="mt-10 rounded-2xl border border-line bg-surface p-6">
+          <h2 className="text-lg font-bold text-ink">
+            Khiếu nại giao dịch của tôi ({myComplaints.length})
+          </h2>
+          <p className="mt-1 text-xs text-muted">
+            Theo dõi trạng thái xử lý và biên bản phán quyết trọng tài từ bộ phận vận hành EcoLink (STT 111).
+          </p>
+          <ul className="mt-4 grid gap-3 md:grid-cols-2">
+            {myComplaints.map((c) => (
+              <li key={c.complaintId} className="rounded-xl border border-line-soft bg-white p-4 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-bold text-ink">{c.complaintCode}</span>
+                  <span className="rounded-full bg-surface-3 px-2.5 py-0.5 font-semibold text-brand-deep">
+                    {c.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-muted">
+                  Đơn {c.requestCode} · {COMPLAINT_CATEGORY_LABELS[c.category] || c.category} · Vai trò:{" "}
+                  <b>{c.complainantRole}</b>
+                </p>
+                <p className="mt-2 text-body">{c.description}</p>
+                {c.resolutionOutcome && (
+                  <div className="mt-2 rounded-lg border border-brand/20 bg-mint/10 p-2.5 text-brand-deep">
+                    <b>Kết luận ({c.resolutionOutcome}):</b> {c.resolutionNote}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   )
 }

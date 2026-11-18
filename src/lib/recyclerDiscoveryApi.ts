@@ -2,7 +2,7 @@ import { apiRequest, type ApiResponse } from "@/lib/api"
 import type { WasteSortingGuideDto } from "@/lib/wasteScanApi"
 
 export type DiscoverableCategory = "plastic" | "paper" | "cardboard" | "metal" | "glass"
-export type RecyclerSortBy = "distance" | "price_desc"
+export type RecyclerSortBy = "distance" | "price_desc" | "rating_desc"
 
 export interface AcceptedMaterialDto {
   categoryCode: string
@@ -27,6 +27,8 @@ export interface CollectionPartnerDto {
   businessPhotoUrl?: string | null
   hasVerifiedBadge?: boolean
   isFeatured?: boolean
+  averageRating?: number
+  totalReviews?: number
   materials: AcceptedMaterialDto[]
 }
 

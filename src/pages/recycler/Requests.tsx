@@ -16,6 +16,13 @@ import {
   formatOrderDisplayCode,
   updateHandoverOrderStatus,
 } from "@/lib/recyclerWorkflowApi"
+import { ApiError } from "@/lib/api"
+import {
+  COMPLAINT_CATEGORY_LABELS,
+  submitComplaint,
+  uploadComplaintEvidence,
+  type ComplaintCategoryCode,
+} from "@/lib/reviewComplaintApi"
 
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
@@ -44,6 +51,11 @@ export default function Requests() {
   const [busy, setBusy] = useState("")
   const [flash, setFlash] = useState("")
   const [openMapId, setOpenMapId] = useState<string | null>(null)
+  const [complaintOrder, setComplaintOrder] = useState<IncomingView | null>(null)
+  const [cmpCategory, setCmpCategory] = useState<ComplaintCategoryCode>("NoShow")
+  const [cmpDesc, setCmpDesc] = useState("")
+  const [cmpFiles, setCmpFiles] = useState<File[]>([])
+  const [cmpBusy, setCmpBusy] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -123,6 +135,45 @@ export default function Requests() {
       )
     } finally {
       setBusy("")
+    }
+  }
+
+  const submitRecyclerComplaint = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!complaintOrder) return
+    const cleanDesc = cmpDesc.trim()
+    if (cleanDesc.length < 15) {
+      setFlash("Nội dung mô tả khiếu nại phải có tối thiểu 15 ký tự.")
+      return
+    }
+    setCmpBusy(true)
+    setFlash("")
+    try {
+      const evidenceUrls: string[] = []
+      for (const f of cmpFiles.slice(0, 5)) {
+        const up = await uploadComplaintEvidence(f)
+        if (up.data?.fileUrl) evidenceUrls.push(up.data.fileUrl)
+      }
+      const res = await submitComplaint({
+        handoverRequestId: complaintOrder.id,
+        category: cmpCategory,
+        description: cleanDesc,
+        evidencePhotoUrls: evidenceUrls,
+      })
+      setFlash(
+        `Đã gửi khiếu nại ${res.data.complaintCode} cho đơn ${complaintOrder.displayCode}.`,
+      )
+      setComplaintOrder(null)
+      setCmpDesc("")
+      setCmpFiles([])
+    } catch (err) {
+      setFlash(
+        err instanceof ApiError
+          ? err.message
+          : "Không thể gửi phiếu khiếu nại cho đơn này.",
+      )
+    } finally {
+      setCmpBusy(false)
     }
   }
 
@@ -275,7 +326,7 @@ export default function Requests() {
                         Tạo biên nhận
                       </Link>
                     ) : h.status === "accepted" ? (
-                      <div className="flex items-center gap-2 whitespace-nowrap">
+                      <div className="flex flex-wrap items-center gap-2 whitespace-nowrap">
                         <Link
                           to={`/recycler/receipt?orderId=${encodeURIComponent(h.id)}`}
                           className="text-[13px] font-semibold text-brand hover:underline"
@@ -298,7 +349,37 @@ export default function Requests() {
                         >
                           Huỷ lịch
                         </button>
+                        {h.fromBackend && (
+                          <>
+                            <span className="text-muted">·</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setComplaintOrder(h)
+                                setCmpCategory("NoShow")
+                                setCmpDesc("")
+                                setCmpFiles([])
+                              }}
+                              className="text-[13px] font-semibold text-ink hover:underline"
+                            >
+                              Báo sự cố / Khiếu nại
+                            </button>
+                          </>
+                        )}
                       </div>
+                    ) : h.fromBackend && (h.status === "done" || h.status === "broken") ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setComplaintOrder(h)
+                          setCmpCategory(h.status === "broken" ? "NoShow" : "Misconduct")
+                          setCmpDesc("")
+                          setCmpFiles([])
+                        }}
+                        className="text-[13px] font-semibold text-warn hover:underline"
+                      >
+                        Khiếu nại giao dịch
+                      </button>
                     ) : (
                       <span className="text-[13px] text-muted">—</span>
                     )}
@@ -315,6 +396,74 @@ export default function Requests() {
         của họ và bạn bị trừ phí nền tảng trên mỗi giao dịch. Các khung giờ đã
         chốt: {TIME_SLOTS.join(" · ")}.
       </p>
+
+      {complaintOrder && (
+        <form
+          onSubmit={(e) => void submitRecyclerComplaint(e)}
+          className="card flex flex-col gap-4 border-warn/40 p-5"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="eyebrow">KHIẾU NẠI 2 CHIỀU (U-11)</span>
+              <h3 className="mt-1 text-base font-bold text-ink">
+                Gửi khiếu nại cho đơn {complaintOrder.displayCode}
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setComplaintOrder(null)}
+              className="btn-ghost h-9 px-3 text-xs"
+            >
+              Đóng
+            </button>
+          </div>
+
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
+            Nhóm nguyên nhân
+            <select
+              value={cmpCategory}
+              onChange={(e) => setCmpCategory(e.target.value as ComplaintCategoryCode)}
+              className="input h-10 text-sm"
+            >
+              {(["NoShow", "Misconduct", "PaymentIssue", "ScaleDiscrepancy", "Other"] as ComplaintCategoryCode[]).map(
+                (cat) => (
+                  <option key={cat} value={cat}>
+                    {COMPLAINT_CATEGORY_LABELS[cat]}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
+            Mô tả sự cố (tối thiểu 15 ký tự)
+            <textarea
+              className="input h-auto resize-y py-2.5 text-sm"
+              rows={3}
+              value={cmpDesc}
+              onChange={(e) => setCmpDesc(e.target.value)}
+              placeholder="Ví dụ: Xe thu gom đến đúng điểm hẹn nhưng người dân không nghe máy trong 30 phút."
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+            Ảnh hiện trường / tin nhắn bằng chứng (tùy chọn, tối đa 5 ảnh)
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => setCmpFiles(Array.from(e.target.files ?? []).slice(0, 5))}
+              className="text-xs font-normal text-muted"
+            />
+          </label>
+
+          <div className="flex flex-wrap gap-3">
+            <button type="submit" disabled={cmpBusy} className="btn-primary h-10 px-5 text-xs">
+              {cmpBusy ? "Đang gửi..." : "Gửi phiếu khiếu nại"}
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   )
 }

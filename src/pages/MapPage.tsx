@@ -26,6 +26,11 @@ import {
 } from "@/lib/recyclerDiscoveryApi"
 import { getCategoryMeta, parsePreparationSteps } from "@/lib/wasteScanApi"
 import { applyOfflineWorkflowToPartners } from "@/lib/recyclerWorkflowApi"
+import {
+  fetchRecyclerReviews,
+  reportReview,
+  type RecyclerReviewsSummaryDto,
+} from "@/lib/reviewComplaintApi"
 
 /** Dữ liệu dự phòng chỉ dùng khi máy chủ Backend chưa được bật để người xem giao diện
  *  vẫn kiểm tra được bản đồ tương tác tại Hòa Lạc - Hà Nội & toàn quốc. */
@@ -398,7 +403,7 @@ export default function MapPage() {
         category,
         radiusKm,
         keyword: debouncedKeyword,
-        sortBy: category ? sortBy : "distance",
+        sortBy: !category && sortBy === "price_desc" ? "distance" : sortBy,
       },
       controller.signal,
     )
@@ -866,18 +871,14 @@ export default function MapPage() {
             />
             <select
               aria-label="Sắp xếp kết quả"
-              value={category ? sortBy : "distance"}
-              disabled={!category}
+              value={!category && sortBy === "price_desc" ? "distance" : sortBy}
               onChange={(e) => setSortBy(e.target.value as RecyclerSortBy)}
-              title={
-                category
-                  ? "Chọn tiêu chí sắp xếp"
-                  : "Chọn một loại phế liệu cụ thể để sắp xếp theo đơn giá"
-              }
-              className="h-9 shrink-0 rounded-lg border border-sage-line bg-surface px-2.5 text-xs font-medium text-ink focus:border-brand focus:outline-none disabled:opacity-60"
+              title="Chọn tiêu chí sắp xếp"
+              className="h-9 shrink-0 rounded-lg border border-sage-line bg-surface px-2.5 text-xs font-medium text-ink focus:border-brand focus:outline-none"
             >
               <option value="distance">Gần nhất</option>
-              <option value="price_desc">Giá cao nhất</option>
+              <option value="rating_desc">Đánh giá cao nhất</option>
+              {category && <option value="price_desc">Giá cao nhất</option>}
             </select>
           </div>
         </header>
@@ -953,12 +954,17 @@ export default function MapPage() {
                       </div>
 
                       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <span className="text-muted">
-                          Giờ mở cửa:{" "}
-                          <b className="text-body">
-                            {p.operatingHours || "08:00 - 18:00"}
-                          </b>
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-amber-700">
+                            ★ {(p.averageRating ?? 0).toFixed(1)} ({p.totalReviews ?? 0})
+                          </span>
+                          <span className="text-muted">
+                            ·{" "}
+                            <b className="text-body">
+                              {p.operatingHours || "08:00 - 18:00"}
+                            </b>
+                          </span>
+                        </div>
                         {matchedMat && (
                           <span className="font-semibold text-brand-deep">
                             {matchedMat.categoryName.replace(/\s*\(.*\)/, "")}:{" "}
@@ -1004,6 +1010,41 @@ function PartnerDetailCard({
   handoverUrl: string
   chatUrl: string
 }) {
+  const [reviewsSummary, setReviewsSummary] = useState<RecyclerReviewsSummaryDto | null>(null)
+  const [reportBusyId, setReportBusyId] = useState<string | null>(null)
+  const [reportFlash, setReportFlash] = useState("")
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setReviewsSummary(null)
+    setReportFlash("")
+    void fetchRecyclerReviews(partner.id, { pageSize: 4 }, controller.signal)
+      .then((res) => {
+        if (!controller.signal.aborted && res.success && res.data) {
+          setReviewsSummary(res.data)
+        }
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [partner.id])
+
+  const handleReportReview = async (reviewId: string) => {
+    const reason = window.prompt("Nhập lý do báo cáo đánh giá vi phạm (tối thiểu 5 ký tự):")
+    if (!reason || reason.trim().length < 5) return
+    setReportBusyId(reviewId)
+    setReportFlash("")
+    try {
+      await reportReview(reviewId, reason.trim())
+      setReportFlash("Đã gửi báo cáo vi phạm đánh giá tới nhân viên kiểm duyệt.")
+    } catch (err) {
+      setReportFlash(
+        err instanceof ApiError ? err.message : "Vui lòng đăng nhập để báo cáo đánh giá vi phạm.",
+      )
+    } finally {
+      setReportBusyId(null)
+    }
+  }
+
   return (
     <div className="mt-1 flex flex-col gap-3 rounded-2xl border border-line bg-surface-2/65 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -1103,6 +1144,52 @@ function PartnerDetailCard({
         <Link to={chatUrl} className="btn-outline h-10 rounded-xl px-3 text-xs">
           Nhắn thương lượng
         </Link>
+      </div>
+
+      <div className="border-t border-line-soft pt-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-xs font-bold tracking-wide text-ink uppercase">
+            Đánh giá từ người dân (U-10)
+          </h3>
+          <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800">
+            ★ {(reviewsSummary?.averageRating ?? partner.averageRating ?? 0).toFixed(2)} (
+            {reviewsSummary?.totalReviews ?? partner.totalReviews ?? 0} lượt)
+          </span>
+        </div>
+
+        {reportFlash && (
+          <p className="mt-2 rounded-lg bg-surface px-2.5 py-1.5 text-[11px] font-medium text-brand-deep">
+            {reportFlash}
+          </p>
+        )}
+
+        {reviewsSummary && reviewsSummary.reviews.items.length > 0 ? (
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {reviewsSummary.reviews.items.map((rv) => (
+              <li key={rv.reviewId} className="rounded-lg border border-line-soft bg-white p-2.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-ink">
+                    {rv.reviewerDisplayName} ·{" "}
+                    <span className="text-amber-700">{"★".repeat(rv.ratingStars)}</span>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={reportBusyId === rv.reviewId}
+                    onClick={() => void handleReportReview(rv.reviewId)}
+                    className="text-[11px] text-muted hover:text-warn hover:underline"
+                  >
+                    Báo cáo vi phạm
+                  </button>
+                </div>
+                {rv.comment && <p className="mt-1 text-body">{rv.comment}</p>}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1.5 text-[11px] text-muted">
+            Chưa có nhận xét nào hiển thị cho cơ sở này.
+          </p>
+        )}
       </div>
     </div>
   )

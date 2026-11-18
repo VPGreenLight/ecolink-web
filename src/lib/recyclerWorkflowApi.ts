@@ -1562,7 +1562,7 @@ export async function disputeHandoverReceipt(
         `/api/v1/handover-requests/${requestId}/receipt/dispute`,
         {
           method: "POST",
-          body: JSON.stringify({ reason, evidenceUrls }),
+          body: JSON.stringify({ reason, evidencePhotoUrls: evidenceUrls }),
         },
       )
       if (res.data) {
