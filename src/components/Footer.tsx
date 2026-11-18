@@ -22,7 +22,7 @@ export default function Footer() {
             </p>
             <p className="mt-4 flex items-center gap-2 text-xs font-semibold text-brand">
               <i className="size-2.5 rounded-full bg-mint" />
-              100% Cam kết minh bạch dữ liệu
+              Dữ liệu thu gom minh bạch
             </p>
           </div>
 

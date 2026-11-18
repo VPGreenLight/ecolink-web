@@ -1,5 +1,7 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react"
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
+import { BadgeCheck, ChevronDown, Clock, MapPin, Navigation, Phone, Search, ShieldCheck, Tag } from "lucide-react"
+import ShinyText from "@/components/ShinyText"
 import LeafletRecyclerMap, {
   type SearchCoordinateSource,
 } from "@/components/LeafletRecyclerMap"
@@ -226,6 +228,16 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return Number((6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(2))
 }
 
+/** Nhãn gọn cho filter loại phế liệu một hàng; `title` giữ nguyên tên đầy đủ. */
+const CATEGORY_SHORT: Record<string, string> = {
+  "": "Tất cả",
+  plastic: "Nhựa",
+  paper: "Giấy báo",
+  cardboard: "Carton",
+  metal: "Kim loại",
+  glass: "Thủy tinh",
+}
+
 /** U-05 Tìm kiếm cơ sở thu gom theo vị trí địa lý trên bản đồ tương tác (Privacy-First Geocoding).
  *
  *  Kết nối trực tiếp với:
@@ -282,6 +294,22 @@ export default function MapPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedDetail, setSelectedDetail] = useState<CollectionPartnerDto | null>(null)
   const [loadingDetail, setLoadingDetail] = useState<boolean>(false)
+
+  // Khi mở một cơ sở, đôn dòng đó lên đầu khung danh sách để detail chiếm trọn tầm nhìn
+  const listScrollRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!selectedId) return
+    const container = listScrollRef.current
+    if (!container) return
+    const li = container.querySelector<HTMLLIElement>(`li[data-partner-id="${selectedId}"]`)
+    if (!li) return
+    const delta = li.getBoundingClientRect().top - container.getBoundingClientRect().top
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    container.scrollTo({
+      top: container.scrollTop + delta,
+      behavior: reduce ? "auto" : "smooth",
+    })
+  }, [selectedId])
 
   // Toạ độ thực sự dùng để vẽ tâm & gửi lên Backend (đã làm mờ lưới ~500m cho GPS, Click-to-Pin và Tìm kiếm)
   const coords = useMemo(() => {
@@ -414,7 +442,7 @@ export default function MapPage() {
         setPartners(list)
         setFallback(list.length === 0 ? (res.data.fallbackSuggestion ?? null) : null)
         setSelectedId((prev) =>
-          prev && list.some((item) => item.id === prev) ? prev : (list[0]?.id ?? null),
+          prev && list.some((item) => item.id === prev) ? prev : null,
         )
       })
       .catch((err) => {
@@ -454,7 +482,7 @@ export default function MapPage() {
           }
           setPartners(filteredOffline)
           setFallback(null)
-          setSelectedId(filteredOffline[0]?.id ?? null)
+          setSelectedId(null)
           setErrorMsg("")
           return
         }
@@ -561,9 +589,9 @@ export default function MapPage() {
   }, [coords.isFuzzed, coords.source])
 
   return (
-    <div className="flex flex-col gap-4 p-4 xl:h-[calc(100dvh-76px)] xl:flex-row">
-      {/* Cột trái: Khung bản đồ tương tác CARTO Voyager + Tìm kiếm 2 tầng + Bảo mật vị trí ~500m */}
-      <section className="relative flex min-h-[500px] flex-1 flex-col overflow-clip rounded-2xl border border-line bg-surface-3">
+    <div className="flex flex-col gap-3 p-3 md:p-4 xl:h-[calc(100dvh-76px)] xl:flex-row">
+      {/* Cột trái: khung bản đồ tương tác + tra cứu khu vực + bảo mật vị trí ~500m */}
+      <section className="relative flex min-h-[520px] flex-1 flex-col overflow-clip rounded-2xl border border-line bg-surface-3">
         <div className="relative flex-1">
           <LeafletRecyclerMap
             centerLat={coords.lat}
@@ -579,15 +607,15 @@ export default function MapPage() {
             onRequestGps={requestBrowserGps}
           />
 
-          {/* Thanh địa chỉ + Công tắc ẩn vị trí (~500m) + Chọn bán kính ở cạnh trên bản đồ */}
-          <div className="pointer-events-none absolute inset-x-3.5 top-3.5 z-30 flex flex-col gap-2">
-            <div className="pointer-events-auto flex flex-wrap items-center gap-2">
-              <div className="flex min-w-[240px] flex-1 items-center gap-2 rounded-xl border border-line bg-white/95 px-3.5 py-2 shadow-[0_2px_6px_rgba(0,0,0,0.08)] backdrop-blur-md">
-                <PinIcon />
+          {/* Thanh điều khiển gọn trên bản đồ: khu vực, quyền riêng tư và bán kính */}
+          <div className="pointer-events-none absolute inset-x-4 top-4 z-30 flex flex-col gap-2">
+            <div className="pointer-events-auto flex flex-wrap items-start gap-2">
+              <div className="flex min-w-[280px] flex-1 items-center gap-2.5 rounded-xl border border-line bg-surface/95 px-3 py-2 shadow-sm backdrop-blur-md">
+                <MapPin className="size-4 shrink-0 text-brand" strokeWidth={1.5} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-semibold text-ink">{coords.label}</p>
-                  <p className="truncate text-[11px] text-muted">
-                    {coordinateSourceLabel} • {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
+                  <p className="truncate text-[13px] font-medium text-ink">{coords.label}</p>
+                  <p className="truncate text-xs text-muted">
+                    {coordinateSourceLabel} · {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
                   </p>
                 </div>
 
@@ -595,37 +623,47 @@ export default function MapPage() {
                   type="button"
                   onClick={() => setPrivacyMode((v) => !v)}
                   data-message-code="BR-MTH-05"
+                  aria-pressed={privacyMode}
                   title="Khi bật, toạ độ GPS và điểm bấm bản đồ được làm tròn sang lưới ~500m trước khi gửi đi"
-                  className={`hidden shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors sm:inline-flex ${
+                  className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2 text-xs font-medium transition-colors ${
                     privacyMode
                       ? "border-brand/35 bg-brand/10 text-brand-deep"
                       : "border-line bg-surface text-muted hover:bg-surface-2"
                   }`}
                 >
-                  <ShieldIcon />
-                  {privacyMode ? "Ẩn vị trí ~500m" : "Vị trí chính xác"}
+                  <ShieldCheck className="size-3.5" strokeWidth={1.5} />
+                  <span className="hidden sm:inline">
+                    {privacyMode ? "Ẩn vị trí ~500m" : "Vị trí chính xác"}
+                  </span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setShowLocationPicker((v) => !v)}
-                  className="shrink-0 rounded-lg bg-brand-deep px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-brand"
+                  aria-expanded={showLocationPicker}
+                  className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg bg-brand-deep px-2.5 text-xs font-medium text-white transition-colors hover:bg-brand"
                 >
-                  {showLocationPicker ? "Đóng" : "Tìm khu vực"}
+                  Đổi khu vực
+                  <ChevronDown
+                    className={`size-3.5 transition-transform ${showLocationPicker ? "rotate-180" : ""}`}
+                    strokeWidth={1.5}
+                  />
                 </button>
               </div>
 
               <div
                 role="group"
                 aria-label="Bán kính tìm kiếm"
-                className="flex shrink-0 items-center gap-1 rounded-xl border border-line bg-white/95 p-1.5 shadow-[0_2px_6px_rgba(0,0,0,0.08)] backdrop-blur-md"
+                className="flex shrink-0 items-center rounded-xl border border-line bg-surface/95 p-1 shadow-sm backdrop-blur-md"
               >
+                <span className="px-2 text-xs text-muted">Bán kính</span>
                 {radiusChoices.map((r) => (
                   <button
                     key={r}
                     type="button"
                     onClick={() => setRadiusKm(r)}
-                    className={`rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                    aria-pressed={radiusKm === r}
+                    className={`h-7 rounded-lg px-2 text-xs font-medium tabular-nums transition-colors ${
                       radiusKm === r
                         ? "bg-brand-deep text-white"
                         : "text-ink hover:bg-surface-2"
@@ -637,57 +675,45 @@ export default function MapPage() {
               </div>
             </div>
 
-            {/* Hộp thoại Tìm kiếm khu vực 2 tầng (Presets tức thì + Nominatim Proxy khi Submit) */}
+            {/* Hộp thoại tra cứu khu vực: gợi ý nội bộ 0ms + Nominatim khi nhấn Enter */}
             {showLocationPicker && (
-              <div className="pointer-events-auto max-h-[380px] overflow-y-auto rounded-xl border border-line bg-white/98 p-3.5 shadow-lg backdrop-blur-md">
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5">
+              <div className="pointer-events-auto max-h-[400px] overflow-y-auto rounded-xl border border-line bg-surface p-4 shadow-lg">
+                <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <p className="text-xs font-bold text-ink">
-                      Tra cứu theo khu vực (Không cần nhập số nhà riêng)
-                    </p>
-                    <p className="text-[11px] text-muted">
-                      Gõ tên Quận/Phường để chọn ngay, hoặc nhấn Enter để tìm chợ/đường bất kỳ trên toàn quốc
+                    <p className="text-[13px] font-medium text-ink">Tra cứu theo khu vực</p>
+                    <p className="mt-0.5 text-xs text-muted">
+                      Gõ tên Quận/Phường để chọn ngay, hoặc nhấn Enter để tìm chợ, đường
                     </p>
                   </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setPrivacyMode((v) => !v)}
-                      className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
-                        privacyMode
-                          ? "border-brand/40 bg-brand/10 text-brand-deep"
-                          : "border-line bg-surface text-body hover:bg-surface-2"
-                      }`}
-                    >
-                      <ShieldIcon />
-                      {privacyMode ? "Đang bật làm mờ ~500m" : "Tắt làm mờ vị trí"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={requestBrowserGps}
-                      disabled={locatingGps}
-                      className="btn-primary h-8 px-3 text-xs"
-                    >
-                      {locatingGps ? "Đang lấy GPS..." : "Dùng GPS hiện tại"}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={requestBrowserGps}
+                    disabled={locatingGps}
+                    className="btn-primary h-8 px-3 text-xs"
+                  >
+                    {locatingGps ? "Đang lấy GPS..." : "Dùng GPS hiện tại"}
+                  </button>
                 </div>
 
                 {/* Ô tìm kiếm địa danh (Submit-only cho Nominatim) */}
-                <form onSubmit={handlePlaceSubmit} className="flex gap-2 pb-2.5">
-                  <input
-                    type="search"
-                    value={placeQuery}
-                    onChange={(e) => {
-                      setPlaceQuery(e.target.value)
-                      if (placeSearchNotice) setPlaceSearchNotice("")
-                    }}
-                    placeholder="Nhập Phường, Quận, Chợ hoặc Ngã tư... rồi nhấn Enter"
-                    aria-label="Nhập tên phường, quận, chợ hoặc ngã tư"
-                    className="h-9 min-w-0 flex-1 rounded-lg border border-sage-line bg-surface px-3 text-xs text-ink placeholder:text-muted focus:border-brand focus:outline-none"
-                  />
+                <form onSubmit={handlePlaceSubmit} className="mt-3 flex gap-2">
+                  <div className="relative min-w-0 flex-1">
+                    <Search
+                      className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted"
+                      strokeWidth={1.5}
+                    />
+                    <input
+                      type="search"
+                      value={placeQuery}
+                      onChange={(e) => {
+                        setPlaceQuery(e.target.value)
+                        if (placeSearchNotice) setPlaceSearchNotice("")
+                      }}
+                      placeholder="Phường, Quận, Chợ hoặc Ngã tư"
+                      aria-label="Nhập tên phường, quận, chợ hoặc ngã tư"
+                      className="h-9 w-full rounded-lg border border-sage-line bg-surface pr-3 pl-8 text-xs text-ink placeholder:text-muted focus:border-brand focus:outline-none"
+                    />
+                  </div>
                   <button
                     type="submit"
                     disabled={searchingPlaces}
@@ -698,23 +724,21 @@ export default function MapPage() {
                 </form>
 
                 {placeSearchNotice && (
-                  <p className="mb-2 rounded-lg border border-line bg-surface-2 px-3 py-1.5 text-xs text-body">
+                  <p className="mt-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-body">
                     {placeSearchNotice}
                   </p>
                 )}
 
                 {/* Kết quả từ Backend Geocoding Proxy (Nominatim / LocationIQ) sau khi nhấn Enter */}
                 {remoteSuggestions.length > 0 && (
-                  <div className="mb-3 rounded-xl border border-brand/25 bg-brand/5 p-2.5">
-                    <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px]">
-                      <span className="font-semibold text-brand-deep">
-                        Kết quả tra cứu địa danh mở rộng
-                      </span>
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-ink">Kết quả tra cứu</span>
                       {placeAttribution && (
-                        <span className="text-[10px] text-muted">{placeAttribution}</span>
+                        <span className="text-[11px] text-muted">{placeAttribution}</span>
                       )}
                     </div>
-                    <div className="flex flex-col gap-1">
+                    <div className="mt-1.5 divide-y divide-line-soft rounded-lg border border-line">
                       {remoteSuggestions.map((item) => (
                         <button
                           key={item.placeId}
@@ -729,9 +753,9 @@ export default function MapPage() {
                             setGpsStatusMsg("")
                             setShowLocationPicker(false)
                           }}
-                          className="rounded-lg border border-line-soft bg-white px-3 py-2 text-left text-xs transition-colors hover:border-brand hover:bg-surface-2"
+                          className="block w-full px-3 py-2 text-left transition-colors hover:bg-surface-2"
                         >
-                          <span className="block font-semibold text-ink">
+                          <span className="block text-xs font-medium text-ink">
                             {item.shortLabel}
                           </span>
                           <span className="block truncate text-[11px] text-muted">
@@ -744,19 +768,18 @@ export default function MapPage() {
                 )}
 
                 {/* Tầng 1: Gợi ý khu vực tức thì (0 HTTP request) */}
-                <div>
-                  <span className="mb-1.5 block text-[11px] font-semibold text-muted">
+                <div className="mt-3">
+                  <span className="text-xs text-muted">
                     {placeQuery.trim()
-                      ? `Khu vực gợi ý nhanh (${instantPresets.length})`
-                      : "Chọn nhanh khu vực phổ biến"}
+                      ? `Khu vực gợi ý (${instantPresets.length})`
+                      : "Khu vực phổ biến"}
                   </span>
                   {instantPresets.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-line px-3 py-2 text-xs text-muted">
-                      Không khớp khu vực có sẵn — bấm nút <b>Tìm địa danh</b> hoặc nhấn{" "}
-                      <b>Enter</b> để tra cứu trên toàn quốc.
+                    <p className="mt-1.5 rounded-lg border border-dashed border-line px-3 py-2 text-xs text-muted">
+                      Không khớp khu vực có sẵn. Nhấn Enter để tra cứu trên toàn quốc.
                     </p>
                   ) : (
-                    <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
                       {instantPresets.map((preset) => {
                         const active =
                           Math.abs(rawAnchor.rawLat - preset.lat) < 0.001 &&
@@ -777,13 +800,11 @@ export default function MapPage() {
                             }}
                             className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
                               active
-                                ? "border-brand bg-brand/10 font-semibold text-brand-deep"
-                                : "border-line-soft bg-surface text-ink hover:bg-surface-2"
+                                ? "border-brand/40 bg-brand/10 text-brand-deep"
+                                : "border-line-soft bg-surface hover:bg-surface-2"
                             }`}
                           >
-                            <span className="block truncate font-semibold">
-                              {preset.label}
-                            </span>
+                            <span className="block truncate font-medium">{preset.label}</span>
                             <span className="block truncate text-[11px] text-muted">
                               {preset.address}
                             </span>
@@ -796,32 +817,11 @@ export default function MapPage() {
               </div>
             )}
 
-            {/* Thanh lọc nhanh theo loại phế liệu (nhận trực tiếp từ bước Quét AI) */}
-            <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
-              {DISCOVERY_CATEGORIES.map((c) => {
-                const on = category === c.value
-                return (
-                  <button
-                    key={c.value || "all"}
-                    type="button"
-                    onClick={() => changeCategory(c.value)}
-                    className={`rounded-full border px-3 py-1 text-[11px] font-semibold shadow-2xs backdrop-blur-md transition-colors ${
-                      on
-                        ? "border-brand-deep bg-brand-deep text-white"
-                        : "border-line bg-white/92 text-ink hover:bg-white"
-                    }`}
-                  >
-                    {c.label}
-                  </button>
-                )
-              })}
-            </div>
-
             {gpsStatusMsg && (
               <p
                 role="status"
                 data-message-code="MSG-MTH-02"
-                className="pointer-events-auto rounded-xl border border-warn/30 bg-white/95 px-3 py-2 text-xs text-warn shadow-xs"
+                className="pointer-events-auto rounded-xl border border-warn/30 bg-surface px-3 py-2 text-xs text-warn"
               >
                 {gpsStatusMsg}
               </p>
@@ -830,45 +830,63 @@ export default function MapPage() {
         </div>
       </section>
 
-      {/* Cột phải: Danh sách cơ sở thu mua Verified + Online, chi tiết bảng giá & Fallback MSG-MTH-01 */}
-      <section className="flex min-h-[580px] w-full shrink-0 flex-col overflow-clip rounded-2xl border border-line bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)] xl:h-full xl:w-[480px]">
-        <header className="flex shrink-0 flex-col gap-3 border-b border-line px-5 py-4">
-          <div className="flex items-start justify-between gap-2">
+      {/* Cột phải: danh sách cơ sở đã xác minh, mở rộng tại chỗ để xem bảng giá */}
+      <section className="flex min-h-[580px] w-full shrink-0 flex-col overflow-clip rounded-2xl border border-line bg-surface xl:h-full xl:w-[460px]">
+        <header className="shrink-0 border-b border-line px-5 pt-4 pb-3">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <h1 className="text-lg leading-6 font-bold text-ink">
+              <h1 className="text-[19px] leading-6 font-semibold text-ink">
                 Cơ sở thu mua gần bạn
               </h1>
-              <p className="mt-0.5 text-xs text-muted">
-                Chỉ hiển thị cơ sở đã xác minh (Verified) và đang mở cửa nhận đơn
-              </p>
+              <p className="mt-1 text-xs text-muted">Đã xác minh và đang mở cửa nhận đơn</p>
             </div>
-            <span
-              className={`chip shrink-0 ${
-                isOfflineDemo ? "bg-warn/10 text-warn" : "bg-surface-2 text-brand-deep"
-              }`}
-            >
-              <i
-                className={`size-1.5 rounded-full ${
-                  isOfflineDemo ? "bg-warn" : "bg-brand"
-                }`}
-              />
-              {loading
-                ? "Đang tìm..."
-                : isOfflineDemo
-                  ? `${partners.length} mẫu Offline`
-                  : `${partners.length} mở cửa`}
+            <span className="shrink-0 pt-0.5 text-xs tabular-nums text-muted">
+              {loading ? "Đang tìm" : `${partners.length} cơ sở`}
             </span>
           </div>
 
-          <div className="flex gap-2">
-            <input
-              type="search"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              placeholder="Lọc theo tên cơ sở hoặc đường, quận..."
-              aria-label="Lọc tên cơ sở hoặc địa chỉ"
-              className="h-9 min-w-0 flex-1 rounded-lg border border-sage-line bg-surface px-3 text-xs text-ink placeholder:text-muted focus:border-brand focus:outline-none"
-            />
+          <div
+            role="group"
+            aria-label="Lọc theo loại phế liệu"
+            className="mt-2.5 grid grid-cols-6 gap-1"
+          >
+            {DISCOVERY_CATEGORIES.map((c) => {
+              const on = category === c.value
+              const short = CATEGORY_SHORT[c.value] ?? c.label.replace(/\s*\(.*\)/, "")
+              return (
+                <button
+                  key={c.value || "all"}
+                  type="button"
+                  onClick={() => changeCategory(c.value)}
+                  aria-pressed={on}
+                  title={c.label.replace(/\s*\(.*\)/, "")}
+                  className={`h-7 truncate rounded-lg px-1 text-[11px] transition-colors ${
+                    on
+                      ? "bg-brand-deep font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
+                      : "font-medium text-body hover:bg-surface-2 hover:text-ink"
+                  }`}
+                >
+                  {short}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="mt-2 flex gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search
+                className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted"
+                strokeWidth={1.5}
+              />
+              <input
+                type="search"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder="Tên cơ sở hoặc đường, quận"
+                aria-label="Lọc tên cơ sở hoặc địa chỉ"
+                className="h-9 w-full rounded-lg border border-sage-line bg-surface pr-3 pl-8 text-xs text-ink placeholder:text-muted focus:border-brand focus:outline-none"
+              />
+            </div>
             <select
               aria-label="Sắp xếp kết quả"
               value={!category && sortBy === "price_desc" ? "distance" : sortBy}
@@ -881,113 +899,212 @@ export default function MapPage() {
               {category && <option value="price_desc">Giá cao nhất</option>}
             </select>
           </div>
+
+          {isOfflineDemo && (
+            <p className="mt-2 flex items-center gap-2 text-[11px] text-muted">
+              <span className="size-1.5 rounded-full bg-warn" />
+              Đang hiển thị dữ liệu mẫu vì máy chủ chưa phản hồi
+            </p>
+          )}
         </header>
 
-        <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+        <div ref={listScrollRef} className="flex-1 overflow-y-auto">
           {errorMsg && (
             <div
               role="alert"
-              className="rounded-xl border border-warn/30 bg-warn/5 p-3.5 text-xs leading-5 text-warn"
+              className="m-4 rounded-xl border border-warn/30 bg-warn/5 p-3.5 text-xs leading-5 text-warn"
             >
               {errorMsg}
             </div>
           )}
 
           {loading ? (
-            <div className="space-y-3">
-              <div className="pulse-bar h-20 rounded-xl bg-surface-2" />
-              <div className="pulse-bar h-20 rounded-xl bg-surface-2" />
-              <div className="pulse-bar h-44 rounded-xl bg-surface-2" />
+            <div className="space-y-1 p-4">
+              <div className="pulse-bar h-16 rounded-lg bg-surface-2" />
+              <div className="pulse-bar h-16 rounded-lg bg-surface-2" />
+              <div className="pulse-bar h-16 rounded-lg bg-surface-2" />
             </div>
           ) : partners.length === 0 ? (
-            <FallbackPanel
-              radiusKm={radiusKm}
-              category={category}
-              fallback={fallback}
-              onExpandRadius={(nextRadius) => setRadiusKm(nextRadius)}
-              onClearFilters={() => {
-                setKeyword("")
-                changeCategory("")
-              }}
-            />
+            <div className="p-4">
+              <FallbackPanel
+                radiusKm={radiusKm}
+                category={category}
+                fallback={fallback}
+                onExpandRadius={(nextRadius) => setRadiusKm(nextRadius)}
+                onClearFilters={() => {
+                  setKeyword("")
+                  changeCategory("")
+                }}
+              />
+            </div>
           ) : (
-            <>
-              {/* Danh sách chọn nhanh các cơ sở trong bán kính */}
-              <div className="flex flex-col gap-2">
-                {partners.map((p) => {
-                  const isSelected = p.id === activePartner?.id
-                  const matchedMat = category
-                    ? p.materials.find(
-                        (m) => m.categoryCode.toLowerCase() === category,
-                      )
-                    : p.materials[0]
+            <ul className="divide-y divide-line-soft">
+              {partners.map((p, index) => {
+                const isSelected = p.id === activePartner?.id
+                const matchedMat = category
+                  ? p.materials.find((m) => m.categoryCode.toLowerCase() === category)
+                  : undefined
+                const minPrice =
+                  p.materials.length > 0
+                    ? Math.min(...p.materials.map((m) => m.pricePerKg))
+                    : 0
 
-                  return (
+                return (
+                  <li
+                    key={p.id}
+                    data-partner-id={p.id}
+                    className={
+                      isSelected
+                        ? "bg-surface-2/70"
+                        : p.isFeatured
+                          ? "bg-mint/8"
+                          : ""
+                    }
+                  >
                     <button
-                      key={p.id}
                       type="button"
-                      onClick={() => setSelectedId(p.id)}
-                      className={`w-full rounded-xl border p-3 text-left transition-colors ${
-                        isSelected
-                          ? "border-brand bg-brand/6 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
-                          : "border-line bg-surface hover:bg-surface-2"
-                      }`}
+                      onClick={() =>
+                        setSelectedId((prev) => (prev === p.id ? null : p.id))
+                      }
+                      aria-expanded={isSelected}
+                      className="w-full px-5 py-3 text-left transition-colors hover:bg-mint/10"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="flex items-center gap-1.5 text-sm font-bold text-ink">
-                            <span className="truncate">{p.facilityName}</span>
-                            {p.hasVerifiedBadge && <VerifiedIcon />}
-                            {p.isFeatured && (
-                              <span className="inline-flex shrink-0 items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 ring-1 ring-amber-300/70">
-                                Pro · Nổi bật
+                      <div className="flex items-start gap-3">
+                        <span
+                          className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border text-[11px] font-semibold tabular-nums ${
+                            isSelected
+                              ? "border-brand-deep bg-brand-deep text-white"
+                              : p.isFeatured
+                                ? "border-brand/40 bg-brand/10 text-brand-deep"
+                                : "border-line bg-surface text-muted"
+                          }`}
+                        >
+                          {index + 1}
+                        </span>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate text-sm leading-5 font-semibold text-ink">
+                              {p.facilityName}
+                            </span>
+                            {p.hasVerifiedBadge && (
+                              <span
+                                role="img"
+                                aria-label="Đã xác minh"
+                                title="Đã xác minh"
+                                className="sheen inline-flex shrink-0 items-center justify-center"
+                              >
+                                <BadgeCheck
+                                  className="size-4 text-brand"
+                                  strokeWidth={1.5}
+                                  aria-hidden="true"
+                                />
                               </span>
                             )}
-                          </p>
-                          <p className="mt-0.5 truncate text-xs text-muted">
-                            {p.address}
-                          </p>
-                        </div>
-                        <span className="shrink-0 rounded-full bg-surface-3 px-2.5 py-0.5 text-[11px] font-semibold text-brand-deep">
-                          {formatDistance(p.distanceKm)}
-                        </span>
-                      </div>
+                            {p.isFeatured && (
+                              <span className="inline-flex shrink-0 items-center rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5">
+                                <ShinyText
+                                  text="Đối tác Pro"
+                                  color="#006516"
+                                  shineColor="#ffffff"
+                                  speed={2.4}
+                                  shineWidth={35}
+                                  softness={0.65}
+                                  trigger="loop"
+                                  className="text-[10px] font-semibold"
+                                />
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-0.5 truncate text-xs text-muted">{p.address}</p>
 
-                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-semibold text-amber-700">
-                            ★ {(p.averageRating ?? 0).toFixed(1)} ({p.totalReviews ?? 0})
-                          </span>
-                          <span className="text-muted">
-                            ·{" "}
-                            <b className="text-body">
-                              {p.operatingHours || "08:00 - 18:00"}
-                            </b>
-                          </span>
+                          <dl className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+                            <div className="inline-flex items-center gap-1 font-semibold tabular-nums text-amber-700">
+                              <dt className="sr-only">Đánh giá</dt>
+                              <dd>
+                                ★ {(p.averageRating ?? 0).toFixed(1)} ({p.totalReviews ?? 0})
+                              </dd>
+                            </div>
+                            <div className="inline-flex items-center gap-1.5">
+                              <Clock
+                                className="size-3.5 text-muted"
+                                strokeWidth={1.5}
+                                aria-hidden="true"
+                              />
+                              <dt className="sr-only">Giờ mở cửa</dt>
+                              <dd className="font-medium tabular-nums text-ink">
+                                {p.operatingHours || "08:00 - 18:00"}
+                              </dd>
+                            </div>
+                            <div className="inline-flex items-center gap-1.5">
+                              <Navigation
+                                className="size-3.5 text-muted"
+                                strokeWidth={1.5}
+                                aria-hidden="true"
+                              />
+                              <dt className="sr-only">Khoảng cách ước tính</dt>
+                              <dd className="font-medium tabular-nums text-ink">
+                                {formatDistance(p.distanceKm)}
+                              </dd>
+                            </div>
+                          </dl>
+
+                          {matchedMat ? (
+                            <p className="mt-1.5 inline-flex items-center gap-1.5 text-[12px] font-semibold text-brand-deep">
+                              <Tag
+                                className="size-3.5"
+                                strokeWidth={1.5}
+                                aria-hidden="true"
+                              />
+                              <span className="tabular-nums">
+                                {matchedMat.categoryName.replace(/\s*\(.*\)/, "")}:{" "}
+                                {formatVnd(matchedMat.pricePerKg)}/kg
+                              </span>
+                            </p>
+                          ) : (
+                            <p className="mt-1.5 text-[12px]">
+                              {minPrice > 0 ? (
+                                <>
+                                  <span className="font-semibold tabular-nums text-ink">
+                                    từ {formatVnd(minPrice)}/kg
+                                  </span>
+                                  <span className="text-muted">
+                                    {" "}
+                                    · {p.materials.length} loại phế liệu
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="text-muted">
+                                  {p.materials.length} loại phế liệu
+                                </span>
+                              )}
+                            </p>
+                          )}
                         </div>
-                        {matchedMat && (
-                          <span className="font-semibold text-brand-deep">
-                            {matchedMat.categoryName.replace(/\s*\(.*\)/, "")}:{" "}
-                            {formatVnd(matchedMat.pricePerKg)}/kg
-                          </span>
-                        )}
+
+                        <ChevronDown
+                          className={`mt-0.5 size-4 shrink-0 text-muted transition-transform ${
+                            isSelected ? "rotate-180" : ""
+                          }`}
+                          strokeWidth={1.5}
+                          aria-hidden="true"
+                        />
                       </div>
                     </button>
-                  )
-                })}
-              </div>
 
-              {/* Chi tiết công khai & bảng giá niêm yết của cơ sở đang chọn */}
-              {activePartner && (
-                <PartnerDetailCard
-                  partner={activePartner}
-                  highlightedCategory={category}
-                  loadingDetail={loadingDetail}
-                  handoverUrl={handoverUrl}
-                  chatUrl={chatUrl}
-                />
-              )}
-            </>
+                    {isSelected && activePartner && (
+                      <PartnerDetail
+                        partner={activePartner}
+                        highlightedCategory={category}
+                        loadingDetail={loadingDetail}
+                        handoverUrl={handoverUrl}
+                        chatUrl={chatUrl}
+                      />
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
           )}
         </div>
       </section>
@@ -997,7 +1114,7 @@ export default function MapPage() {
 
 /* ---------------------------------------------------------------- Chi tiết cơ sở & bảng giá */
 
-function PartnerDetailCard({
+function PartnerDetail({
   partner,
   highlightedCategory,
   loadingDetail,
@@ -1046,104 +1163,84 @@ function PartnerDetailCard({
   }
 
   return (
-    <div className="mt-1 flex flex-col gap-3 rounded-2xl border border-line bg-surface-2/65 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <h2 className="truncate text-base font-bold text-ink">
-              {partner.facilityName}
-            </h2>
-            {partner.hasVerifiedBadge && <VerifiedIcon />}
-            {partner.isFeatured && (
-              <span className="inline-flex shrink-0 items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 ring-1 ring-amber-300/70">
-                Đối tác Pro
-              </span>
+    <div className="pr-5 pb-4 pl-14">
+      <div className="border-t border-line-soft pt-3">
+        {(partner.description || partner.representativeName || partner.contactPhone) && (
+          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5">
+            <div className="min-w-0 flex-1">
+              {partner.description && (
+                <p className="text-xs leading-5 text-body">{partner.description}</p>
+              )}
+              {partner.representativeName && (
+                <p className="mt-0.5 text-[11px] text-muted">
+                  Đại diện: {partner.representativeName}
+                </p>
+              )}
+            </div>
+            {partner.contactPhone && (
+              <a
+                href={`tel:${partner.contactPhone}`}
+                title={`Gọi ${partner.contactPhone}`}
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2"
+              >
+                <Phone className="size-3.5" strokeWidth={1.5} />
+                {partner.contactPhone}
+              </a>
             )}
           </div>
-          <p className="mt-0.5 text-xs text-body">{partner.address}</p>
-          {partner.representativeName && (
-            <p className="mt-0.5 text-[11px] text-muted">
-              Đại diện: {partner.representativeName}
-            </p>
-          )}
-        </div>
-
-        {partner.contactPhone && (
-          <a
-            href={`tel:${partner.contactPhone}`}
-            title={`Gọi ${partner.contactPhone}`}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-white px-2.5 text-xs font-semibold text-ink hover:bg-surface-2"
-          >
-            <PhoneIcon />
-            {partner.contactPhone}
-          </a>
         )}
-      </div>
+        <div className="mt-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-ink">Bảng giá thu mua</p>
+            {loadingDetail && <span className="text-[11px] text-muted">Đang cập nhật</span>}
+          </div>
 
-      {partner.description && (
-        <p className="text-xs leading-5 text-body">{partner.description}</p>
-      )}
-
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-lg border border-line-soft bg-white px-3 py-2">
-          <span className="block text-[11px] text-muted">Khoảng cách ước tính</span>
-          <b className="text-ink">Cách bạn {formatDistance(partner.distanceKm)}</b>
+          <ul className="mt-1">
+            {partner.materials.map((m) => {
+              const isHighlighted =
+                highlightedCategory !== "" &&
+                m.categoryCode.toLowerCase() === highlightedCategory
+              return (
+                <li
+                  key={m.categoryCode}
+                  className={`flex items-baseline justify-between gap-3 border-b border-line-soft py-2 last:border-0 ${
+                    isHighlighted ? "-mx-2 rounded-md bg-brand/10 px-2" : ""
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p
+                      className={`text-[13px] ${
+                        isHighlighted ? "font-semibold text-ink" : "font-medium text-ink"
+                      }`}
+                    >
+                      {m.categoryName.replace(/\s*\(.*\)/, "")}
+                    </p>
+                    <p className="mt-0.5 truncate text-[11px] text-muted">
+                      Tối thiểu {m.minimumQuantityKg} kg
+                      {m.collectionConditions ? ` · ${m.collectionConditions}` : ""}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 text-[13px] font-semibold tabular-nums ${
+                      isHighlighted ? "text-brand-deep" : "text-ink"
+                    }`}
+                  >
+                    {formatVnd(m.pricePerKg)}/kg
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
         </div>
-        <div className="rounded-lg border border-line-soft bg-white px-3 py-2">
-          <span className="block text-[11px] text-muted">Khung giờ hoạt động</span>
-          <b className="text-ink">{partner.operatingHours || "08:00 - 18:00"}</b>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Link to={handoverUrl} className="btn-primary h-9 rounded-lg px-3 text-xs">
+            Đặt lịch bàn giao
+          </Link>
+          <Link to={chatUrl} className="btn-outline h-9 rounded-lg px-3 text-xs">
+            Nhắn thương lượng
+          </Link>
         </div>
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-bold tracking-wide text-ink uppercase">
-            Bảng giá thu mua đang áp dụng
-          </h3>
-          {loadingDetail && (
-            <span className="text-[11px] text-muted">Đang cập nhật giá...</span>
-          )}
-        </div>
-
-        <ul className="mt-2 flex flex-col gap-1.5">
-          {partner.materials.map((m) => {
-            const isHighlighted =
-              highlightedCategory !== "" &&
-              m.categoryCode.toLowerCase() === highlightedCategory
-            return (
-              <li
-                key={m.categoryCode}
-                className={`rounded-lg border px-3 py-2 text-xs ${
-                  isHighlighted
-                    ? "border-brand bg-mint/18"
-                    : "border-line-soft bg-white"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-ink">{m.categoryName}</span>
-                  <b className="tabular-nums text-brand-deep">
-                    {formatVnd(m.pricePerKg)} / kg
-                  </b>
-                </div>
-                <div className="mt-0.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted">
-                  <span>Tối thiểu: {m.minimumQuantityKg} kg</span>
-                  {m.collectionConditions && (
-                    <span className="truncate">{m.collectionConditions}</span>
-                  )}
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 pt-1">
-        <Link to={handoverUrl} className="btn-primary h-10 rounded-xl px-3 text-xs">
-          Đặt lịch bàn giao
-        </Link>
-        <Link to={chatUrl} className="btn-outline h-10 rounded-xl px-3 text-xs">
-          Nhắn thương lượng
-        </Link>
       </div>
 
       <div className="border-t border-line-soft pt-3">
@@ -1221,13 +1318,13 @@ function FallbackPanel({
   return (
     <div
       data-message-code="MSG-MTH-01"
-      className="flex flex-col gap-3 rounded-2xl border border-line bg-surface-2/70 p-4"
+      className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4"
     >
       <div>
-        <span className="inline-block rounded-full bg-warn/12 px-2.5 py-0.5 text-[11px] font-semibold text-warn">
-          Chưa có cơ sở mở cửa trong {radiusKm} km
-        </span>
-        <p className="mt-2 text-sm leading-6 text-ink">
+        <p className="text-sm font-medium text-ink">
+          Không có cơ sở trong {radiusKm} km
+        </p>
+        <p className="mt-1 text-xs leading-5 text-body">
           {fallback?.guidanceMessage ||
             "Không tìm thấy cơ sở thu mua rác gần bạn trong bán kính hiện tại. Bạn có thể mở rộng bán kính tìm kiếm hoặc xem hướng dẫn xử lý bên dưới."}
         </p>
@@ -1240,7 +1337,7 @@ function FallbackPanel({
             onClick={() => onExpandRadius(expanded)}
             className="btn-primary h-9 px-3.5 text-xs"
           >
-            Mở rộng bán kính lên {expanded} km
+            Mở rộng lên {expanded} km
           </button>
         )}
         {category && (
@@ -1255,12 +1352,13 @@ function FallbackPanel({
       </div>
 
       {guide && (
-        <div className="rounded-xl border border-line bg-white p-3.5 text-xs leading-5">
-          <p className="font-bold text-ink">
-            Hướng dẫn thùng rác công cộng ({guide.categoryName})
+        <div className="rounded-lg bg-surface-2 p-3.5 text-xs leading-5">
+          <p className="font-medium text-ink">
+            Thùng rác công cộng cho {guide.categoryName}
           </p>
-          <p className="mt-1 font-semibold text-brand-deep">
-            Màu thùng rác quy định: {guide.standardBinColor}
+          <p className="mt-1 text-body">
+            Màu quy định:{" "}
+            <span className="font-medium text-ink">{guide.standardBinColor}</span>
           </p>
           {prepSteps.length > 0 && (
             <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-body">
@@ -1270,21 +1368,16 @@ function FallbackPanel({
             </ul>
           )}
           {guide.hazardWarning && (
-            <p className="mt-1.5 text-warn">
-              <b>Lưu ý:</b> {guide.hazardWarning}
-            </p>
+            <p className="mt-1.5 text-warn">{guide.hazardWarning}</p>
           )}
         </div>
       )}
 
       {(fallback?.allowCommunityPickupPost ?? true) && (
-        <div className="rounded-xl border border-brand/25 bg-brand/6 p-3.5 text-xs">
-          <p className="font-semibold text-ink">
-            Đăng yêu cầu thu gom chờ đối tác nhận đơn
-          </p>
+        <div className="rounded-lg border border-line p-3.5 text-xs">
+          <p className="font-medium text-ink">Đăng yêu cầu chờ đối tác nhận đơn</p>
           <p className="mt-0.5 text-body">
-            Bạn vẫn có thể tạo lịch hẹn trước; cơ sở thu gom quanh khu vực sẽ nhận được
-            thông báo ngay khi bật trực tuyến.
+            Bạn vẫn có thể tạo lịch hẹn trước; cơ sở quanh khu vực sẽ nhận thông báo khi mở cửa.
           </p>
           <Link to="/user/handover" className="btn-outline mt-2.5 h-9 px-3.5 text-xs">
             Tạo yêu cầu thu gom trước
@@ -1295,59 +1388,3 @@ function FallbackPanel({
   )
 }
 
-/* ---------------------------------------------------------------- Icons */
-
-const stroke = {
-  stroke: "currentColor",
-  strokeWidth: 1.5,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-}
-
-function PinIcon() {
-  return (
-    <svg width="14" height="15" viewBox="0 0 14 15" fill="none" aria-hidden="true" className="shrink-0 text-brand">
-      <path d="M7 14s5-4.2 5-8A5 5 0 002 6c0 3.8 5 8 5 8z" {...stroke} />
-      <circle cx="7" cy="6" r="1.8" {...stroke} />
-    </svg>
-  )
-}
-
-function ShieldIcon() {
-  return (
-    <svg width="13" height="14" viewBox="0 0 14 15" fill="none" aria-hidden="true" className="shrink-0">
-      <path d="M7 1.5L2 3.6v3.7c0 3.2 2.1 5.6 5 6.4 2.9-.8 5-3.2 5-6.4V3.6L7 1.5z" {...stroke} />
-      <path d="M5.1 7.6l1.3 1.3 2.6-2.7" {...stroke} />
-    </svg>
-  )
-}
-
-function VerifiedIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-label="Tích xanh đã xác minh (Gói Pro)"
-      className="shrink-0 text-[#0284c7]"
-    >
-      <circle cx="8" cy="8" r="7" fill="#0284c7" />
-      <path
-        d="M5.4 8.2l1.8 1.8 3.4-3.6"
-        stroke="#ffffff"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function PhoneIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true" className="text-brand-deep">
-      <path d="M4 1.8l2 2.4-1.4 1.4c.7 1.5 1.9 2.7 3.4 3.4l1.4-1.4 2.4 2c.2.2.2.6 0 .8l-1 1C10 12.4 7.4 9.8 6.6 8.6L3.2 6.8c-.2-.2-.2-.6 0-.8l1-1c.2-.2.6-.2.8 0z" {...stroke} />
-    </svg>
-  )
-}
