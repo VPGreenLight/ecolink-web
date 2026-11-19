@@ -178,9 +178,9 @@ export default function AdminHome() {
       </StatRow>
 
       <p className="text-sm text-body">
-        Trong {periodLabel} qua, EcoLink ghi nhận doanh thu dịch vụ &amp; phí nền tảng{" "}
-        <b className="tabular-nums text-ink">{fmtVnd(summary.fee)}</b> từ{" "}
-        <b className="tabular-nums text-ink">{fmtInt(summary.handovers)}</b> giao dịch hoàn tất.
+        Trong {periodLabel} qua, EcoLink ghi nhận doanh thu gói dịch vụ VietQR{" "}
+        <b className="tabular-nums text-ink">{fmtVnd(summary.fee)}</b> và tổng hợp{" "}
+        <b className="tabular-nums text-ink">{fmtInt(summary.handovers)}</b> biên nhận hoàn tất.
       </p>
 
       <section>

@@ -526,7 +526,7 @@ export async function getAdminKpiSummary(
       completedHandovers: d.completedHandoversCount,
       recycledWeightKg: d.totalRecycledWeightKg,
       grossMerchandiseValueVnd: d.grossTradeValueVnd,
-      platformFeeRevenueVnd: Math.round(d.grossTradeValueVnd * 0.08),
+      platformFeeRevenueVnd: 0,
       vietQrServiceRevenueVnd: d.vietQrServiceRevenueVnd,
       co2SavedKg: Math.round(d.totalRecycledWeightKg * 1.5),
       aiAccuracyPercent: d.aiBenchmark?.overallAccuracyPercent ?? 94.6,

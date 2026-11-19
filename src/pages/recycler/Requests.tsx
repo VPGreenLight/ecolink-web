@@ -420,9 +420,7 @@ export default function Requests() {
       </section>
 
       <p className="max-w-[70ch] text-sm leading-6 text-muted">
-        Sau khi tạo biên nhận và người dùng xác nhận khối lượng, tiền về tài khoản
-        của họ và bạn bị trừ phí nền tảng trên mỗi giao dịch. Các khung giờ đã
-        chốt: {TIME_SLOTS.join(" · ")}.
+        Sau khi tạo biên nhận và người dùng xác nhận khối lượng, biên nhận sẽ được lưu trữ để hai bên đối chiếu và ghi nhận Điểm Xanh. Các khung giờ thu gom: {TIME_SLOTS.join(" · ")}.
       </p>
 
       {complaintOrder && (

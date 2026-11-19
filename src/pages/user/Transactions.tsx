@@ -55,7 +55,7 @@ export default function Transactions() {
       <PageHead
         eyebrow="DÒNG TIỀN"
         title="Lịch sử tiền vào tài khoản"
-        body="Mỗi lần bàn giao thành công tạo ra ba dòng: người thu gom chuyển vào, phí nền tảng giữ lại, và khoản tiền bị bắn về bạn."
+        body="Lưu trữ biên nhận các lượt bàn giao đã xác nhận, tổng giá trị đối tác thanh toán và Điểm Xanh tích lũy của bạn."
       />
 
       <div className="grid gap-4 sm:grid-cols-3">

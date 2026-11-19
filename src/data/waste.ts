@@ -134,12 +134,11 @@ export function estimate(items: { wasteId: string; kg: number }[]) {
   return { lines, gross }
 }
 
-/** Phí nền tảng (A-10) trích trên mỗi giao dịch thành công. Đặt ở đây vì cả
- *  biên nhận (U-10) và đối soát (A-11) đều cần đúng một con số. */
-export const FEE_RATE = 0.08
+/** Hệ thống chỉ hỗ trợ lưu trữ biên nhận đối chiếu giao dịch, không thu phí 8%
+ *  trên giá trị bàn giao phế liệu (`FEE_RATE = 0`). */
+export const FEE_RATE = 0
 
-/** Giải ngân (SYS-01): PayOS bắn tiền cho User sau khi Recycler đã Pay-in.
- *  Phí do nền tảng giữ lại, phần còn lại về tài khoản ngân hàng của User. */
+/** Tính toán giá trị ghi nhận biên nhận: đối tác và người dùng đối chiếu đủ 100% gross. */
 export function settle(gross: number) {
   const fee = Math.round(gross * FEE_RATE)
   return { gross, fee, net: gross - fee }

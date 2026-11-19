@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
@@ -8,6 +8,7 @@ import {
   getInitialStaffApplications,
   type StaffApplicationView,
 } from "@/lib/recyclerWorkflowApi"
+import { hasLiveBackendAuth } from "@/lib/session"
 
 /** S-04 Thẩm định hồ sơ đối tác thu mua (kèm bản đồ đối chiếu vị trí ghim kho bãi `BR-MTH-01`).
  *
@@ -16,8 +17,10 @@ import {
  *  Khi phê duyệt, hồ sơ được kích hoạt và hiển thị ngay trên bản đồ tìm kiếm `/map`. */
 export default function Applications() {
   const [list, setList] = useState<StaffApplicationView[]>(() =>
-    getInitialStaffApplications(),
+    hasLiveBackendAuth() ? [] : getInitialStaffApplications(),
   )
+  const [loading, setLoading] = useState<boolean>(() => hasLiveBackendAuth())
+  const [refreshing, setRefreshing] = useState(false)
   const [fromBackend, setFromBackend] = useState(false)
   const [inspectingMapId, setInspectingMapId] = useState<string | null>(null)
   const [rejectingId, setRejectingId] = useState<string | null>(null)
@@ -26,17 +29,39 @@ export default function Applications() {
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [flash, setFlash] = useState("")
 
-  useEffect(() => {
-    let active = true
-    void fetchStaffApplications().then((res) => {
-      if (!active) return
+  const reloadApplications = useCallback(async (isManual = false) => {
+    if (isManual) setRefreshing(true)
+    try {
+      const res = await fetchStaffApplications()
       setList(res.items)
       setFromBackend(res.fromBackend)
-      const firstPending = res.items.find((x) => x.status === "pending")
-      if (firstPending) {
-        setInspectingMapId(firstPending.id)
-      }
-    })
+      setInspectingMapId((prev) => {
+        if (prev && res.items.some((x) => x.id === prev && x.status === "pending")) {
+          return prev
+        }
+        return res.items.find((x) => x.status === "pending")?.id ?? null
+      })
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    void fetchStaffApplications()
+      .then((res) => {
+        if (!active) return
+        setList(res.items)
+        setFromBackend(res.fromBackend)
+        const firstPending = res.items.find((x) => x.status === "pending")
+        if (firstPending) {
+          setInspectingMapId(firstPending.id)
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
     return () => {
       active = false
     }
@@ -91,9 +116,19 @@ export default function Applications() {
         title="Thẩm định hồ sơ cơ sở thu mua"
         body="Chỉ duyệt khi giấy phép còn hiệu lực và vị trí ghim kho bãi trùng khớp với địa chỉ thu gom thực tế. Từ chối bắt buộc ghi rõ lý do để đối tác bổ sung."
         action={
-          <span className="rounded-full border border-line bg-surface-2 px-3 py-1.5 text-xs font-semibold text-muted">
-            {fromBackend ? "Nguồn: PostgreSQL + PostGIS" : "Nguồn: Hàng đợi trình duyệt"}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-line bg-surface-2 px-3 py-1.5 text-xs font-semibold text-muted">
+              {fromBackend ? "Nguồn: PostgreSQL + PostGIS" : "Nguồn: Hàng đợi trình duyệt"}
+            </span>
+            <button
+              type="button"
+              disabled={loading || refreshing}
+              onClick={() => void reloadApplications(true)}
+              className="btn-outline h-8 px-3 text-xs"
+            >
+              {refreshing ? "Đang tải..." : "Làm mới danh sách"}
+            </button>
+          </div>
         }
       />
 
@@ -110,7 +145,11 @@ export default function Applications() {
 
       <section>
         <h2 className="text-base font-bold text-ink">Chờ thẩm định ({pending.length})</h2>
-        {pending.length === 0 ? (
+        {loading ? (
+          <p className="card mt-3 px-5 py-8 text-center text-sm text-muted">
+            Đang tải danh sách hồ sơ từ máy chủ...
+          </p>
+        ) : pending.length === 0 ? (
           <p className="card mt-3 px-5 py-8 text-center text-sm text-muted">
             Không có hồ sơ nào đang chờ.
           </p>
@@ -129,10 +168,11 @@ export default function Applications() {
                       <p className="mt-0.5 text-[13px] text-muted">
                         {a.id} · {a.date} · {a.address}
                       </p>
-                      {(a.representativeName || a.phone) && (
+                      {(a.representativeName || a.phone || a.email) && (
                         <p className="mt-0.5 text-xs text-body">
                           {a.representativeName && <span>Đại diện: {a.representativeName}</span>}
                           {a.phone && <span className="ml-3 tabular-nums">SĐT: {a.phone}</span>}
+                          {a.email && <span className="ml-3">Email: {a.email}</span>}
                         </p>
                       )}
                     </div>

@@ -2,15 +2,25 @@ import {
   ApiError,
   apiRequest,
   clearSessionOnUnauthorized,
+  ensureActiveAuthSession,
   rotateRefreshTokenSingleFlight,
 } from "@/lib/api"
 import type { CollectionPartnerDto } from "@/lib/recyclerDiscoveryApi"
 import {
+  getAccessToken,
   getRefreshToken,
   getSession,
+  hasLiveBackendAuth,
   isStoredAccessTokenExpired,
   type Role,
 } from "@/lib/session"
+import {
+  buildScheduledAtIso,
+  formatCombinedAppointmentSlot,
+  formatIsoDateToVi,
+  getDefaultAppointmentDateAndSlot,
+  splitCombinedAppointmentSlot,
+} from "@/data/handover"
 import { APPLICATIONS, type Application } from "@/data/ops"
 
 /* ------------------------------------------------------------------ DTOs */
@@ -175,6 +185,49 @@ export interface ReceiptDto {
   canConfirm: boolean
   recycler?: { id: string; name: string; phone?: string | null; address?: string | null }
   requester?: { id: string; name: string; phone?: string | null; address?: string | null }
+}
+
+export interface HandoverItemApiDto {
+  id: string
+  wasteCategoryId: string
+  wasteCategoryCode: string
+  wasteCategoryName: string
+  estimatedWeightKg: number
+  actualWeightKg?: number | null
+  agreedPricePerKg?: number | null
+  itemNote?: string | null
+}
+
+export interface HandoverPartyApiDto {
+  id: string
+  name: string
+  phone?: string | null
+  address?: string | null
+}
+
+export interface HandoverRequestDetailApiDto {
+  id: string
+  requestCode: string
+  status: string
+  items: HandoverItemApiDto[]
+  totalEstimatedWeightKg: number
+  photoUrls: string[]
+  proposedTimeSlot: string
+  confirmedTimeSlot?: string | null
+  pickupAddress?: string | null
+  userNote?: string | null
+  recyclerNote?: string | null
+  cancelReason?: string | null
+  cancelledByRole?: string | null
+  isLateCancellation?: boolean
+  isContactRevealed?: boolean
+  hasReceipt: boolean
+  canEdit?: boolean
+  canCancel?: boolean
+  recycler?: HandoverPartyApiDto | null
+  requester?: HandoverPartyApiDto | null
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface TransactionHistoryItemDto {
@@ -475,14 +528,49 @@ async function uploadSingleDocument(
   return res.data.fileUrl
 }
 
+export function formatRecyclerApplicationCode(
+  userId: string,
+  submittedAtIso?: string | null,
+): string {
+  const parsedDate = submittedAtIso ? new Date(submittedAtIso) : null
+  const year =
+    parsedDate && !Number.isNaN(parsedDate.getTime())
+      ? parsedDate.getFullYear()
+      : new Date().getFullYear()
+  return `HS-${year}-${userId.slice(0, 6).toUpperCase()}`
+}
+
+export async function fetchMyRecyclerApplication(): Promise<RecyclerApplicationDetailDto | null> {
+  await ensureActiveAuthSession()
+  if (!getAccessToken()) return null
+
+  try {
+    const res = await apiRequest<RecyclerApplicationDetailDto>(
+      "/api/v1/recycler-applications/me",
+      { method: "GET" },
+    )
+    return res.data ?? null
+  } catch (err) {
+    if (
+      err instanceof ApiError &&
+      (err.status === 404 || err.status === 401 || err.isNetworkError)
+    ) {
+      return null
+    }
+    return null
+  }
+}
+
 export async function submitRecyclerOnboarding(
   input: SubmitRecyclerOnboardingInput,
 ): Promise<SubmitRecyclerOnboardingResult> {
+  await ensureActiveAuthSession()
   const now = new Date()
   const dd = String(now.getDate()).padStart(2, "0")
   const mm = String(now.getMonth() + 1).padStart(2, "0")
   const yyyy = now.getFullYear()
   const description = `Thu mua: ${input.materials.join(", ")}`
+  const cleanPhone = input.phone.replace(/[\s.\-()]/g, "")
 
   const slug =
     input.facilityName
@@ -496,6 +584,14 @@ export async function submitRecyclerOnboarding(
   const email =
     input.email.trim() || `${username}@partner.ecolink.vn`
 
+  const currentSession = getSession()
+  const isAuthenticatedUpgrade = Boolean(getAccessToken())
+  const resolvedRepresentative = (
+    input.representativeName.trim() ||
+    currentSession?.name?.trim() ||
+    input.facilityName.trim()
+  ).slice(0, 100)
+
   try {
     let legalPermitUrl = `https://mock-r2.ecolink.vn/recycler-kyb/legal-permits/${encodeURIComponent(
       input.documents[0]?.name || "giay-phep.pdf",
@@ -507,15 +603,65 @@ export async function submitRecyclerOnboarding(
     if (input.documents[0]) {
       try {
         legalPermitUrl = await uploadSingleDocument(input.documents[0], "permit")
-      } catch {
-        // Giữ URL mô phỏng hợp lệ nếu R2 chưa cấu hình
+      } catch (uploadErr) {
+        if (
+          (uploadErr instanceof ApiError && !uploadErr.isNetworkError) ||
+          hasLiveBackendAuth()
+        ) {
+          throw uploadErr
+        }
+        // Giữ URL mô phỏng hợp lệ nếu chạy ngoại tuyến hoàn toàn
       }
     }
     if (input.documents[1]) {
       try {
         businessPhotoUrl = await uploadSingleDocument(input.documents[1], "facility-photo")
-      } catch {
-        // Giữ URL mô phỏng hợp lệ
+      } catch (uploadErr) {
+        if (
+          (uploadErr instanceof ApiError && !uploadErr.isNetworkError) ||
+          hasLiveBackendAuth()
+        ) {
+          throw uploadErr
+        }
+        // Giữ URL mô phỏng hợp lệ nếu chạy ngoại tuyến hoàn toàn
+      }
+    } else if (
+      input.documents[0] &&
+      legalPermitUrl &&
+      !legalPermitUrl.startsWith("https://mock-r2.ecolink.vn/")
+    ) {
+      businessPhotoUrl = legalPermitUrl
+    }
+
+    if (isAuthenticatedUpgrade) {
+      const res = await apiRequest<RecyclerApplicationDetailDto>(
+        "/api/v1/recycler-applications",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            facilityName: input.facilityName.trim(),
+            representativeName: resolvedRepresentative,
+            businessAddress: input.businessAddress.trim(),
+            latitude: input.latitude,
+            longitude: input.longitude,
+            operatingHours: "08:00 - 18:00",
+            contactPhone: cleanPhone,
+            description,
+            legalPermitUrl,
+            businessPhotoUrl,
+          }),
+        },
+      )
+
+      const createdId = res.data?.userId ?? currentSession?.id ?? ""
+      const shortCode = createdId
+        ? formatRecyclerApplicationCode(createdId, res.data?.submittedAt)
+        : `HS-${yyyy}-${suffix}`
+
+      return {
+        referenceCode: shortCode,
+        syncedWithBackend: true,
+        userId: createdId || undefined,
       }
     }
 
@@ -525,15 +671,15 @@ export async function submitRecyclerOnboarding(
         username,
         email,
         password: `Eco@${suffix}99`,
-        fullName: input.representativeName.trim() || input.facilityName.trim(),
-        phoneNumber: input.phone.replace(/[\s.\-()]/g, ""),
+        fullName: resolvedRepresentative,
+        phoneNumber: cleanPhone,
         facilityName: input.facilityName.trim(),
-        representativeName: input.representativeName.trim() || input.facilityName.trim(),
+        representativeName: resolvedRepresentative,
         businessAddress: input.businessAddress.trim(),
         latitude: input.latitude,
         longitude: input.longitude,
         operatingHours: "08:00 - 18:00",
-        contactPhone: input.phone.replace(/[\s.\-()]/g, ""),
+        contactPhone: cleanPhone,
         description,
         legalPermitUrl,
         businessPhotoUrl,
@@ -542,7 +688,7 @@ export async function submitRecyclerOnboarding(
 
     const createdId = res.data?.user?.id ?? ""
     const shortCode = createdId
-      ? `HS-${yyyy}-${createdId.slice(0, 6).toUpperCase()}`
+      ? formatRecyclerApplicationCode(createdId)
       : `HS-${yyyy}-${suffix}`
 
     return {
@@ -550,8 +696,17 @@ export async function submitRecyclerOnboarding(
       syncedWithBackend: true,
       userId: createdId || undefined,
     }
-  } catch {
-    // Dự phòng ngoại tuyến: lưu vào bộ nhớ đồng bộ trình duyệt để Staff vẫn thấy ngay bên /staff/applications
+  } catch (err) {
+    if (err instanceof ApiError && !err.isNetworkError) {
+      throw err
+    }
+    if (hasLiveBackendAuth()) {
+      throw err instanceof Error
+        ? err
+        : new Error("Không thể gửi hồ sơ thẩm định lên máy chủ lúc này. Vui lòng thử lại.")
+    }
+
+    // Dự phòng ngoại tuyến: chỉ chạy khi thực sự không có máy chủ Backend và chưa đăng nhập thực
     const fallbackCode = `HS-${yyyy}-${suffix.slice(-4)}`
     const state = readSyncState()
     const offlineApp: StaffApplicationView = {
@@ -784,7 +939,7 @@ function mapDtoToStaffView(dto: RecyclerApplicationDetailDto): StaffApplicationV
   const rawDesc = dto.description?.replace(/^Thu mua:\s*/i, "").trim()
 
   return {
-    id: `HS-${dto.userId.slice(0, 6).toUpperCase()}`,
+    id: formatRecyclerApplicationCode(dto.userId, dto.submittedAt),
     userId: dto.userId,
     name: dto.facilityName,
     representativeName: dto.representativeName ?? dto.applicantFullName,
@@ -847,7 +1002,7 @@ export async function decideStaffApplication(
         fromBackend: true,
       }
     } catch (err) {
-      if (err instanceof ApiError && !err.isNetworkError && err.status >= 400 && err.status < 500) {
+      if ((err instanceof ApiError && !err.isNetworkError) || hasLiveBackendAuth()) {
         throw err
       }
     }
@@ -967,6 +1122,11 @@ function mapApiOrderToSynced(o: TradeOrderApiDto): SyncedHandoverOrder {
         }))
       : [{ wasteId: fallbackWasteId, kg: Number(o.estimatedWeightKg) || 5 }]
 
+  const parsedSchedule = splitCombinedAppointmentSlot(
+    o.confirmedTimeSlot || o.proposedTimeSlot,
+    o.scheduledAt,
+  )
+
   return {
     id: o.id,
     displayCode: formatOrderDisplayCode(o.id),
@@ -977,8 +1137,8 @@ function mapApiOrderToSynced(o: TradeOrderApiDto): SyncedHandoverOrder {
     address: o.pickupAddress?.trim() || "Điểm hẹn bàn giao",
     pickupLat: o.pickupLatitude ?? undefined,
     pickupLng: o.pickupLongitude ?? undefined,
-    date: formatDateVi(o.scheduledAt),
-    slot: o.confirmedTimeSlot || o.proposedTimeSlot || "09:00 - 11:00",
+    date: parsedSchedule.dateVi || formatDateVi(o.scheduledAt),
+    slot: parsedSchedule.timeSlot,
     lines: mappedLines,
     categoryCode: o.categoryCode ?? undefined,
     initialPricePerKg:
@@ -997,6 +1157,7 @@ export interface CreateHandoverInput {
   partnerId?: string
   partnerName?: string
   rows: { wasteId: string; kg: number; unitPrice: number }[]
+  appointmentDateIso?: string
   slot: string
   pickupAddress: string
   pickupLat: number
@@ -1025,8 +1186,19 @@ export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
       ? input.partnerId
       : "22222222-2222-2222-2222-222222222222"
 
+  const resolvedSchedule = splitCombinedAppointmentSlot(
+    input.slot,
+    input.appointmentDateIso || getDefaultAppointmentDateAndSlot().dateIso,
+  )
+  const dateIso = input.appointmentDateIso || resolvedSchedule.dateIso
+  const combinedSlot = isInquiryDraft
+    ? undefined
+    : formatCombinedAppointmentSlot(dateIso, resolvedSchedule.timeSlot)
+  const scheduledAtIso = isInquiryDraft
+    ? new Date(Date.now() + 2 * 3600 * 1000).toISOString()
+    : buildScheduledAtIso(dateIso, resolvedSchedule.timeSlot)
+
   const now = new Date()
-  const dd = String(now.getDate()).padStart(2, "0")
   const mm = String(now.getMonth() + 1).padStart(2, "0")
   const yyyy = now.getFullYear()
 
@@ -1041,11 +1213,11 @@ export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
       method: "POST",
       body: JSON.stringify({
         partnerId: partnerGuid,
-        scheduledAt: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
+        scheduledAt: scheduledAtIso,
         estimatedWeightKg: totalKg,
         ...(categoryCode ? { categoryCode } : {}),
         ...(isInquiryDraft ? {} : { initialPricePerKg: primary?.unitPrice ?? 5500 }),
-        ...(isInquiryDraft ? {} : { proposedTimeSlot: input.slot }),
+        ...(isInquiryDraft ? {} : { proposedTimeSlot: combinedSlot }),
         pickupAddress: isInquiryDraft ? "" : input.pickupAddress.trim(),
         ...(isInquiryDraft ? {} : { pickupLatitude: input.pickupLat, pickupLongitude: input.pickupLng }),
         ...(isInquiryDraft ? {} : { lines: input.rows.map((r) => ({ wasteId: r.wasteId, kg: r.kg })) }),
@@ -1069,7 +1241,10 @@ export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
       resolvedCitizenName = res.data.citizenName
     }
     syncedWithBackend = true
-  } catch {
+  } catch (err) {
+    if (err instanceof ApiError && !err.isNetworkError && err.status >= 400 && err.status < 500) {
+      throw err
+    }
     syncedWithBackend = false
   }
 
@@ -1087,8 +1262,8 @@ export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
           address: input.pickupAddress.trim(),
           pickupLat: input.pickupLat,
           pickupLng: input.pickupLng,
-          date: `${dd}/${mm}/${yyyy}`,
-          slot: input.slot,
+          date: formatIsoDateToVi(dateIso),
+          slot: resolvedSchedule.timeSlot,
           lines: input.rows.map((r) => ({ wasteId: r.wasteId, kg: r.kg })),
           initialPricePerKg: primary?.unitPrice ?? 5500,
           status: "pending",
@@ -1229,18 +1404,25 @@ export async function updateHandoverOrderStatus(
 export async function updateHandoverOrderTimeSlot(
   orderId: string,
   proposedTimeSlot: string,
+  appointmentDateIso?: string,
 ): Promise<{ syncedWithBackend: boolean }> {
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId)
+  const parsed = splitCombinedAppointmentSlot(proposedTimeSlot, appointmentDateIso)
+  const dateIso = appointmentDateIso || parsed.dateIso
+  const combinedSlot = formatCombinedAppointmentSlot(dateIso, parsed.timeSlot)
   let syncedWithBackend = false
 
   if (isUuid) {
     try {
       await authorizedRequest<TradeOrderApiDto>("user", `/api/v1/trade/orders/${orderId}/time-slot`, {
         method: "PATCH",
-        body: JSON.stringify({ proposedTimeSlot }),
+        body: JSON.stringify({ proposedTimeSlot: combinedSlot }),
       })
       syncedWithBackend = true
-    } catch {
+    } catch (err) {
+      if (err instanceof ApiError && !err.isNetworkError && err.status >= 400 && err.status < 500) {
+        throw err
+      }
       syncedWithBackend = false
     }
   }
@@ -1250,7 +1432,9 @@ export async function updateHandoverOrderTimeSlot(
     writeSyncState({
       ...state,
       handoverOrders: state.handoverOrders.map((x) =>
-        x.id === orderId ? { ...x, slot: proposedTimeSlot } : x,
+        x.id === orderId
+          ? { ...x, date: formatIsoDateToVi(dateIso), slot: parsed.timeSlot }
+          : x,
       ),
     })
   }
@@ -1458,11 +1642,116 @@ export async function saveRecyclerPrices(
 
 /* ------------------------------------------------------------------ Module 07: Lập & Xác nhận biên nhận (R-06, U-09, U-12) */
 
+export async function fetchRecyclerHandoverDetail(
+  requestId: string,
+): Promise<HandoverRequestDetailApiDto | null> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+  if (!isUuid) return null
+  try {
+    const res = await authorizedRequest<HandoverRequestDetailApiDto>(
+      "recycler",
+      `/api/v1/recycler/handover-requests/${requestId}`,
+      { method: "GET" },
+    )
+    return res.data ?? null
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 404 || !err.isNetworkError)) {
+      return null
+    }
+    return null
+  }
+}
+
+export async function fetchUserHandoverDetail(
+  requestId: string,
+): Promise<HandoverRequestDetailApiDto | null> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+  if (!isUuid) return null
+  try {
+    const res = await authorizedRequest<HandoverRequestDetailApiDto>(
+      "user",
+      `/api/v1/handover-requests/${requestId}`,
+      { method: "GET" },
+    )
+    return res.data ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function fetchUserHandoverRequestsList(
+  status?: string,
+  page = 1,
+  pageSize = 30,
+): Promise<{ items: HandoverRequestDetailApiDto[]; fromBackend: boolean }> {
+  try {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+    if (status) params.append("status", status)
+    const res = await authorizedRequest<{ items: HandoverRequestDetailApiDto[] }>(
+      "user",
+      `/api/v1/handover-requests?${params.toString()}`,
+      { method: "GET" },
+    )
+    return {
+      items: Array.isArray(res.data?.items) ? res.data.items : [],
+      fromBackend: true,
+    }
+  } catch {
+    return { items: [], fromBackend: false }
+  }
+}
+
+export async function uploadReceiptProofPhoto(
+  requestId: string,
+  file: File,
+): Promise<string> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+  if (isUuid) {
+    const form = new FormData()
+    form.append("file", file)
+    try {
+      const res = await authorizedRequest<DocumentUploadResponseDto>(
+        "recycler",
+        `/api/v1/recycler/handover-requests/${requestId}/receipt/upload-proof`,
+        {
+          method: "POST",
+          body: form,
+        },
+      )
+      if (res.data?.fileUrl) return res.data.fileUrl
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        // Fallback tới endpoint upload bằng chứng chung nếu bản server cũ chưa có route upload-proof
+        const fallbackForm = new FormData()
+        fallbackForm.append("file", file)
+        const fallbackRes = await authorizedRequest<DocumentUploadResponseDto>(
+          "recycler",
+          "/api/v1/complaints/upload-evidence",
+          { method: "POST", body: fallbackForm },
+        )
+        if (fallbackRes.data?.fileUrl) return fallbackRes.data.fileUrl
+      }
+      if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+        throw err
+      }
+    }
+  }
+
+  if (hasLiveBackendAuth()) {
+    throw new Error("Không thể tải ảnh bằng chứng cân lên máy chủ.")
+  }
+  return `https://images.ecolink.vn/proofs/${encodeURIComponent(file.name)}`
+}
+
 export async function createHandoverReceipt(
   requestId: string,
   req: CreateReceiptRequest,
 ): Promise<{ receipt: ReceiptDto; syncedWithBackend: boolean }> {
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+  if (!isUuid && hasLiveBackendAuth()) {
+    throw new Error("Đơn bàn giao này chưa đồng bộ mã UUID với PostgreSQL. Vui lòng tải lại trang.")
+  }
+
   if (isUuid) {
     try {
       const res = await authorizedRequest<ReceiptDto>(
@@ -1479,12 +1768,15 @@ export async function createHandoverReceipt(
         writeSyncState({ ...state, customReceipts })
         return { receipt: res.data, syncedWithBackend: true }
       }
-    } catch {
-      // Bỏ qua lỗi kết nối và rơi vào lưu đệm ngoại tuyến
+    } catch (err) {
+      // Fail Loud on 4xx/5xx or when authenticated to real backend: do not create fake #REC-... receipts
+      if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+        throw err
+      }
     }
   }
 
-  // Dự phòng ngoại tuyến
+  // Dự phòng ngoại tuyến (chỉ dùng cho chế độ Demo không đăng nhập và backend không chạy)
   const order = findCachedHandoverOrder(requestId)
   const totalWeight = req.items.reduce((s, it) => s + it.actualWeightKg, 0)
   const unitPrice = order?.agreedPricePerKg || order?.initialPricePerKg || 5500
@@ -1545,9 +1837,23 @@ export async function fetchRecyclerReceipt(requestId: string): Promise<ReceiptDt
         { method: "GET" },
       )
       if (res.data) return res.data
-    } catch {
-      // Dự phòng bộ nhớ đệm
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        const state = readSyncState()
+        if (state.customReceipts?.[requestId]) {
+          const { [requestId]: _removed, ...rest } = state.customReceipts
+          writeSyncState({ ...state, customReceipts: rest })
+        }
+        return null
+      }
+      if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+        return null
+      }
     }
+  }
+
+  if (hasLiveBackendAuth()) {
+    return null
   }
 
   const state = readSyncState()
@@ -1564,9 +1870,23 @@ export async function fetchUserReceipt(requestId: string): Promise<ReceiptDto | 
         { method: "GET" },
       )
       if (res.data) return res.data
-    } catch {
-      // Dự phòng bộ nhớ đệm
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        const state = readSyncState()
+        if (state.customReceipts?.[requestId]) {
+          const { [requestId]: _removed, ...rest } = state.customReceipts
+          writeSyncState({ ...state, customReceipts: rest })
+        }
+        return null
+      }
+      if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+        return null
+      }
     }
+  }
+
+  if (hasLiveBackendAuth()) {
+    return null
   }
 
   const state = readSyncState()
@@ -1577,6 +1897,10 @@ export async function confirmHandoverReceipt(
   requestId: string,
 ): Promise<{ receipt: ReceiptDto | null; syncedWithBackend: boolean }> {
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+  if (!isUuid && hasLiveBackendAuth()) {
+    throw new Error("Mã yêu cầu không hợp lệ để xác nhận biên nhận trên máy chủ.")
+  }
+
   if (isUuid) {
     try {
       const res = await authorizedRequest<ReceiptDto>(
@@ -1587,8 +1911,10 @@ export async function confirmHandoverReceipt(
       if (res.data) {
         return { receipt: res.data, syncedWithBackend: true }
       }
-    } catch {
-      // Dự phòng sang bộ nhớ đệm
+    } catch (err) {
+      if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+        throw err
+      }
     }
   }
 
@@ -1619,6 +1945,10 @@ export async function disputeHandoverReceipt(
   evidenceUrls: string[] = [],
 ): Promise<{ receipt: ReceiptDto | null; syncedWithBackend: boolean }> {
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+  if (!isUuid && hasLiveBackendAuth()) {
+    throw new Error("Mã yêu cầu không hợp lệ để gửi khiếu nại biên nhận lên máy chủ.")
+  }
+
   if (isUuid) {
     try {
       const res = await authorizedRequest<ReceiptDto>(
@@ -1632,8 +1962,10 @@ export async function disputeHandoverReceipt(
       if (res.data) {
         return { receipt: res.data, syncedWithBackend: true }
       }
-    } catch {
-      // Dự phòng
+    } catch (err) {
+      if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+        throw err
+      }
     }
   }
 

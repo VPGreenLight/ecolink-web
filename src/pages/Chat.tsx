@@ -3,7 +3,16 @@ import { Link, useSearchParams } from "react-router-dom"
 import type * as signalR from "@microsoft/signalr"
 import { PageHead } from "@/components/Portal"
 import { ADDRESS } from "@/data/map"
-import { TIME_SLOTS } from "@/data/handover"
+import {
+  TIME_SLOTS,
+  formatCombinedAppointmentSlot,
+  formatIsoDateToVi,
+  getAppointmentDateBounds,
+  getDefaultAppointmentDateAndSlot,
+  isTimeSlotInPastForDate,
+  splitCombinedAppointmentSlot,
+  validateAppointmentSelection,
+} from "@/data/handover"
 import { clearSessionOnUnauthorized, rotateRefreshTokenSingleFlight } from "@/lib/api"
 import { getRefreshToken, useRole, useSession } from "@/lib/session"
 import {
@@ -99,11 +108,42 @@ export default function Chat() {
   const [isProposalModalOpen, setIsProposalModalOpen] = useState(false)
   const [proposalPrice, setProposalPrice] = useState<number>(7500)
   const [proposalWeight, setProposalWeight] = useState<number>(10)
-  const [proposalSlot, setProposalSlot] = useState<string>(TIME_SLOTS[1])
+  const [proposalDate, setProposalDate] = useState<string>(
+    () => getDefaultAppointmentDateAndSlot().dateIso,
+  )
+  const [proposalSlot, setProposalSlot] = useState<string>(
+    () => getDefaultAppointmentDateAndSlot().slot,
+  )
   const [proposalCategory, setProposalCategory] = useState<string>("plastic")
   const [proposalAddress, setProposalAddress] = useState<string>(DEFAULT_CHAT_PICKUP_ADDRESS)
   const [proposalNote, setProposalNote] = useState<string>("")
+  const [proposalErr, setProposalErr] = useState<string>("")
   const [submittingProposal, setSubmittingProposal] = useState(false)
+
+  const appointmentBounds = getAppointmentDateBounds()
+
+  const syncProposalScheduleFromRaw = (rawSlot?: string | null, fallbackScheduledAt?: string | null) => {
+    const parsed = splitCombinedAppointmentSlot(rawSlot, fallbackScheduledAt)
+    const validationErr = validateAppointmentSelection(parsed.dateIso, parsed.timeSlot)
+    if (!validationErr) {
+      setProposalDate(parsed.dateIso)
+      setProposalSlot(parsed.timeSlot)
+      return
+    }
+    const defaults = getDefaultAppointmentDateAndSlot()
+    if (
+      parsed.dateIso >= appointmentBounds.minDate &&
+      parsed.dateIso <= appointmentBounds.maxDate
+    ) {
+      setProposalDate(parsed.dateIso)
+      const firstValidOnDate =
+        TIME_SLOTS.find((s) => !isTimeSlotInPastForDate(parsed.dateIso, s)) ?? defaults.slot
+      setProposalSlot(firstValidOnDate)
+    } else {
+      setProposalDate(defaults.dateIso)
+      setProposalSlot(defaults.slot)
+    }
+  }
 
   // Modal xem ảnh phóng to
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
@@ -249,8 +289,8 @@ export default function Chat() {
           if (data.estimatedWeightKg) {
             setProposalWeight(data.estimatedWeightKg || 10)
           }
-          if (data.proposedTimeSlot) {
-            setProposalSlot(data.proposedTimeSlot)
+          if (data.proposedTimeSlot || data.scheduledAt) {
+            syncProposalScheduleFromRaw(data.proposedTimeSlot, data.scheduledAt)
           }
           if (data.categoryCode) {
             setProposalCategory(data.categoryCode)
@@ -629,13 +669,21 @@ export default function Chat() {
     }
   }
 
-  // Gửi đề xuất giá, loại phế liệu, điểm hẹn & khung giờ mới (BR-NEG-04 + Chiều A Lên đơn trong Chat)
+  // Gửi đề xuất giá, loại phế liệu, điểm hẹn & ngày/khung giờ mới (BR-NEG-04 + Chiều A Lên đơn trong Chat)
   const handleSendProposal = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (proposalPrice <= 0 || proposalWeight <= 0 || !proposalSlot) {
-      alert("Vui lòng nhập đơn giá, khối lượng và khung giờ hợp lệ.")
+    if (proposalPrice <= 0 || proposalWeight <= 0) {
+      setProposalErr("Vui lòng nhập đơn giá và khối lượng ước tính lớn hơn 0.")
       return
     }
+    const scheduleErr = validateAppointmentSelection(proposalDate, proposalSlot)
+    if (scheduleErr) {
+      setProposalErr(scheduleErr)
+      return
+    }
+    setProposalErr("")
+
+    const combinedSlot = formatCombinedAppointmentSlot(proposalDate, proposalSlot)
 
     setSubmittingProposal(true)
     try {
@@ -646,7 +694,7 @@ export default function Chat() {
       const createdProposal = await sendProposal(targetOrderId, {
         proposedPricePerKg: Number(proposalPrice),
         proposedWeightKg: Number(proposalWeight),
-        proposedTimeSlot: proposalSlot,
+        proposedTimeSlot: combinedSlot,
         categoryCode: proposalCategory,
         pickupAddress: cleanAddress,
         note: proposalNote.trim() || undefined,
@@ -654,7 +702,9 @@ export default function Chat() {
 
       setAvailableOrders((prev) =>
         prev.map((o) =>
-          o.id === targetOrderId ? { ...o, isInquiryOnly: false, slot: proposalSlot } : o,
+          o.id === targetOrderId
+            ? { ...o, isInquiryOnly: false, slot: proposalSlot }
+            : o,
         ),
       )
 
@@ -690,7 +740,7 @@ export default function Chat() {
             categoryCode: proposalCategory,
             pickupAddress: cleanAddress,
             estimatedWeightKg: Number(proposalWeight),
-            proposedTimeSlot: proposalSlot,
+            proposedTimeSlot: combinedSlot,
             activeProposal: createdProposal,
             messages: {
               ...prev.messages,
@@ -703,7 +753,7 @@ export default function Chat() {
       setIsProposalModalOpen(false)
       setProposalNote("")
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Không thể gửi đề xuất thương lượng.")
+      setProposalErr(err instanceof Error ? err.message : "Không thể gửi đề xuất thương lượng.")
     } finally {
       setSubmittingProposal(false)
     }
@@ -1071,7 +1121,11 @@ export default function Chat() {
                     )}
                     <button
                       type="button"
-                      onClick={() => setIsProposalModalOpen(true)}
+                      onClick={() => {
+                        setProposalErr("")
+                        syncProposalScheduleFromRaw(thread?.proposedTimeSlot, thread?.scheduledAt)
+                        setIsProposalModalOpen(true)
+                      }}
                       className="btn-outline h-8 px-3 text-xs font-semibold text-brand"
                     >
                       ⚡ Đề xuất giá &amp; giờ mới
@@ -1283,9 +1337,10 @@ export default function Chat() {
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    setProposalErr("")
                                     setProposalPrice(p.proposedPricePerKg)
                                     setProposalWeight(p.proposedWeightKg)
-                                    setProposalSlot(p.proposedTimeSlot)
+                                    syncProposalScheduleFromRaw(p.proposedTimeSlot, thread?.scheduledAt)
                                     if (p.categoryCode) setProposalCategory(p.categoryCode)
                                     if (p.pickupAddress) setProposalAddress(p.pickupAddress)
                                     setIsProposalModalOpen(true)
@@ -1401,7 +1456,11 @@ export default function Chat() {
           {canCompose && !thread?.isProposalLocked && (
             <button
               type="button"
-              onClick={() => setIsProposalModalOpen(true)}
+              onClick={() => {
+                setProposalErr("")
+                syncProposalScheduleFromRaw(thread?.proposedTimeSlot, thread?.scheduledAt)
+                setIsProposalModalOpen(true)
+              }}
               className="btn-outline h-10 px-3 text-xs shrink-0 text-brand font-medium"
               title="Lên đơn hoặc đưa ra đề xuất điều chỉnh loại rác, điểm hẹn, đơn giá và khung giờ"
             >
@@ -1552,22 +1611,63 @@ export default function Chat() {
                 />
               </div>
 
-              <div>
-                <label className="font-semibold text-ink block mb-1">
-                  Khung giờ hẹn thu gom mong muốn:
-                </label>
-                <select
-                  value={proposalSlot}
-                  onChange={(e) => setProposalSlot(e.target.value)}
-                  className="input h-10 text-sm"
-                >
-                  {TIME_SLOTS.map((slot) => (
-                    <option key={slot} value={slot}>
-                      {slot}
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-ink block mb-1">
+                    Ngày hẹn thu gom:
+                  </label>
+                  <input
+                    type="date"
+                    min={appointmentBounds.minDate}
+                    max={appointmentBounds.maxDate}
+                    value={proposalDate}
+                    onChange={(e) => {
+                      const nextDate = e.target.value
+                      setProposalDate(nextDate)
+                      setProposalErr("")
+                      if (nextDate && isTimeSlotInPastForDate(nextDate, proposalSlot)) {
+                        const firstValid = TIME_SLOTS.find((s) => !isTimeSlotInPastForDate(nextDate, s))
+                        if (firstValid) setProposalSlot(firstValid)
+                      }
+                    }}
+                    className="input h-10 text-sm"
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1 block">
+                    Hôm nay ({formatIsoDateToVi(appointmentBounds.minDate)}) đến +30 ngày
+                  </span>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-ink block mb-1">
+                    Khung giờ hẹn thu gom mong muốn:
+                  </label>
+                  <select
+                    value={proposalSlot}
+                    onChange={(e) => {
+                      setProposalSlot(e.target.value)
+                      setProposalErr("")
+                    }}
+                    className="input h-10 text-sm"
+                  >
+                    {TIME_SLOTS.map((slot) => {
+                      const past = isTimeSlotInPastForDate(proposalDate, slot)
+                      return (
+                        <option key={slot} value={slot} disabled={past}>
+                          {slot}
+                          {past ? " (đã qua)" : ""}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </div>
               </div>
+
+              {proposalErr && (
+                <p role="alert" className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs font-medium text-warn">
+                  {proposalErr}
+                </p>
+              )}
 
               <div>
                 <label className="font-semibold text-ink block mb-1">

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Link, useSearchParams } from "react-router-dom"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
 import { INCOMING, STATUS_LABEL, TONE, calc, type Handover } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
@@ -8,8 +8,11 @@ import {
   confirmHandoverReceipt,
   disputeHandoverReceipt,
   fetchHandoverOrdersResult,
+  fetchUserHandoverDetail,
+  fetchUserHandoverRequestsList,
   fetchUserReceipt,
   findCachedHandoverOrder,
+  formatOrderDisplayCode,
   type ReceiptDto,
 } from "@/lib/recyclerWorkflowApi"
 import {
@@ -24,6 +27,21 @@ import { getAccessToken, hasLiveBackendAuth } from "@/lib/session"
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
 
+type ReceiptCandidate = {
+  id: string
+  displayCode: string
+  label: string
+  priority: number
+}
+
+type ActualLineView = {
+  wasteId: string
+  wasteName?: string
+  estimatedKg?: number
+  kg: number
+  unitPrice?: number
+}
+
 /** U-10 Xác nhận biên nhận bàn giao + U-11 Đánh giá cơ sở thu mua.
  *
  *  Gộp: U-11 chỉ mở được sau khi U-10 xong, nên tách hai trang thì người
@@ -31,11 +49,13 @@ const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
  *  giá — đúng luật "Mở khi hoàn tất giao dịch". */
 export default function Receipt() {
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const orderId = searchParams.get("orderId")
   const liveAuth = hasLiveBackendAuth()
 
   const defaultHandover = INCOMING.find((x) => x.status === "collected") || INCOMING[0]
   const [loadingOrder, setLoadingOrder] = useState<boolean>(() => liveAuth)
+  const [candidates, setCandidates] = useState<ReceiptCandidate[]>([])
   const [orderUnitPrice, setOrderUnitPrice] = useState<number | undefined>(undefined)
   const [h, setH] = useState<Handover | null>(() => {
     if (orderId) {
@@ -57,8 +77,8 @@ export default function Receipt() {
     return liveAuth ? null : defaultHandover
   })
 
-  const [actual, setActual] = useState(() =>
-    (h?.lines ?? []).map((l) => ({ wasteId: l.wasteId, kg: l.kg })),
+  const [actual, setActual] = useState<ActualLineView[]>(() =>
+    (h?.lines ?? []).map((l) => ({ wasteId: l.wasteId, estimatedKg: l.kg, kg: l.kg })),
   )
   const [confirmed, setConfirmed] = useState(false)
   const [disputed, setDisputed] = useState(false)
@@ -76,15 +96,71 @@ export default function Receipt() {
   useEffect(() => {
     let active = true
     async function loadData() {
+      setLoadingOrder(true)
+      setConfirmed(false)
+      setDisputed(false)
+      setReceiptInfo(null)
+      setFlashMessage(null)
+
       try {
-        const ordersRes = await fetchHandoverOrdersResult("user")
+        const [ordersRes, handoversRes] = await Promise.all([
+          fetchHandoverOrdersResult("user"),
+          fetchUserHandoverRequestsList(),
+        ])
         if (!active) return
+
+        const candidateMap = new Map<string, ReceiptCandidate>()
+        for (const hr of handoversRes.items) {
+          const st = (hr.status || "").toLowerCase()
+          const isAwaiting = st === "awaitingconfirmation" || (hr.hasReceipt && st !== "completed" && st !== "disputed")
+          const isCompletedOrDisputed = st === "completed" || st === "disputed"
+          if (isAwaiting || isCompletedOrDisputed) {
+            const statusText = isAwaiting
+              ? "Chờ xác nhận"
+              : st === "disputed"
+                ? "Đang khiếu nại"
+                : "Hoàn tất"
+            candidateMap.set(hr.id, {
+              id: hr.id,
+              displayCode: hr.requestCode || formatOrderDisplayCode(hr.id),
+              label: `${hr.requestCode || formatOrderDisplayCode(hr.id)} · ${hr.recycler?.name || "Cơ sở thu mua"} (${statusText})`,
+              priority: isAwaiting ? 0 : 1,
+            })
+          }
+        }
+
+        for (const o of ordersRes.orders) {
+          if (o.status === "collected" || o.status === "done" || o.rawStatus?.toLowerCase() === "disputed") {
+            if (!candidateMap.has(o.id)) {
+              const isAwaiting = o.status === "collected"
+              const statusText = isAwaiting
+                ? "Chờ xác nhận"
+                : o.rawStatus?.toLowerCase() === "disputed"
+                  ? "Đang khiếu nại"
+                  : "Hoàn tất"
+              candidateMap.set(o.id, {
+                id: o.id,
+                displayCode: o.displayCode,
+                label: `${o.displayCode} · ${o.recycler} (${statusText})`,
+                priority: isAwaiting ? 0 : 1,
+              })
+            }
+          }
+        }
+
+        const sortedCandidates = Array.from(candidateMap.values()).sort(
+          (a, b) => a.priority - b.priority,
+        )
+        setCandidates(sortedCandidates)
 
         const found = orderId
           ? ordersRes.orders.find((o) => o.id === orderId || o.displayCode === orderId)
-          : ordersRes.orders.find((o) => o.status === "collected" || o.status === "done")
+          : (sortedCandidates[0]
+              ? ordersRes.orders.find((o) => o.id === sortedCandidates[0].id)
+              : undefined) ||
+            ordersRes.orders.find((o) => o.status === "collected" || o.status === "done")
 
-        const targetId = found?.id || orderId
+        const targetId = found?.id || orderId || sortedCandidates[0]?.id
 
         if (getAccessToken() && targetId) {
           try {
@@ -92,13 +168,16 @@ export default function Receipt() {
             if (active && myRevs.success) {
               const matched = myRevs.data.items.find((rv) => rv.requestId === targetId)
               if (matched) setSubmittedReview(matched)
+              else setSubmittedReview(null)
             }
           } catch {
             // bỏ qua nếu chưa đăng nhập hoặc offline
           }
         }
 
-        const r = targetId ? await fetchUserReceipt(targetId) : null
+        const [r, detail] = targetId
+          ? await Promise.all([fetchUserReceipt(targetId), fetchUserHandoverDetail(targetId)])
+          : [null, null]
         if (!active) return
 
         if (r) {
@@ -112,8 +191,11 @@ export default function Receipt() {
           if (Array.isArray(r.lines) && r.lines.length > 0) {
             setActual(
               r.lines.map((l) => ({
-                wasteId: l.wasteCategoryId || l.wasteCategoryCode || "plastic",
+                wasteId: l.wasteCategoryCode || l.wasteCategoryId || "plastic",
+                wasteName: l.wasteCategoryName,
+                estimatedKg: l.estimatedWeightKg,
                 kg: l.actualWeightKg,
+                unitPrice: l.unitPricePerKg,
               })),
             )
           }
@@ -124,30 +206,47 @@ export default function Receipt() {
           setH({
             id: found.id,
             displayCode: found.displayCode,
-            recycler: found.recycler,
-            address: found.address,
+            recycler: detail?.recycler?.name || found.recycler,
+            address: detail?.pickupAddress || found.address,
             date: found.date,
             slot: found.slot,
             lines: found.lines,
-            status: found.status,
+            status:
+              r?.requestStatus === "Completed"
+                ? "done"
+                : r
+                  ? "collected"
+                  : found.status,
             reason: found.reason,
           })
           if (!r) {
-            setActual(found.lines.map((l) => ({ wasteId: l.wasteId, kg: l.kg })))
+            if (detail && detail.items.length > 0) {
+              setActual(
+                detail.items.map((it) => ({
+                  wasteId: it.wasteCategoryCode || it.wasteCategoryId,
+                  wasteName: it.wasteCategoryName,
+                  estimatedKg: it.estimatedWeightKg,
+                  kg: it.actualWeightKg ?? it.estimatedWeightKg,
+                  unitPrice: it.agreedPricePerKg ?? undefined,
+                })),
+              )
+            } else {
+              setActual(found.lines.map((l) => ({ wasteId: l.wasteId, estimatedKg: l.kg, kg: l.kg })))
+            }
           }
         } else if (!ordersRes.fromBackend && !liveAuth) {
           setH(defaultHandover)
-          setActual(defaultHandover.lines.map((l) => ({ wasteId: l.wasteId, kg: l.kg })))
+          setActual(defaultHandover.lines.map((l) => ({ wasteId: l.wasteId, estimatedKg: l.kg, kg: l.kg })))
         } else if (r) {
           setH({
             id: r.requestId,
-            displayCode: r.requestCode,
-            recycler: r.recycler?.name || "Cơ sở thu mua EcoLink",
-            address: r.recycler?.address || "Điểm hẹn bàn giao",
+            displayCode: r.requestCode || formatOrderDisplayCode(r.requestId),
+            recycler: r.recycler?.name || detail?.recycler?.name || "Cơ sở thu mua EcoLink",
+            address: r.requester?.address || r.recycler?.address || detail?.pickupAddress || "Điểm hẹn bàn giao",
             date: r.createdAt ? new Date(r.createdAt).toLocaleDateString("vi-VN") : "Hôm nay",
             slot: "Theo biên nhận",
             lines: r.lines.map((l) => ({
-              wasteId: l.wasteCategoryId || l.wasteCategoryCode || "pet",
+              wasteId: l.wasteCategoryCode || l.wasteCategoryId || "pet",
               kg: l.estimatedWeightKg,
             })),
             status: r.requestStatus === "Completed" ? "done" : "collected",
@@ -165,31 +264,52 @@ export default function Receipt() {
     }
   }, [orderId, liveAuth])
 
-  const rowPriceOf = (wasteId: string, index?: number) => {
+  const rowPriceOf = (line: ActualLineView, index?: number) => {
+    if (typeof line.unitPrice === "number" && line.unitPrice > 0) {
+      return line.unitPrice
+    }
     if (receiptInfo && typeof index === "number" && receiptInfo.lines[index]?.unitPricePerKg > 0) {
       return receiptInfo.lines[index].unitPricePerKg
     }
     if (orderUnitPrice && orderUnitPrice > 0 && (!index || index === 0)) {
       return orderUnitPrice
     }
-    return priceOf(wasteId)
+    return priceOf(line.wasteId)
   }
 
   const baseHandover = h ?? defaultHandover
-  const money = calc({ ...baseHandover, actual }, (id) => rowPriceOf(id))
-  const differs = actual.some((a, i) => a.kg !== baseHandover.lines[i]?.kg)
+  const totalActualGross = receiptInfo
+    ? receiptInfo.totalAmountCash
+    : actual.reduce((s, l, i) => s + l.kg * rowPriceOf(l, i), 0)
+  const money = receiptInfo
+    ? { gross: totalActualGross, fee: 0, net: totalActualGross, rate: 0 }
+    : calc({ ...baseHandover, actual }, (id) => priceOf(id))
+  const differs = actual.some((a, i) => a.kg !== (a.estimatedKg ?? baseHandover.lines[i]?.kg))
 
   const confirm = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!h) return
     setProcessing(true)
+    setFlashMessage(null)
     try {
       const res = await confirmHandoverReceipt(h.id)
+      if (res.receipt) {
+        setReceiptInfo(res.receipt)
+      }
       setConfirmed(true)
+      setH((prev) => (prev ? { ...prev, status: "done" } : prev))
       setFlashMessage(
         res.syncedWithBackend
-          ? "Đã xác nhận biên nhận thành công (đã cộng điểm xanh và hoàn tất giao dịch trên PostgreSQL)."
+          ? `Đã xác nhận biên nhận #${res.receipt?.receiptCode || h.displayCode} thành công (đã cộng Điểm Xanh và hoàn tất giao dịch trên PostgreSQL).`
           : "Đã xác nhận khối lượng bàn giao (chế độ dự phòng ngoại tuyến).",
+      )
+    } catch (err) {
+      setFlashMessage(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Không thể xác nhận biên nhận. Vui lòng thử lại.",
       )
     } finally {
       setProcessing(false)
@@ -292,8 +412,30 @@ export default function Receipt() {
       <PageHead
         eyebrow="BIÊN NHẬN"
         title="Xác nhận bàn giao rác"
-        body="Đối chiếu khối lượng người thu gom cân tại chỗ với những gì bạn bỏ ra. Sai ở đâu thì sửa ở đó — tiền tính trên số bạn xác nhận."
+        body="Đối chiếu khối lượng người thu gom cân tại chỗ với những gì bạn bỏ ra. Biên nhận được lưu trữ trên hệ thống để hai bên đối chiếu giao dịch trực tiếp và cộng Điểm Xanh."
       />
+
+      {candidates.length > 1 && (
+        <div className="card flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+          <span className="text-xs font-semibold text-ink">
+            Chọn biên nhận ({candidates.length} đơn):
+          </span>
+          <select
+            className="input h-9 max-w-md text-xs"
+            value={h?.id ?? ""}
+            onChange={(e) => {
+              const nextId = e.target.value
+              if (nextId) navigate(`/user/receipt?orderId=${encodeURIComponent(nextId)}`)
+            }}
+          >
+            {candidates.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {flashMessage && (
         <div className="rounded-xl border border-brand/30 bg-mint/15 px-4 py-3 text-sm font-medium text-brand-deep">
@@ -336,22 +478,27 @@ export default function Receipt() {
             <p className="mt-0.5 text-[13px] text-muted">
               {h.displayCode || h.id} · {h.date} · {h.slot} · {h.address}
             </p>
+            {receiptInfo?.receiptCode && (
+              <p className="mt-1 text-xs font-semibold text-brand-deep">
+                Mã biên nhận: #{receiptInfo.receiptCode} · Điểm Xanh dự kiến: +{receiptInfo.points} điểm
+              </p>
+            )}
           </div>
           <Status tone={TONE[h.status]}>{STATUS_LABEL[h.status]}</Status>
         </div>
 
         <Table head={["Loại rác", "Bạn bỏ ra", "Người thu gom cân", "Thành tiền"]}>
           {actual.map((a, i) => (
-            <tr key={a.wasteId}>
-              <Td className="font-semibold text-ink">{nameOf(a.wasteId)}</Td>
-              <Td className="tabular-nums text-muted">{h.lines[i]?.kg} kg</Td>
+            <tr key={`${a.wasteId}-${i}`}>
+              <Td className="font-semibold text-ink">{a.wasteName || nameOf(a.wasteId)}</Td>
+              <Td className="tabular-nums text-muted">{a.estimatedKg ?? h.lines[i]?.kg ?? 0} kg</Td>
               <Td>
                 <input
                   className="input h-9 w-28 tabular-nums"
                   type="number"
                   min={0}
                   step={0.1}
-                  aria-label={`Khối lượng thực tế ${nameOf(a.wasteId)}`}
+                  aria-label={`Khối lượng thực tế ${a.wasteName || nameOf(a.wasteId)}`}
                   value={a.kg}
                   disabled={confirmed || disputed || processing}
                   onChange={(e) =>
@@ -364,14 +511,14 @@ export default function Receipt() {
                 />
               </Td>
               <Td className="tabular-nums font-semibold text-ink">
-                {VND(a.kg * rowPriceOf(a.wasteId, i))}
+                {VND(a.kg * rowPriceOf(a, i))}
               </Td>
             </tr>
           ))}
           <tr>
             <Td className="font-bold text-ink">Tổng</Td>
             <Td className="tabular-nums text-muted">
-              {h.lines.reduce((s, l) => s + l.kg, 0)} kg
+              {actual.reduce((s, a, i) => s + (a.estimatedKg ?? h.lines[i]?.kg ?? 0), 0)} kg
             </Td>
             <Td className="tabular-nums font-bold text-ink">
               {actual.reduce((s, a) => s + a.kg, 0)} kg
@@ -381,6 +528,32 @@ export default function Receipt() {
             </Td>
           </tr>
         </Table>
+
+        {receiptInfo?.scaleProofPhotoUrls && receiptInfo.scaleProofPhotoUrls.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <span className="text-[13px] font-semibold text-ink">
+              Ảnh bàn giao &amp; bằng chứng cân từ cơ sở thu gom ({receiptInfo.scaleProofPhotoUrls.length} ảnh)
+            </span>
+            <div className="flex flex-wrap gap-3">
+              {receiptInfo.scaleProofPhotoUrls.map((url, idx) => (
+                <a
+                  key={`${url}-${idx}`}
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block size-20 overflow-hidden rounded-lg border border-line bg-surface-2"
+                  title={`Xem ảnh bằng chứng cân #${idx + 1}`}
+                >
+                  <img
+                    src={url}
+                    alt={`Bằng chứng cân #${idx + 1}`}
+                    className="size-full object-cover"
+                  />
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
 
         {differs && !confirmed && !disputed && (
           <p className="rounded-lg border border-line bg-surface-2 px-4 py-3 text-[13px] leading-5 text-body">
@@ -419,7 +592,7 @@ export default function Receipt() {
           )}
           {!confirmed && !disputed && (
             <p className="self-center text-[13px] text-muted">
-              Xác nhận xong hệ thống mới trả tiền về tài khoản của bạn.
+              Xác nhận để lưu biên nhận đối chiếu và ghi nhận Điểm Xanh cho giao dịch này.
             </p>
           )}
         </div>

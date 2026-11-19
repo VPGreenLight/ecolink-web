@@ -8,6 +8,12 @@ import {
   TIME_SLOTS,
   TONE,
   calc,
+  formatIsoDateToVi,
+  getAppointmentDateBounds,
+  getDefaultAppointmentDateAndSlot,
+  isTimeSlotInPastForDate,
+  parseViOrIsoDateToIsoInput,
+  validateAppointmentSelection,
   type Handover as HandoverItem,
 } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
@@ -77,7 +83,9 @@ export default function Handover() {
   )
   const [loading, setLoading] = useState<boolean>(() => hasLiveBackendAuth())
   const [editId, setEditId] = useState<string | null>(null)
+  const [editDateIso, setEditDateIso] = useState<string>(() => getDefaultAppointmentDateAndSlot().dateIso)
   const [flash, setFlash] = useState("")
+  const appointmentBounds = getAppointmentDateBounds()
 
   useEffect(() => {
     let active = true
@@ -120,13 +128,25 @@ export default function Handover() {
     }
   }, [])
 
-  const reslot = async (h: HandoverView, slot: string) => {
-    setList((ls) => ls.map((item) => (item.id === h.id ? { ...item, slot } : item)))
-    setEditId(null)
-    const res = await updateHandoverOrderTimeSlot(h.id, slot)
-    setFlash(
-      `${h.displayCode}: đã đổi khung giờ sang ${slot}${res.syncedWithBackend ? " (đã cập nhật CSDL)" : ""}. Người thu gom sẽ thấy giờ mới.`,
-    )
+  const reslot = async (h: HandoverView, nextDateIso: string, slot: string) => {
+    const errMsg = validateAppointmentSelection(nextDateIso, slot)
+    if (errMsg) {
+      setFlash(errMsg)
+      return
+    }
+    const nextDateVi = formatIsoDateToVi(nextDateIso)
+    try {
+      const res = await updateHandoverOrderTimeSlot(h.id, slot, nextDateIso)
+      setList((ls) =>
+        ls.map((item) => (item.id === h.id ? { ...item, date: nextDateVi, slot } : item)),
+      )
+      setEditId(null)
+      setFlash(
+        `${h.displayCode}: đã đổi lịch hẹn sang ${nextDateVi} · ${slot}${res.syncedWithBackend ? " (đã cập nhật CSDL)" : ""}. Người thu gom sẽ thấy lịch mới.`,
+      )
+    } catch (err) {
+      setFlash(err instanceof Error ? err.message : "Không thể cập nhật lịch hẹn.")
+    }
   }
 
   const cancel = async (h: HandoverView) => {
@@ -177,8 +197,8 @@ export default function Handover() {
             setOpen(false)
             setFlash(
               draft.recyclerName
-                ? `Đã gửi yêu cầu ${draft.displayCode} tới ${draft.recyclerName}${draft.syncedWithBackend ? " (đã lưu PostgreSQL)" : ""}. Đối tác sẽ xác nhận khung giờ trong hôm nay.`
-                : `Đã gửi yêu cầu ${draft.displayCode}. Người thu gom sẽ xác nhận khung giờ trong hôm nay.`,
+                ? `Đã gửi yêu cầu ${draft.displayCode} tới ${draft.recyclerName}${draft.syncedWithBackend ? " (đã lưu PostgreSQL)" : ""}. Đối tác sẽ xác nhận lịch hẹn (${draft.dateVi} · ${draft.slot}).`
+                : `Đã gửi yêu cầu ${draft.displayCode} (${draft.dateVi} · ${draft.slot}). Người thu gom sẽ xác nhận lịch hẹn.`,
             )
           }}
         />
@@ -217,10 +237,25 @@ export default function Handover() {
                     <>
                       <button
                         type="button"
-                        onClick={() => setEditId(editId === h.id ? null : h.id)}
+                        onClick={() => {
+                          if (editId === h.id) {
+                            setEditId(null)
+                          } else {
+                            const parsedDate = parseViOrIsoDateToIsoInput(h.date)
+                            const defaultDate = getDefaultAppointmentDateAndSlot().dateIso
+                            const initialDate =
+                              parsedDate &&
+                              parsedDate >= appointmentBounds.minDate &&
+                              parsedDate <= appointmentBounds.maxDate
+                                ? parsedDate
+                                : defaultDate
+                            setEditDateIso(initialDate)
+                            setEditId(h.id)
+                          }
+                        }}
                         className="btn-outline h-9 px-3 text-[13px]"
                       >
-                        {editId === h.id ? "Đóng" : "Đổi giờ"}
+                        {editId === h.id ? "Đóng" : "Đổi lịch hẹn"}
                       </button>
                       <button
                         type="button"
@@ -297,21 +332,50 @@ export default function Handover() {
                 </div>
 
                 {editId === h.id && (
-                  <div className="mt-3 rounded-lg border border-brand/30 bg-brand/6 p-4">
-                    <p className="text-[13px] font-semibold text-ink">
-                      Chọn khung giờ thu gom khác
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {TIME_SLOTS.filter((s) => s !== h.slot).map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => void reslot(h, s)}
-                          className="rounded-full border border-brand bg-white px-3.5 py-2 text-[13px] font-medium text-brand transition-colors hover:bg-brand/10"
-                        >
-                          {s}
-                        </button>
-                      ))}
+                  <div className="mt-3 rounded-lg border border-brand/30 bg-brand/6 p-4 flex flex-col gap-3">
+                    <div className="flex flex-wrap items-end gap-4">
+                      <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink">
+                        Chọn ngày hẹn thu gom
+                        <input
+                          type="date"
+                          className="input h-10 bg-white text-sm"
+                          min={appointmentBounds.minDate}
+                          max={appointmentBounds.maxDate}
+                          value={editDateIso}
+                          onChange={(e) => setEditDateIso(e.target.value)}
+                        />
+                      </label>
+                      <p className="text-xs text-muted pb-2">
+                        Hỗ trợ từ hôm nay ({formatIsoDateToVi(appointmentBounds.minDate)}) đến +30 ngày tới
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[13px] font-semibold text-ink">
+                        Chọn khung giờ thu gom
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {TIME_SLOTS.map((s) => {
+                          const past = isTimeSlotInPastForDate(editDateIso, s)
+                          const isSameSchedule =
+                            s === h.slot && formatIsoDateToVi(editDateIso) === h.date
+                          return (
+                            <button
+                              key={s}
+                              type="button"
+                              disabled={past || isSameSchedule}
+                              onClick={() => void reslot(h, editDateIso, s)}
+                              className={`rounded-full border px-3.5 py-2 text-[13px] font-medium transition-colors ${
+                                past || isSameSchedule
+                                  ? "border-line bg-surface-2 text-muted cursor-not-allowed opacity-60"
+                                  : "border-brand bg-white text-brand hover:bg-brand/10"
+                              }`}
+                            >
+                              {s}
+                              {past ? " (đã qua)" : isSameSchedule ? " (hiện tại)" : ""}
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -338,6 +402,7 @@ type Draft = {
   syncedWithBackend: boolean
   rows: { wasteId: string; kg: number }[]
   unitPricePerKg?: number
+  dateVi: string
   slot: string
   address: string
   pickupLat: number
@@ -346,16 +411,12 @@ type Draft = {
 }
 
 function newRow(d: Draft): HandoverView {
-  const now = new Date()
-  const dd = String(now.getDate()).padStart(2, "0")
-  const mm = String(now.getMonth() + 1).padStart(2, "0")
-  const yyyy = now.getFullYear()
   return {
     id: d.id,
     displayCode: d.displayCode,
     recycler: d.recyclerName || "Vựa phế liệu EcoGreen",
     address: d.address,
-    date: `${dd}/${mm}/${yyyy}`,
+    date: d.dateVi,
     slot: d.slot,
     lines: d.rows.map((r) => ({ wasteId: r.wasteId, kg: r.kg })),
     unitPricePerKg: d.unitPricePerKg,
@@ -382,7 +443,13 @@ function CreateForm({
     : "pet"
 
   const [rows, setRows] = useState([{ wasteId: validInitialWaste, kg: 5 }])
-  const [slot, setSlot] = useState<string>(TIME_SLOTS[1])
+  const [appointmentDate, setAppointmentDate] = useState<string>(
+    () => getDefaultAppointmentDateAndSlot().dateIso,
+  )
+  const [slot, setSlot] = useState<string>(
+    () => getDefaultAppointmentDateAndSlot().slot,
+  )
+  const formDateBounds = getAppointmentDateBounds()
   const [address, setAddress] = useState(
     "Cổng phụ Khu CNC Hòa Lạc (gần ĐH FPT), Xã Tân Xã, Thạch Thất, Hà Nội",
   )
@@ -446,6 +513,11 @@ function CreateForm({
       setErr("Khối lượng phải lớn hơn 0 kg.")
       return
     }
+    const scheduleErr = validateAppointmentSelection(appointmentDate, slot)
+    if (scheduleErr) {
+      setErr(scheduleErr)
+      return
+    }
     if (!address.trim()) {
       setErr("Cần ghi mô tả điểm hẹn (ví dụ: đầu ngõ, sảnh toà nhà) để người thu gom tìm tới.")
       return
@@ -462,6 +534,7 @@ function CreateForm({
           kg: r.kg,
           unitPrice: partnerPriceOf(r.wasteId),
         })),
+        appointmentDateIso: appointmentDate,
         slot,
         pickupAddress: address,
         pickupLat,
@@ -475,12 +548,15 @@ function CreateForm({
         syncedWithBackend: result.syncedWithBackend,
         rows,
         unitPricePerKg: primaryUnitPrice,
+        dateVi: formatIsoDateToVi(appointmentDate),
         slot,
         address,
         pickupLat,
         pickupLng,
         recyclerName: result.partnerName || selectedPartnerName || initialPartner || undefined,
       })
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Không thể tạo yêu cầu bàn giao.")
     } finally {
       setSubmitting(false)
     }
@@ -577,24 +653,59 @@ function CreateForm({
 
       <div className="grid gap-5 sm:grid-cols-2">
         <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-          Khung giờ muốn thu gom
-          <select className="input" value={slot} onChange={(e) => setSlot(e.target.value)}>
-            {TIME_SLOTS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          Ngày hẹn thu gom
+          <input
+            type="date"
+            className="input"
+            min={formDateBounds.minDate}
+            max={formDateBounds.maxDate}
+            value={appointmentDate}
+            onChange={(e) => {
+              const nextDate = e.target.value
+              setAppointmentDate(nextDate)
+              setErr("")
+              if (nextDate && isTimeSlotInPastForDate(nextDate, slot)) {
+                const firstValid = TIME_SLOTS.find((s) => !isTimeSlotInPastForDate(nextDate, s))
+                if (firstValid) setSlot(firstValid)
+              }
+            }}
+            required
+          />
+          <span className="text-[11px] font-normal text-muted">
+            Chọn từ hôm nay ({formatIsoDateToVi(formDateBounds.minDate)}) đến tối đa 30 ngày tới
+          </span>
         </label>
         <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-          Mô tả điểm hẹn (đầu ngõ, sảnh chung cư, cột mốc dễ tìm)
-          <input
+          Khung giờ muốn thu gom
+          <select
             className="input"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-          />
+            value={slot}
+            onChange={(e) => {
+              setSlot(e.target.value)
+              setErr("")
+            }}
+          >
+            {TIME_SLOTS.map((s) => {
+              const past = isTimeSlotInPastForDate(appointmentDate, s)
+              return (
+                <option key={s} value={s} disabled={past}>
+                  {s}
+                  {past ? " (đã qua)" : ""}
+                </option>
+              )
+            })}
+          </select>
         </label>
       </div>
+
+      <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+        Mô tả điểm hẹn (đầu ngõ, sảnh chung cư, cột mốc dễ tìm)
+        <input
+          className="input"
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+        />
+      </label>
 
       <div className="flex flex-col gap-2">
         <span className="text-[13px] font-semibold text-ink">
