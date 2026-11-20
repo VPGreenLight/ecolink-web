@@ -29,6 +29,13 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       allowedHosts: true,
       proxy,
+      /*  TẮT HMR: HMR giữ một websocket giữa Vite và trình duyệt, nên khi tunnel
+       *  chớp (mất websocket) hoặc dev server khởi động lại, Vite client tự gọi
+       *  `location.reload()` — người đang xem qua tunnel bị tải lại trang.
+       *
+       *  Đang tắt để link demo không bị reload. Khi cần dev nhanh (tự cập nhật
+       *  code lúc đang mở tab), đổi `false` thành `true` là xong. */
+      hmr: false,
     },
     preview: {
       host: true,

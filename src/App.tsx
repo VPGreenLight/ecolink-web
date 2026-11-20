@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import { BrowserRouter, Route, Routes } from "react-router-dom"
 import Layout from "@/components/Layout"
 import AuthLayout from "@/components/AuthLayout"
@@ -5,67 +6,23 @@ import Portal from "@/components/Portal"
 import AdminShell from "@/components/admin/Shell"
 import RequireRole from "@/components/RequireRole"
 
-import Home from "@/pages/Home"
-import Blog from "@/pages/Blog"
-import BlogDetail from "@/pages/BlogDetail"
-import Rewards from "@/pages/Rewards"
-import LeaderboardPage from "@/pages/Leaderboard"
-import Scanner from "@/pages/Scanner"
-import MapPage from "@/pages/MapPage"
-import Partners from "@/pages/Partners"
-import Feedback from "@/pages/Feedback"
-import Guidance from "@/pages/Guidance"
-import Waste from "@/pages/Waste"
-import Chat from "@/pages/Chat"
-import JoinRecycler from "@/pages/JoinRecycler"
-import ResetPassword from "@/pages/ResetPassword"
-import Terms from "@/pages/Terms"
-import EcoFactsPage from "@/pages/EcoFactsPage"
-import Login from "@/pages/Login"
-import Register from "@/pages/Register"
-import Logout from "@/pages/Logout"
-import NotFound from "@/pages/NotFound"
+import { PAGES } from "@/lazyPages"
 
-import Profile from "@/pages/account/Profile"
-import Notifications from "@/pages/account/Notifications"
-import Password from "@/pages/account/Password"
-
-import UserHome from "@/pages/user/Home"
-import Handover from "@/pages/user/Handover"
-import Receipt from "@/pages/user/Receipt"
-import Payout from "@/pages/user/Payout"
-import Transactions from "@/pages/user/Transactions"
-import Gamification from "@/pages/user/Gamification"
-
-import RecyclerHome from "@/pages/recycler/Home"
-import Requests from "@/pages/recycler/Requests"
-import Catalog from "@/pages/recycler/Catalog"
-import RecyclerReceipt from "@/pages/recycler/Receipt"
-
-import StaffHome from "@/pages/staff/Home"
-import AiReview from "@/pages/staff/AiReview"
-import Dataset from "@/pages/staff/Dataset"
-import Applications from "@/pages/staff/Applications"
-import Complaints from "@/pages/staff/Complaints"
-import Accounts from "@/pages/staff/Accounts"
-import BlogEditor from "@/pages/staff/BlogEditor"
-import EcoFacts from "@/pages/staff/EcoFacts"
-import Gifts from "@/pages/staff/Gifts"
-import StaffCheckIn from "@/pages/staff/CheckIn"
-
-import AdminHome from "@/pages/admin/Home"
-import Reports from "@/pages/admin/Reports"
-import StaffAccounts from "@/pages/admin/StaffAccounts"
-import Permissions from "@/pages/admin/Permissions"
-import BlogReview from "@/pages/admin/BlogReview"
-import Categories from "@/pages/admin/Categories"
-import Policy from "@/pages/admin/Policy"
-import GamificationConfig from "@/pages/admin/Gamification"
-import LeaderboardConfig from "@/pages/admin/Leaderboard"
-import Fees from "@/pages/admin/Fees"
-import Reconciliation from "@/pages/admin/Reconciliation"
-import AccountProfile from "@/pages/admin/AccountProfile"
-import AccountPassword from "@/pages/admin/AccountPassword"
+/** Trang nạp theo route (xem `src/lazyPages.ts`) - không import tĩnh ở đây
+ *  nữa, để bundle không kéo toàn bộ project vào lần mở đầu tiên. */
+const {
+  Home, Blog, BlogDetail, Rewards, LeaderboardPage, Scanner, MapPage, Partners,
+  Feedback, Guidance, Waste, Chat, JoinRecycler, ResetPassword, Terms, EcoFactsPage,
+  Login, Register, Logout, NotFound,
+  Profile, Notifications, Password,
+  UserHome, Handover, Receipt, Payout, Transactions, Gamification,
+  RecyclerHome, Requests, Catalog, RecyclerReceipt,
+  StaffHome, AiReview, Dataset, Applications, Complaints, Accounts, BlogEditor,
+  EcoFacts, Gifts, StaffCheckIn,
+  AdminHome, Reports, StaffAccounts, Permissions, BlogReview, Categories, Policy,
+  GamificationConfig, LeaderboardConfig, Fees, Reconciliation, AccountProfile,
+  AccountPassword,
+} = PAGES
 
 /** Mọi route sau đăng nhập đều khai báo vai trò được vào. Không có route nào
  *  "ai cũng vào được": mọi chức năng đều thuộc đúng một vai trò trong tài
@@ -77,7 +34,8 @@ import AccountPassword from "@/pages/admin/AccountPassword"
  *  Layout) thì test vẫn xanh. */
 export function AppRoutes() {
   return (
-    <Routes>
+    <Suspense fallback={null}>
+      <Routes>
         {/* auth pages own the whole screen — no nav, no footer */}
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<Login />} />
@@ -198,6 +156,7 @@ export function AppRoutes() {
             <Route path="account/password" element={<AccountPassword />} />
           </Route>
       </Routes>
+    </Suspense>
   )
 }
 

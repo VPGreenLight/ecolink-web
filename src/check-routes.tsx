@@ -12,6 +12,7 @@
 import { renderToStaticMarkup } from "react-dom/server"
 import { MemoryRouter } from "react-router-dom"
 import { AppRoutes } from "@/App"
+import { preloadPages } from "@/lazyPages"
 import { getSession, signIn, signOut } from "@/lib/session"
 import type { Role } from "@/lib/session"
 
@@ -77,6 +78,10 @@ const BY_ROLE: Record<Role, [string, string][]> = {
 
 let failed = 0
 
+// Nạp hết chunk trang trước khi render: renderToStaticMarkup không chờ được
+// Suspense, lazy chưa có module sẽ chỉ ra fallback.
+await preloadPages()
+
 for (const [role, cases] of Object.entries(BY_ROLE) as [Role, [string, string][]][]) {
   // signIn chứ không setItem trực tiếp: nó bỏ đệm của getSnapshot, đúng như
   // lúc chạy thật.
@@ -84,11 +89,19 @@ for (const [role, cases] of Object.entries(BY_ROLE) as [Role, [string, string][]
 
   for (const [path, mustInclude] of cases) {
     try {
-      const html = renderToStaticMarkup(
-        <MemoryRouter initialEntries={[path]}>
-          <AppRoutes />
-        </MemoryRouter>,
-      )
+      const render = () =>
+        renderToStaticMarkup(
+          <MemoryRouter initialEntries={[path]}>
+            <AppRoutes />
+          </MemoryRouter>,
+        )
+
+      // Trang giờ nạp bằng React.lazy: lần render đầu luôn ra fallback vì
+      // promise của lazy resolve ở microtask. Render bỏ đi một lần rồi mới
+      // render thật, sau khi đã nhả event loop.
+      render()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const html = render()
       const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
 
       // trang bị chặn sai vai trò thì ra trang 404, vẫn có chữ — nên kiểm tra
