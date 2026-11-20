@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react"
+import PaginationBar, { extractPagedMeta, paginateItems } from "@/components/PaginationBar"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
+import SearchFilterBar from "@/components/SearchFilterBar"
 import { COMPLAINTS, type Complaint } from "@/data/ops"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { ApiError } from "@/lib/api"
 import {
   COMPLAINT_CATEGORY_LABELS,
@@ -37,6 +40,19 @@ export default function Complaints() {
   const [statusFilter, setStatusFilter] = useState<string>("")
   const [categoryFilter, setCategoryFilter] = useState<string>("")
   const [search, setSearch] = useState<string>("")
+  const debouncedSearch = useDebouncedValue(search, 300)
+  const [complaintPage, setComplaintPage] = useState(1)
+  const [complaintPageSize, setComplaintPageSize] = useState(10)
+  const [complaintTotal, setComplaintTotal] = useState(0)
+  const [reviewSearch, setReviewSearch] = useState("")
+  const debouncedReviewSearch = useDebouncedValue(reviewSearch, 250)
+  const [reviewPage, setReviewPage] = useState(1)
+  const [reviewPageSize, setReviewPageSize] = useState(10)
+  const [offlineSearch, setOfflineSearch] = useState("")
+  const debouncedOfflineSearch = useDebouncedValue(offlineSearch, 250)
+  const [offlineOpenPage, setOfflineOpenPage] = useState(1)
+  const [offlineClosedPage, setOfflineClosedPage] = useState(1)
+  const [offlinePageSize, setOfflinePageSize] = useState(5)
 
   const [liveComplaints, setLiveComplaints] = useState<ComplaintSummaryDto[]>([])
   const [reportedReviews, setReportedReviews] = useState<TransactionReviewDto[]>([])
@@ -58,19 +74,25 @@ export default function Complaints() {
   const [flash, setFlash] = useState("")
   const [busyId, setBusyId] = useState("")
 
-  const loadLiveQueue = async () => {
+  const loadLiveQueue = async (
+    targetPage = complaintPage,
+    targetPageSize = complaintPageSize,
+    targetSearch = debouncedSearch,
+  ) => {
     setLoading(true)
     try {
       const res = await fetchStaffComplaints({
         status: statusFilter || undefined,
         category: categoryFilter || undefined,
-        search: search.trim() || undefined,
+        search: targetSearch.trim() || undefined,
         includeReportedReviews: true,
-        pageSize: 30,
+        pageNumber: targetPage,
+        pageSize: targetPageSize,
       })
       if (res.success && res.data) {
         setUsingLiveApi(true)
         setLiveComplaints(res.data.complaints.items)
+        setComplaintTotal(extractPagedMeta(res.data.complaints).totalCount)
         setReportedReviews(res.data.reportedReviews ?? [])
         setCounts({
           openCount: res.data.openCount,
@@ -89,9 +111,9 @@ export default function Complaints() {
 
   useEffect(() => {
     if (!getAccessToken()) return
-    void loadLiveQueue()
+    void loadLiveQueue(complaintPage, complaintPageSize, debouncedSearch)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, categoryFilter])
+  }, [statusFilter, categoryFilter, complaintPage, complaintPageSize, debouncedSearch])
 
   const openDossier = async (complaintId: string) => {
     setLoadingDossier(true)
@@ -241,16 +263,25 @@ export default function Complaints() {
                 <input
                   type="search"
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => {
+                    setSearch(e.target.value)
+                    setComplaintPage(1)
+                  }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") void loadLiveQueue()
+                    if (e.key === "Enter") {
+                      setComplaintPage(1)
+                      void loadLiveQueue(1, complaintPageSize, search)
+                    }
                   }}
                   placeholder="Tìm theo mã CMP-..., mã đơn HND-..., tên các bên..."
                   className="input h-10 min-w-[220px] flex-1"
                 />
                 <select
                   value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value)
+                    setComplaintPage(1)
+                  }}
                   className="input h-10 w-44"
                 >
                   <option value="">Tất cả trạng thái</option>
@@ -261,7 +292,10 @@ export default function Complaints() {
                 </select>
                 <select
                   value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  onChange={(e) => {
+                    setCategoryFilter(e.target.value)
+                    setComplaintPage(1)
+                  }}
                   className="input h-10 w-48"
                 >
                   <option value="">Tất cả nhóm lỗi</option>
@@ -273,7 +307,10 @@ export default function Complaints() {
                 </select>
                 <button
                   type="button"
-                  onClick={() => void loadLiveQueue()}
+                  onClick={() => {
+                    setComplaintPage(1)
+                    void loadLiveQueue(1, complaintPageSize, search)
+                  }}
                   className="btn-primary h-10 px-4 text-xs"
                 >
                   Lọc
@@ -449,6 +486,7 @@ export default function Complaints() {
                   Chưa có phiếu khiếu nại nào khớp bộ lọc hiện tại.
                 </p>
               ) : (
+                <>
                 <ul className="flex flex-col gap-3">
                   {liveComplaints.map((c) => (
                     <li key={c.complaintId} className="card flex flex-wrap items-center justify-between gap-4 p-4">
@@ -490,16 +528,49 @@ export default function Complaints() {
                     </li>
                   ))}
                 </ul>
+                <PaginationBar
+                  page={complaintPage}
+                  pageSize={complaintPageSize}
+                  totalCount={complaintTotal}
+                  onPageChange={setComplaintPage}
+                  onPageSizeChange={setComplaintPageSize}
+                  itemLabel="khiếu nại"
+                />
+                </>
               )}
             </>
           ) : (
-            <div className="flex flex-col gap-3">
-              {reportedReviews.length === 0 ? (
-                <p className="card px-5 py-8 text-center text-sm text-muted">
-                  Hiện không có đánh giá nào bị báo cáo vi phạm.
-                </p>
-              ) : (
-                reportedReviews.map((rv) => (
+            (() => {
+              const rkw = debouncedReviewSearch.trim().toLowerCase()
+              const filteredReviews = reportedReviews.filter(
+                (rv) =>
+                  !rkw ||
+                  `${rv.facilityName} ${rv.reviewerDisplayName} ${rv.comment ?? ""} ${rv.lastReportReason ?? ""}`
+                    .toLowerCase()
+                    .includes(rkw),
+              )
+              const pagedReviews = paginateItems(filteredReviews, reviewPage, reviewPageSize)
+
+              return (
+                <div className="flex flex-col gap-3">
+                  <SearchFilterBar
+                    value={reviewSearch}
+                    onChange={(v) => {
+                      setReviewSearch(v)
+                      setReviewPage(1)
+                    }}
+                    label="Tìm kiếm đánh giá bị báo cáo"
+                    placeholder="Tìm theo tên cơ sở, người đánh giá hoặc lý do báo cáo..."
+                    totalCount={filteredReviews.length}
+                    countLabel="đánh giá"
+                  />
+                  {filteredReviews.length === 0 ? (
+                    <p className="card px-5 py-8 text-center text-sm text-muted">
+                      Hiện không có đánh giá nào bị báo cáo vi phạm khớp bộ lọc.
+                    </p>
+                  ) : (
+                    <>
+                      {pagedReviews.map((rv) => (
                   <div key={rv.reviewId} className="card flex flex-col gap-3 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
@@ -546,81 +617,137 @@ export default function Complaints() {
                       </button>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                ))}
+                      <PaginationBar
+                        page={reviewPage}
+                        pageSize={reviewPageSize}
+                        totalCount={filteredReviews.length}
+                        onPageChange={setReviewPage}
+                        onPageSizeChange={setReviewPageSize}
+                        itemLabel="đánh giá"
+                      />
+                    </>
+                  )}
+                </div>
+              )
+            })()
           )}
         </>
       ) : (
-        <>
-          <ul className="flex flex-col gap-4">
-            {openOffline.map((c) => (
-              <li key={c.id} className="card flex flex-col gap-4 p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-bold text-ink">{c.title}</p>
-                    <p className="mt-0.5 text-[13px] text-muted">
-                      {c.id} · {c.date} · {c.user} · liên quan {c.target}
-                    </p>
+        (() => {
+          const okw = debouncedOfflineSearch.trim().toLowerCase()
+          const filteredOpen = openOffline.filter(
+            (c) => !okw || `${c.id} ${c.title} ${c.user} ${c.target}`.toLowerCase().includes(okw),
+          )
+          const filteredClosed = closedOffline.filter(
+            (c) => !okw || `${c.id} ${c.title} ${c.user} ${c.reply ?? ""}`.toLowerCase().includes(okw),
+          )
+          const pagedOpenOffline = paginateItems(filteredOpen, offlineOpenPage, offlinePageSize)
+          const pagedClosedOffline = paginateItems(filteredClosed, offlineClosedPage, offlinePageSize)
+
+          return (
+            <>
+              <SearchFilterBar
+                value={offlineSearch}
+                onChange={(v) => {
+                  setOfflineSearch(v)
+                  setOfflineOpenPage(1)
+                  setOfflineClosedPage(1)
+                }}
+                label="Tìm kiếm khiếu nại"
+                placeholder="Tìm theo mã, tiêu đề, người báo hoặc đối tượng liên quan..."
+                totalCount={filteredOpen.length + filteredClosed.length}
+                countLabel="khiếu nại"
+              />
+
+              <ul className="flex flex-col gap-4">
+                {pagedOpenOffline.map((c) => (
+                  <li key={c.id} className="card flex flex-col gap-4 p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-bold text-ink">{c.title}</p>
+                        <p className="mt-0.5 text-[13px] text-muted">
+                          {c.id} · {c.date} · {c.user} · liên quan {c.target}
+                        </p>
+                      </div>
+                      <Status tone={c.status === "new" ? "wait" : "todo"}>
+                        {c.status === "new" ? "Mới" : "Đang xử lý"}
+                      </Status>
+                    </div>
+
+                    <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+                      Phản hồi cho người dùng
+                      <textarea
+                        className="input h-auto resize-y py-3 leading-6"
+                        rows={3}
+                        value={offlineReply[c.id] ?? ""}
+                        onChange={(e) =>
+                          setOfflineReply((r) => ({ ...r, [c.id]: e.target.value }))
+                        }
+                        placeholder="Nêu rõ đã kiểm tra gì, kết luận gì, và người dùng cần làm gì tiếp."
+                      />
+                    </label>
+
+                    <div className="flex flex-wrap gap-3 border-t border-line-soft pt-4">
+                      {c.status === "new" && (
+                        <button
+                          type="button"
+                          onClick={() => takeOffline(c.id)}
+                          className="btn-ghost h-11 px-5"
+                        >
+                          Nhận xử lý
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => resolveOffline(c.id)}
+                        className="btn-primary h-11 px-6"
+                      >
+                        Đóng khiếu nại
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <PaginationBar
+                page={offlineOpenPage}
+                pageSize={offlinePageSize}
+                totalCount={filteredOpen.length}
+                onPageChange={setOfflineOpenPage}
+                onPageSizeChange={setOfflinePageSize}
+                pageSizeOptions={[5, 10, 20]}
+                itemLabel="khiếu nại mở"
+              />
+
+              {filteredClosed.length > 0 && (
+                <section>
+                  <h2 className="text-base font-bold text-ink">Đã đóng ({filteredClosed.length})</h2>
+                  <div className="mt-3">
+                    <Table head={["Mã", "Vấn đề", "Người báo", "Kết quả"]}>
+                      {pagedClosedOffline.map((c) => (
+                        <tr key={c.id}>
+                          <Td className="tabular-nums whitespace-nowrap">{c.id}</Td>
+                          <Td className="font-semibold text-ink">{c.title}</Td>
+                          <Td className="whitespace-nowrap">{c.user}</Td>
+                          <Td>{c.reply ?? "—"}</Td>
+                        </tr>
+                      ))}
+                    </Table>
+                    <PaginationBar
+                      page={offlineClosedPage}
+                      pageSize={offlinePageSize}
+                      totalCount={filteredClosed.length}
+                      onPageChange={setOfflineClosedPage}
+                      onPageSizeChange={setOfflinePageSize}
+                      pageSizeOptions={[5, 10, 20]}
+                      itemLabel="khiếu nại đã đóng"
+                    />
                   </div>
-                  <Status tone={c.status === "new" ? "wait" : "todo"}>
-                    {c.status === "new" ? "Mới" : "Đang xử lý"}
-                  </Status>
-                </div>
-
-                <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-                  Phản hồi cho người dùng
-                  <textarea
-                    className="input h-auto resize-y py-3 leading-6"
-                    rows={3}
-                    value={offlineReply[c.id] ?? ""}
-                    onChange={(e) =>
-                      setOfflineReply((r) => ({ ...r, [c.id]: e.target.value }))
-                    }
-                    placeholder="Nêu rõ đã kiểm tra gì, kết luận gì, và người dùng cần làm gì tiếp."
-                  />
-                </label>
-
-                <div className="flex flex-wrap gap-3 border-t border-line-soft pt-4">
-                  {c.status === "new" && (
-                    <button
-                      type="button"
-                      onClick={() => takeOffline(c.id)}
-                      className="btn-ghost h-11 px-5"
-                    >
-                      Nhận xử lý
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => resolveOffline(c.id)}
-                    className="btn-primary h-11 px-6"
-                  >
-                    Đóng khiếu nại
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          {closedOffline.length > 0 && (
-            <section>
-              <h2 className="text-base font-bold text-ink">Đã đóng</h2>
-              <div className="mt-3">
-                <Table head={["Mã", "Vấn đề", "Người báo", "Kết quả"]}>
-                  {closedOffline.map((c) => (
-                    <tr key={c.id}>
-                      <Td className="tabular-nums whitespace-nowrap">{c.id}</Td>
-                      <Td className="font-semibold text-ink">{c.title}</Td>
-                      <Td className="whitespace-nowrap">{c.user}</Td>
-                      <Td>{c.reply ?? "—"}</Td>
-                    </tr>
-                  ))}
-                </Table>
-              </div>
-            </section>
-          )}
-        </>
+                </section>
+              )}
+            </>
+          )
+        })()
       )}
     </div>
   )

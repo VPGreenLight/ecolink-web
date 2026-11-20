@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
+import SearchFilterBar from "@/components/SearchFilterBar"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   decideStaffApplication,
   fetchStaffApplications,
@@ -21,20 +24,24 @@ export default function Applications() {
   )
   const [loading, setLoading] = useState<boolean>(() => hasLiveBackendAuth())
   const [refreshing, setRefreshing] = useState(false)
-  const [fromBackend, setFromBackend] = useState(false)
   const [inspectingMapId, setInspectingMapId] = useState<string | null>(null)
   const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState("")
   const [rejectErr, setRejectErr] = useState("")
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [flash, setFlash] = useState("")
+  const [search, setSearch] = useState("")
+  const debouncedSearch = useDebouncedValue(search, 250)
+  const [pendingPage, setPendingPage] = useState(1)
+  const [pendingPageSize, setPendingPageSize] = useState(5)
+  const [donePage, setDonePage] = useState(1)
+  const [donePageSize, setDonePageSize] = useState(10)
 
   const reloadApplications = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true)
     try {
       const res = await fetchStaffApplications()
       setList(res.items)
-      setFromBackend(res.fromBackend)
       setInspectingMapId((prev) => {
         if (prev && res.items.some((x) => x.id === prev && x.status === "pending")) {
           return prev
@@ -53,7 +60,6 @@ export default function Applications() {
       .then((res) => {
         if (!active) return
         setList(res.items)
-        setFromBackend(res.fromBackend)
         const firstPending = res.items.find((x) => x.status === "pending")
         if (firstPending) {
           setInspectingMapId(firstPending.id)
@@ -72,7 +78,6 @@ export default function Applications() {
     try {
       const res = await decideStaffApplication(app, true)
       setList((ls) => ls.map((a) => (a.id === app.id ? res.updated : a)))
-      setFromBackend(res.fromBackend)
       setRejectingId(null)
       setFlash(
         `${app.name} (${app.id}): đã phê duyệt. Ghim kho bãi đã được kích hoạt trên trang Bản đồ /map.`,
@@ -95,7 +100,6 @@ export default function Applications() {
     try {
       const res = await decideStaffApplication(app, false, trimmed)
       setList((ls) => ls.map((a) => (a.id === app.id ? res.updated : a)))
-      setFromBackend(res.fromBackend)
       setRejectingId(null)
       setRejectReason("")
       setFlash(`${app.name} (${app.id}): đã từ chối với lý do "${trimmed}".`)
@@ -106,8 +110,27 @@ export default function Applications() {
     }
   }
 
-  const pending = list.filter((a) => a.status === "pending")
-  const done = list.filter((a) => a.status !== "pending")
+  const keyword = debouncedSearch.trim().toLowerCase()
+  const matchesKeyword = (a: StaffApplicationView) => {
+    if (!keyword) return true
+    return [
+      a.id,
+      a.name,
+      a.address,
+      a.representativeName ?? "",
+      a.phone ?? "",
+      a.email ?? "",
+      a.materials,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(keyword)
+  }
+
+  const pending = list.filter((a) => a.status === "pending" && matchesKeyword(a))
+  const done = list.filter((a) => a.status !== "pending" && matchesKeyword(a))
+  const pagedPending = paginateItems(pending, pendingPage, pendingPageSize)
+  const pagedDone = paginateItems(done, donePage, donePageSize)
 
   return (
     <div className="flex flex-col gap-6">
@@ -116,19 +139,14 @@ export default function Applications() {
         title="Thẩm định hồ sơ cơ sở thu mua"
         body="Chỉ duyệt khi giấy phép còn hiệu lực và vị trí ghim kho bãi trùng khớp với địa chỉ thu gom thực tế. Từ chối bắt buộc ghi rõ lý do để đối tác bổ sung."
         action={
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-line bg-surface-2 px-3 py-1.5 text-xs font-semibold text-muted">
-              {fromBackend ? "Nguồn: PostgreSQL + PostGIS" : "Nguồn: Hàng đợi trình duyệt"}
-            </span>
-            <button
-              type="button"
-              disabled={loading || refreshing}
-              onClick={() => void reloadApplications(true)}
-              className="btn-outline h-8 px-3 text-xs"
-            >
-              {refreshing ? "Đang tải..." : "Làm mới danh sách"}
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={loading || refreshing}
+            onClick={() => void reloadApplications(true)}
+            className="btn-outline h-8 px-3 text-xs"
+          >
+            {refreshing ? "Đang tải..." : "Làm mới danh sách"}
+          </button>
         }
       />
 
@@ -143,6 +161,19 @@ export default function Applications() {
         </div>
       )}
 
+      <SearchFilterBar
+        value={search}
+        onChange={(v) => {
+          setSearch(v)
+          setPendingPage(1)
+          setDonePage(1)
+        }}
+        label="Tìm kiếm hồ sơ đối tác"
+        placeholder="Tìm theo tên cơ sở, mã HS-..., địa chỉ, SĐT, email hoặc vật liệu..."
+        totalCount={pending.length + done.length}
+        countLabel="hồ sơ"
+      />
+
       <section>
         <h2 className="text-base font-bold text-ink">Chờ thẩm định ({pending.length})</h2>
         {loading ? (
@@ -151,11 +182,12 @@ export default function Applications() {
           </p>
         ) : pending.length === 0 ? (
           <p className="card mt-3 px-5 py-8 text-center text-sm text-muted">
-            Không có hồ sơ nào đang chờ.
+            Không có hồ sơ nào đang chờ khớp bộ lọc.
           </p>
         ) : (
-          <ul className="mt-3 flex flex-col gap-4">
-            {pending.map((a) => {
+          <>
+            <ul className="mt-3 flex flex-col gap-4">
+              {pagedPending.map((a) => {
               const mapOpen = inspectingMapId === a.id
               const isRejecting = rejectingId === a.id
               const busy = processingId === a.id
@@ -187,14 +219,16 @@ export default function Applications() {
                         Giấy tờ & chứng từ đã đính kèm
                       </p>
                       <ul className="mt-2 flex flex-wrap gap-2">
-                        {a.docs.map((d) => (
-                          <li
-                            key={d}
-                            className="rounded-full border border-line bg-surface-2 px-3 py-1 text-xs text-body"
-                          >
-                            {d}
-                          </li>
-                        ))}
+                        {!a.legalPermitUrl &&
+                          !a.businessPhotoUrl &&
+                          a.docs.map((d) => (
+                            <li
+                              key={d}
+                              className="rounded-full border border-line bg-surface-2 px-3 py-1 text-xs text-body"
+                            >
+                              {d}
+                            </li>
+                          ))}
                         {a.legalPermitUrl && (
                           <li>
                             <a
@@ -203,7 +237,7 @@ export default function Applications() {
                               rel="noreferrer"
                               className="inline-block rounded-full border border-brand/30 bg-brand/8 px-3 py-1 text-xs font-semibold text-brand-deep hover:underline"
                             >
-                              Mở file giấy phép ↗
+                              Mở giấy phép pháp lý ↗
                             </a>
                           </li>
                         )}
@@ -308,6 +342,16 @@ export default function Applications() {
               )
             })}
           </ul>
+          <PaginationBar
+            page={pendingPage}
+            pageSize={pendingPageSize}
+            totalCount={pending.length}
+            onPageChange={setPendingPage}
+            onPageSizeChange={setPendingPageSize}
+            pageSizeOptions={[5, 10, 20]}
+            itemLabel="hồ sơ chờ"
+          />
+          </>
         )}
       </section>
 
@@ -315,26 +359,42 @@ export default function Applications() {
         <h2 className="text-base font-bold text-ink">Đã xử lý ({done.length})</h2>
         <div className="mt-3">
           <Table head={["Mã", "Tên cơ sở", "Địa chỉ & Toạ độ", "Ngày nộp", "Kết quả", "Lý do"]}>
-            {done.map((a) => (
-              <tr key={a.id}>
-                <Td className="tabular-nums whitespace-nowrap">{a.id}</Td>
-                <Td className="font-semibold text-ink">{a.name}</Td>
-                <Td>
-                  <span className="block">{a.address}</span>
-                  <span className="text-[11px] tabular-nums text-muted">
-                    GPS: {a.latitude.toFixed(4)}, {a.longitude.toFixed(4)}
-                  </span>
-                </Td>
-                <Td className="tabular-nums whitespace-nowrap">{a.date}</Td>
-                <Td>
-                  <Status tone={a.status === "approved" ? "ok" : "off"}>
-                    {a.status === "approved" ? "Đã duyệt" : "Từ chối"}
-                  </Status>
-                </Td>
-                <Td>{a.note ?? "—"}</Td>
+            {pagedDone.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-6 text-center text-xs text-muted">
+                  Chưa có hồ sơ đã xử lý nào khớp bộ lọc.
+                </td>
               </tr>
-            ))}
+            ) : (
+              pagedDone.map((a) => (
+                <tr key={a.id}>
+                  <Td className="tabular-nums whitespace-nowrap">{a.id}</Td>
+                  <Td className="font-semibold text-ink">{a.name}</Td>
+                  <Td>
+                    <span className="block">{a.address}</span>
+                    <span className="text-[11px] tabular-nums text-muted">
+                      GPS: {a.latitude.toFixed(4)}, {a.longitude.toFixed(4)}
+                    </span>
+                  </Td>
+                  <Td className="tabular-nums whitespace-nowrap">{a.date}</Td>
+                  <Td>
+                    <Status tone={a.status === "approved" ? "ok" : "off"}>
+                      {a.status === "approved" ? "Đã duyệt" : "Từ chối"}
+                    </Status>
+                  </Td>
+                  <Td>{a.note ?? "—"}</Td>
+                </tr>
+              ))
+            )}
           </Table>
+          <PaginationBar
+            page={donePage}
+            pageSize={donePageSize}
+            totalCount={done.length}
+            onPageChange={setDonePage}
+            onPageSizeChange={setDonePageSize}
+            itemLabel="hồ sơ đã xử lý"
+          />
         </div>
       </section>
     </div>

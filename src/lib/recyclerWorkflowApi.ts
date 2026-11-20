@@ -294,7 +294,7 @@ export interface StaffApplicationView extends Application {
 
 const DEMO_BACKEND_CREDENTIALS: Record<Role, { usernameOrEmail: string; password: string }> = {
   user: { usernameOrEmail: "citizen", password: "citizen123" },
-  recycler: { usernameOrEmail: "collector", password: "collector123" },
+  recycler: { usernameOrEmail: "recycler", password: "recycler123" },
   staff: { usernameOrEmail: "staff", password: "staff123" },
   admin: { usernameOrEmail: "admin", password: "admin123" },
 }
@@ -1683,10 +1683,12 @@ export async function fetchUserHandoverRequestsList(
   status?: string,
   page = 1,
   pageSize = 30,
+  search?: string,
 ): Promise<{ items: HandoverRequestDetailApiDto[]; fromBackend: boolean }> {
   try {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
     if (status) params.append("status", status)
+    if (search?.trim()) params.append("search", search.trim())
     const res = await authorizedRequest<{ items: HandoverRequestDetailApiDto[] }>(
       "user",
       `/api/v1/handover-requests?${params.toString()}`,
@@ -1989,11 +1991,13 @@ export async function fetchUserTransactions(
   to?: string,
   page = 1,
   pageSize = 20,
+  search?: string,
 ): Promise<{ data: TransactionHistoryDto; fromBackend: boolean }> {
   try {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
     if (from) params.append("from", from)
     if (to) params.append("to", to)
+    if (search?.trim()) params.append("search", search.trim())
 
     const res = await authorizedRequest<TransactionHistoryDto>(
       "user",
@@ -2028,11 +2032,13 @@ export async function fetchRecyclerTransactions(
   to?: string,
   page = 1,
   pageSize = 20,
+  search?: string,
 ): Promise<{ data: TransactionHistoryDto; fromBackend: boolean }> {
   try {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
     if (from) params.append("from", from)
     if (to) params.append("to", to)
+    if (search?.trim()) params.append("search", search.trim())
 
     const res = await authorizedRequest<TransactionHistoryDto>(
       "recycler",

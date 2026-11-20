@@ -78,7 +78,7 @@ export const PORTAL_NAV: Record<Role, PortalSection[]> = {
       items: [
         { to: "/staff/applications", label: "Hồ sơ đối tác thu mua" },
         { to: "/staff/complaints", label: "Khiếu nại giao dịch" },
-        { to: "/staff/accounts", label: "Tài khoản User/Buyer" },
+        { to: "/staff/accounts", label: "Tài khoản User/Recycler" },
         { to: "/staff/blog", label: "Soạn bài Blog" },
         { to: "/staff/ecofacts", label: "Nội dung Eco Fact" },
         { to: "/staff/gifts", label: "Kho quà tặng" },

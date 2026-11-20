@@ -137,7 +137,7 @@ export default function Dataset() {
         <Stat
           label="Tổng ảnh trong kho"
           value={fmtInt(summary.totalPoolItems)}
-          note={liveConnected ? "Dữ liệu thực PostgreSQL" : "Số liệu mẫu nội bộ"}
+          note={liveConnected ? "Dữ liệu đồng bộ hệ thống" : "Số liệu mẫu nội bộ"}
         />
         <Stat
           label="Đã gán nhãn (Verified)"

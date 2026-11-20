@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { ACCOUNTS, type Account } from "@/data/ops"
 import {
   deactivateAccount,
@@ -58,7 +60,7 @@ const FALLBACK_ROWS: AccountRow[] = ACCOUNTS.map((a) => ({
 }))
 
 /**
- * S-06 Xem danh sách & chi tiết User/Buyer · S-07 Khoá / vô hiệu hoá tài khoản.
+ * S-06 Xem danh sách & chi tiết User/Recycler · S-07 Khoá / vô hiệu hoá tài khoản.
  *
  * Tuân thủ BR-ADM-03 (bắt buộc nhập lý do >= 10 ký tự & thu hồi Refresh Token)
  * và BR-ADM-04 (chỉ vô hiệu hoá mềm khi chưa có giao dịch hoàn tất để giữ đối soát).
@@ -68,6 +70,9 @@ export default function Accounts() {
   const [isLive, setIsLive] = useState(false)
   const [role, setRole] = useState<"all" | "user" | "recycler">("all")
   const [q, setQ] = useState("")
+  const debouncedQ = useDebouncedValue(q, 250)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const [pick, setPick] = useState<AccountRow | null>(null)
   const [detail, setDetail] = useState<StaffAccountDetailDto | null>(null)
   const [flash, setFlash] = useState("")
@@ -238,14 +243,16 @@ export default function Accounts() {
   }
 
   const view = list.filter((a) => {
-    const k = q.trim().toLowerCase()
+    const k = debouncedQ.trim().toLowerCase()
     const hitQ =
       !k ||
       a.name.toLowerCase().includes(k) ||
       a.email.toLowerCase().includes(k) ||
-      a.id.toLowerCase().includes(k)
+      a.id.toLowerCase().includes(k) ||
+      a.area.toLowerCase().includes(k)
     return hitQ && (role === "all" || a.role === role)
   })
+  const pagedView = paginateItems(view, page, pageSize)
 
   const statusLabel = (a: AccountRow) => {
     if (a.rawStatus === "Deactivated") return "Ngưng kích hoạt"
@@ -259,7 +266,7 @@ export default function Accounts() {
     <div className="flex flex-col gap-6">
       <PageHead
         eyebrow="TÀI KHOẢN · S-06 & S-07"
-        title="Danh sách User và Buyer"
+        title="Danh sách User và Recycler"
         body="Tra cứu hồ sơ, cảnh cáo vi phạm và áp dụng chế tài (Khoá / Mở khoá / Vô hiệu hoá mềm). Mọi thao tác bắt buộc ghi rõ lý do kiểm toán tối thiểu 10 ký tự."
       />
 
@@ -271,8 +278,11 @@ export default function Accounts() {
               className="input"
               type="search"
               value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Tên, email hoặc mã tài khoản"
+              onChange={(e) => {
+                setQ(e.target.value)
+                setPage(1)
+              }}
+              placeholder="Tên, email, khu vực hoặc mã tài khoản"
             />
           </label>
         </div>
@@ -281,7 +291,10 @@ export default function Accounts() {
             <button
               key={r}
               type="button"
-              onClick={() => setRole(r)}
+              onClick={() => {
+                setRole(r)
+                setPage(1)
+              }}
               aria-pressed={role === r}
               className={`h-12 rounded-lg border px-4 text-[13px] font-semibold transition-colors ${
                 role === r
@@ -302,53 +315,71 @@ export default function Accounts() {
       )}
 
       <div className="grid gap-5 lg:grid-cols-[1.65fr_1fr]">
-        <Table
-          head={["Mã", "Tên", "Vai trò", "Khu vực", "Giao dịch", "Cảnh cáo", "Trạng thái", ""]}
-        >
-          {view.map((a) => (
-            <tr key={a.backendId ?? a.id}>
-              <Td className="tabular-nums whitespace-nowrap">{a.id}</Td>
-              <Td className="font-semibold text-ink">{a.name}</Td>
-              <Td className="whitespace-nowrap">
-                {a.role === "user" ? "Người dân" : "Cơ sở thu mua"}
-              </Td>
-              <Td className="whitespace-nowrap">{a.area}</Td>
-              <Td className="tabular-nums">{a.deals}</Td>
-              <Td className="tabular-nums">
-                {a.warningCount > 0 ? (
-                  <span className="font-semibold text-warn">{a.warningCount}</span>
-                ) : (
-                  <span className="text-muted">0</span>
-                )}
-              </Td>
-              <Td>
-                <Status tone={a.status === "active" ? "ok" : "off"}>{statusLabel(a)}</Status>
-              </Td>
-              <Td>
-                <span className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => selectAccount(a)}
-                    className="text-[13px] font-semibold text-brand hover:text-brand-deep"
-                  >
-                    Chi tiết
-                  </button>
-                  {a.rawStatus !== "Deactivated" && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        openModerationModal(a, a.status === "active" ? "lock" : "unlock")
-                      }
-                      className="text-[13px] font-semibold text-warn hover:underline"
-                    >
-                      {a.status === "active" ? "Khoá" : "Mở khoá"}
-                    </button>
-                  )}
-                </span>
-              </Td>
-            </tr>
-          ))}
-        </Table>
+        <div className="min-w-0">
+          <Table
+            head={["Mã", "Tên", "Vai trò", "Khu vực", "Giao dịch", "Cảnh cáo", "Trạng thái", ""]}
+          >
+            {pagedView.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-6 text-center text-xs text-muted">
+                  Không tìm thấy tài khoản nào khớp bộ lọc.
+                </td>
+              </tr>
+            ) : (
+              pagedView.map((a) => (
+                <tr key={a.backendId ?? a.id}>
+                  <Td className="tabular-nums whitespace-nowrap">{a.id}</Td>
+                  <Td className="font-semibold text-ink">{a.name}</Td>
+                  <Td className="whitespace-nowrap">
+                    {a.role === "user" ? "Người dân" : "Cơ sở thu mua"}
+                  </Td>
+                  <Td className="whitespace-nowrap">{a.area}</Td>
+                  <Td className="tabular-nums">{a.deals}</Td>
+                  <Td className="tabular-nums">
+                    {a.warningCount > 0 ? (
+                      <span className="font-semibold text-warn">{a.warningCount}</span>
+                    ) : (
+                      <span className="text-muted">0</span>
+                    )}
+                  </Td>
+                  <Td>
+                    <Status tone={a.status === "active" ? "ok" : "off"}>{statusLabel(a)}</Status>
+                  </Td>
+                  <Td>
+                    <span className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => selectAccount(a)}
+                        className="text-[13px] font-semibold text-brand hover:text-brand-deep"
+                      >
+                        Chi tiết
+                      </button>
+                      {a.rawStatus !== "Deactivated" && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openModerationModal(a, a.status === "active" ? "lock" : "unlock")
+                          }
+                          className="text-[13px] font-semibold text-warn hover:underline"
+                        >
+                          {a.status === "active" ? "Khoá" : "Mở khoá"}
+                        </button>
+                      )}
+                    </span>
+                  </Td>
+                </tr>
+              ))
+            )}
+          </Table>
+          <PaginationBar
+            page={page}
+            pageSize={pageSize}
+            totalCount={view.length}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="tài khoản"
+          />
+        </div>
 
         <aside className="card flex flex-col gap-4 p-5">
           {!pick ? (

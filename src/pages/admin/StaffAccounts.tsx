@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import SearchFilterBar from "@/components/SearchFilterBar"
 import { Field, PageHead, Status, Table, Td } from "@/components/admin/ui"
 import { STAFF, type Staff } from "@/data/ops"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   createAdminStaff,
   getAdminStaffList,
@@ -70,6 +73,23 @@ export default function StaffAccounts() {
   const [lockTarget, setLockTarget] = useState<StaffRow | null>(null)
   const [lockReason, setLockReason] = useState("")
   const [modalError, setModalError] = useState("")
+
+  const [search, setSearch] = useState("")
+  const debouncedSearch = useDebouncedValue(search, 250)
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "locked">("all")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
+  const staffKeyword = debouncedSearch.trim().toLowerCase()
+  const filteredStaff = list.filter((s) => {
+    if (statusFilter !== "all" && s.status !== statusFilter) return false
+    if (!staffKeyword) return true
+    return [s.id, s.name, s.email, s.department, s.position]
+      .join(" ")
+      .toLowerCase()
+      .includes(staffKeyword)
+  })
+  const pagedStaff = paginateItems(filteredStaff, page, pageSize)
 
   useEffect(() => {
     let cancelled = false
@@ -325,43 +345,87 @@ export default function StaffAccounts() {
         </div>
       </form>
 
-      <Table head={["Mã NV", "Họ tên", "Email", "Phòng ban", "Số quyền", "Trạng thái", ""]}>
-        {list.map((s) => (
-          <tr key={s.backendUserId ?? s.id}>
-            <Td className="tabular-nums whitespace-nowrap">{s.id}</Td>
-            <Td className="font-semibold text-ink">
-              {s.name}
-              <span className="block text-[11px] font-normal text-muted">{s.position}</span>
-            </Td>
-            <Td>{s.email}</Td>
-            <Td className="whitespace-nowrap">{s.department}</Td>
-            <Td className="tabular-nums">{s.perms.length}</Td>
-            <Td>
-              <Status tone={s.status === "active" ? "ok" : "off"}>
-                {s.status === "active" ? "Hoạt động" : "Đã khoá"}
-              </Status>
-            </Td>
-            <Td>
-              <span className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => openEdit(s)}
-                  className="text-[13px] font-semibold text-brand hover:underline"
-                >
-                  Sửa
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openLockModal(s)}
-                  className="text-[13px] font-semibold text-warn hover:underline"
-                >
-                  {s.status === "active" ? "Khoá" : "Mở khoá"}
-                </button>
-              </span>
-            </Td>
-          </tr>
-        ))}
-      </Table>
+      <SearchFilterBar
+        value={search}
+        onChange={(v) => {
+          setSearch(v)
+          setPage(1)
+        }}
+        label="Tìm kiếm nhân sự"
+        placeholder="Tìm theo mã NV, họ tên, email, phòng ban..."
+        totalCount={filteredStaff.length}
+        countLabel="nhân viên"
+      >
+        <select
+          aria-label="Lọc trạng thái nhân viên"
+          value={statusFilter}
+          onChange={(e) => {
+            setStatusFilter(e.target.value as "all" | "active" | "locked")
+            setPage(1)
+          }}
+          className="input h-10 text-xs"
+        >
+          <option value="all">Tất cả trạng thái</option>
+          <option value="active">Hoạt động</option>
+          <option value="locked">Đã khoá</option>
+        </select>
+      </SearchFilterBar>
+
+      <div>
+        <Table head={["Mã NV", "Họ tên", "Email", "Phòng ban", "Số quyền", "Trạng thái", ""]}>
+          {pagedStaff.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="px-4 py-6 text-center text-xs text-muted">
+                Không có tài khoản nhân viên nào khớp bộ lọc.
+              </td>
+            </tr>
+          ) : (
+            pagedStaff.map((s) => (
+              <tr key={s.backendUserId ?? s.id}>
+                <Td className="tabular-nums whitespace-nowrap">{s.id}</Td>
+                <Td className="font-semibold text-ink">
+                  {s.name}
+                  <span className="block text-[11px] font-normal text-muted">{s.position}</span>
+                </Td>
+                <Td>{s.email}</Td>
+                <Td className="whitespace-nowrap">{s.department}</Td>
+                <Td className="tabular-nums">{s.perms.length}</Td>
+                <Td>
+                  <Status tone={s.status === "active" ? "ok" : "off"}>
+                    {s.status === "active" ? "Hoạt động" : "Đã khoá"}
+                  </Status>
+                </Td>
+                <Td>
+                  <span className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(s)}
+                      className="text-[13px] font-semibold text-brand hover:underline"
+                    >
+                      Sửa
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openLockModal(s)}
+                      className="text-[13px] font-semibold text-warn hover:underline"
+                    >
+                      {s.status === "active" ? "Khoá" : "Mở khoá"}
+                    </button>
+                  </span>
+                </Td>
+              </tr>
+            ))
+          )}
+        </Table>
+        <PaginationBar
+          page={page}
+          pageSize={pageSize}
+          totalCount={filteredStaff.length}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          itemLabel="nhân viên"
+        />
+      </div>
 
       <p className="max-w-[70ch] text-sm leading-6 text-muted">
         Nhân viên bị khoá sẽ ngay lập tức bị thu hồi phiên đăng nhập (Refresh Token + bộ chặn trạng thái JWT). Hồ sơ nhân viên không xoá cứng để giữ nguyên dấu vết kiểm duyệt AI, biên bản khiếu nại và nhật ký kiểm toán.

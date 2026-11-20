@@ -29,7 +29,8 @@ const MATERIALS = [
  *  Chỉ sau khi Nhân viên EcoLink (`S-04`) phê duyệt, ghim kho bãi mới hiển thị trên `/map`. */
 export default function JoinRecycler() {
   const session = useSession()
-  const [docs, setDocs] = useState<File[]>([])
+  const [permitFile, setPermitFile] = useState<File | null>(null)
+  const [facilityPhotoFile, setFacilityPhotoFile] = useState<File | null>(null)
   const [name, setName] = useState("")
   const [owner, setOwner] = useState("")
   const [phone, setPhone] = useState("")
@@ -121,8 +122,12 @@ export default function JoinRecycler() {
       setErr("Chọn ít nhất một loại rác bạn thu mua.")
       return
     }
-    if (docs.length === 0) {
-      setErr("Tải ít nhất một giấy tờ để hồ sơ được thẩm định.")
+    if (!permitFile) {
+      setErr("Vui lòng tải lên Giấy phép kinh doanh hoặc chứng từ pháp lý.")
+      return
+    }
+    if (!facilityPhotoFile) {
+      setErr("Vui lòng tải lên Ảnh chụp mặt tiền / kho bãi thu gom.")
       return
     }
 
@@ -138,7 +143,7 @@ export default function JoinRecycler() {
         latitude: lat,
         longitude: lng,
         materials: mats,
-        documents: docs,
+        documents: [permitFile, facilityPhotoFile],
       })
       setDoneResult(result)
     } catch (submitErr) {
@@ -206,7 +211,7 @@ export default function JoinRecycler() {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-brand/12 px-3 py-1 text-xs font-semibold text-brand-deep">
-                Đã ghi nhận vào CSDL PostGIS (Trạng thái: Chờ thẩm định)
+                Đã ghi nhận trên hệ thống (Trạng thái: Chờ thẩm định)
               </span>
               <span className="text-xs font-bold tabular-nums text-ink">{existingCode}</span>
               {existingDateVi && (
@@ -318,7 +323,7 @@ export default function JoinRecycler() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="ten@thugom.vn"
+              placeholder="ten@recycler.vn"
             />
           </label>
         </div>
@@ -388,35 +393,68 @@ export default function JoinRecycler() {
           </div>
         </fieldset>
 
-        <div className="flex flex-col gap-2">
-          <span className="text-[13px] font-semibold text-ink">
-            Giấy tờ bắt buộc
-          </span>
-          <span className="text-[12px] text-muted">
-            Giấy đăng ký doanh nghiệp hoặc hộ kinh doanh, giấy phép thu gom chất thải rắn
-            và ảnh chụp mặt tiền kho bãi. Ảnh rõ chữ, tối đa 5 tệp.
-          </span>
-          <label
-            className={`mt-1 flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-6 text-center transition-colors ${
-              err.startsWith("Tải ít nhất")
-                ? "border-warn bg-surface-2"
-                : "border-sage-line bg-surface-2 hover:bg-surface-3"
-            }`}
-          >
-            <input
-              type="file"
-              accept="image/*,application/pdf"
-              multiple
-              className="sr-only"
-              onChange={(e) => setDocs(Array.from(e.target.files ?? []).slice(0, 5))}
-            />
-            <span className="text-sm font-semibold text-brand">
-              {docs.length === 0 ? "Chọn giấy tờ & ảnh kho bãi" : docs.map((d) => d.name).join(" · ")}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-semibold text-ink">
+              1. Giấy phép kinh doanh / Chứng từ pháp lý <span className="text-warn">*</span>
             </span>
-            {docs.length === 0 && (
-              <span className="text-[12px] text-muted">Chấp nhận ảnh (.jpg, .png, .webp) và PDF</span>
-            )}
-          </label>
+            <span className="text-[12px] text-muted">
+              Giấy đăng ký doanh nghiệp / hộ kinh doanh hoặc giấy phép thu gom chất thải (Ảnh hoặc PDF).
+            </span>
+            <label
+              className={`mt-1 flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed px-4 py-5 text-center transition-colors ${
+                err.includes("Giấy phép")
+                  ? "border-warn bg-surface-2"
+                  : "border-sage-line bg-surface-2 hover:bg-surface-3"
+              }`}
+            >
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                className="sr-only"
+                onChange={(e) => setPermitFile(e.target.files?.[0] ?? null)}
+              />
+              <span className="text-sm font-semibold text-brand break-all">
+                {permitFile ? permitFile.name : "Chọn tệp giấy phép (.pdf, .jpg, .png)"}
+              </span>
+              <span className="text-[11px] text-muted">
+                {permitFile
+                  ? `${(permitFile.size / 1024).toFixed(0)} KB · Bấm để đổi tệp`
+                  : "Hỗ trợ PDF, JPG, PNG, WEBP"}
+              </span>
+            </label>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-semibold text-ink">
+              2. Ảnh thực tế mặt tiền / kho bãi <span className="text-warn">*</span>
+            </span>
+            <span className="text-[12px] text-muted">
+              Ảnh chụp rõ biển hiệu, khu vực cân đo hoặc mặt bằng thu gom thực tế tại địa chỉ đăng ký.
+            </span>
+            <label
+              className={`mt-1 flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed px-4 py-5 text-center transition-colors ${
+                err.includes("Ảnh chụp")
+                  ? "border-warn bg-surface-2"
+                  : "border-sage-line bg-surface-2 hover:bg-surface-3"
+              }`}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(e) => setFacilityPhotoFile(e.target.files?.[0] ?? null)}
+              />
+              <span className="text-sm font-semibold text-brand break-all">
+                {facilityPhotoFile ? facilityPhotoFile.name : "Chọn ảnh kho bãi (.jpg, .png)"}
+              </span>
+              <span className="text-[11px] text-muted">
+                {facilityPhotoFile
+                  ? `${(facilityPhotoFile.size / 1024).toFixed(0)} KB · Bấm để đổi ảnh`
+                  : "Chỉ chấp nhận tệp hình ảnh rõ nét"}
+              </span>
+            </label>
+          </div>
         </div>
 
         {err && <p className="text-[13px] text-warn">{err}</p>}
@@ -479,7 +517,7 @@ function Done({
         <div className="ml-auto flex flex-col items-end gap-1 text-right">
           <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-semibold text-brand-deep">
             {syncedWithBackend
-              ? "Đã ghi nhận vào CSDL PostGIS (Trạng thái: Chờ thẩm định)"
+              ? "Đã ghi nhận trên hệ thống (Trạng thái: Chờ thẩm định)"
               : "Đã lưu hàng đợi thẩm định trình duyệt"}
           </span>
           <p className="text-xs text-muted">

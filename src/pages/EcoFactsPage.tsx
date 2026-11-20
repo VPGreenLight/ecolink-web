@@ -1,7 +1,10 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { PageHead } from "@/components/Portal"
+import SearchFilterBar from "@/components/SearchFilterBar"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { getSpendPoints, addSpendPoints, fmt } from "@/data/rewards"
 import {
+  careVirtualTree,
   fetchMyUnlockedEcoFacts,
   fetchMyVirtualTree,
   fetchPointWallet,
@@ -20,6 +23,8 @@ import {
   TriangleAlert,
   RotateCcw,
   X,
+  Lock,
+  BookOpen,
 } from "lucide-react"
 
 type TreeStage = "seed" | "sprout" | "sapling" | "mature" | "flowering" | "fruiting"
@@ -124,6 +129,11 @@ export default function EcoFactsPage() {
   const [tree, setTree] = useState<TreeState>(() => loadInitialState(liveTreeUser))
   const [backendTree, setBackendTree] = useState<VirtualTreeDto | null>(null)
   const [unlockedFacts, setUnlockedFacts] = useState<EcoFactItemDto[]>([])
+  const [factSearch, setFactSearch] = useState("")
+  const [factLevelFilter, setFactLevelFilter] = useState<number | "all">("all")
+  const [factPage, setFactPage] = useState(1)
+  const [factPageSize, setFactPageSize] = useState(6)
+  const [selectedFact, setSelectedFact] = useState<EcoFactItemDto | null>(null)
   const [upgradingOfficial, setUpgradingOfficial] = useState(false)
   const [officialMsg, setOfficialMsg] = useState("")
   const [currentFrame, setCurrentFrame] = useState<number>(() => {
@@ -142,7 +152,7 @@ export default function EcoFactsPage() {
       const [wRes, tRes, fRes] = await Promise.all([
         fetchPointWallet(),
         fetchMyVirtualTree(),
-        fetchMyUnlockedEcoFacts(),
+        fetchMyUnlockedEcoFacts(true),
       ])
       if (wRes.data) {
         setTree((prev) => ({ ...prev, coins: wRes.data.balance }))
@@ -154,6 +164,8 @@ export default function EcoFactsPage() {
           ...prev,
           stage: nextStage,
           coins: tRes.data.walletBalance,
+          isDead: false,
+          exp: Math.min(prev.maxExp, tRes.data.dailyWaterCount * 15),
         }))
         setCurrentFrame(getDefaultFrameForStage(nextStage))
       }
@@ -177,14 +189,14 @@ export default function EcoFactsPage() {
         const t = res.data.tree
         setBackendTree(t)
         const nextStage = stageForBackendLevel(t.level)
-        setTree((prev) => ({ ...prev, stage: nextStage, coins: t.walletBalance }))
+        setTree((prev) => ({ ...prev, stage: nextStage, coins: t.walletBalance, isDead: false }))
         setCurrentFrame(getDefaultFrameForStage(nextStage))
         setOfficialMsg(
           res.data.unlockedFacts.length > 0
             ? `Cây đã thăng cấp ${t.level} (${t.levelTitle}) và mở ${res.data.unlockedFacts.length} Eco Fact mới!`
             : `Cây đã thăng cấp ${t.level} (${t.levelTitle})!`,
         )
-        const fRes = await fetchMyUnlockedEcoFacts()
+        const fRes = await fetchMyUnlockedEcoFacts(true)
         if (fRes.data) setUnlockedFacts(fRes.data)
       }
     } catch (err) {
@@ -203,12 +215,13 @@ export default function EcoFactsPage() {
     }
   }, [])
 
-  // Lưu trạng thái vào localStorage
+  // Lưu trạng thái cục bộ chỉ cho chế độ xem thử nghiệm (khi chưa đăng nhập tài khoản thật)
   useEffect(() => {
+    if (liveTreeUser) return
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(tree))
     } catch {}
-  }, [tree])
+  }, [tree, liveTreeUser])
 
   // Đồng bộ số dư điểm tiêu dùng khi có thay đổi từ trang Đổi Thưởng hoặc các tab khác
   useEffect(() => {
@@ -222,8 +235,9 @@ export default function EcoFactsPage() {
     return () => window.removeEventListener("ecolink:points-change", handler)
   }, [])
 
-  // Chu kỳ sinh học: lượng nước giảm tự nhiên theo thời gian
+  // Chu kỳ sinh học: chỉ giảm độ ẩm theo thời gian ở chế độ mô phỏng offline
   useEffect(() => {
+    if (liveTreeUser) return
     const timer = setInterval(() => {
       setTree((prev) => {
         if (prev.isDead) return prev
@@ -242,10 +256,10 @@ export default function EcoFactsPage() {
         }
         return { ...prev, water: newWater }
       })
-    }, 4500) // Giảm 1% nước mỗi 4.5 giây để tăng tính tương tác
+    }, 4500)
 
     return () => clearInterval(timer)
-  }, [])
+  }, [liveTreeUser])
 
   // Điều khiển animation khung hình theo giai đoạn:
   // - seed: dừng ở frame 1
@@ -327,8 +341,36 @@ export default function EcoFactsPage() {
   }
 
   // Hành động 1: Tưới nước
-  const handleWater = () => {
+  const handleWater = async () => {
     if (isWatering) return
+    if (liveTreeUser) {
+      if (backendTree && backendTree.dailyWaterCount >= backendTree.dailyLimit) {
+        setOfficialMsg(`Bạn đã đạt giới hạn chăm sóc cây hôm nay (${backendTree.dailyWaterCount}/${backendTree.dailyLimit} lượt). Quay lại vào ngày mai nhé!`)
+        return
+      }
+      setIsWatering(true)
+      setOfficialMsg("")
+      try {
+        const res = await careVirtualTree("water")
+        if (res.data) {
+          setBackendTree(res.data)
+          setTree((prev) => ({
+            ...prev,
+            water: Math.min(100, prev.water + 30),
+            exp: Math.min(prev.maxExp, prev.exp + 15),
+            coins: res.data.walletBalance,
+            isDead: false,
+          }))
+          setOfficialMsg(`Đã ghi nhận tưới nước (${res.data.dailyWaterCount}/${res.data.dailyLimit} lượt hôm nay).`)
+        }
+      } catch (err) {
+        setOfficialMsg(err instanceof Error ? err.message : "Đã hết lượt chăm sóc cây trong ngày.")
+      } finally {
+        setTimeout(() => setIsWatering(false), 700)
+      }
+      return
+    }
+
     setIsWatering(true)
 
     if (tree.isDead) {
@@ -380,9 +422,34 @@ export default function EcoFactsPage() {
   }
 
   // Hành động 2: Bón phân hữu cơ
-  const handleFertilize = () => {
-    if (isFertilizing) return
-    if (tree.isDead) return
+  const handleFertilize = async () => {
+    if (isFertilizing || tree.isDead) return
+    if (liveTreeUser) {
+      if (backendTree && backendTree.dailyWaterCount >= backendTree.dailyLimit) {
+        setOfficialMsg(`Bạn đã đạt giới hạn chăm sóc cây hôm nay (${backendTree.dailyWaterCount}/${backendTree.dailyLimit} lượt). Quay lại vào ngày mai nhé!`)
+        return
+      }
+      setIsFertilizing(true)
+      setOfficialMsg("")
+      try {
+        const res = await careVirtualTree("fertilize")
+        if (res.data) {
+          setBackendTree(res.data)
+          setTree((prev) => ({
+            ...prev,
+            exp: Math.min(prev.maxExp, prev.exp + 25),
+            coins: res.data.walletBalance,
+            isDead: false,
+          }))
+          setOfficialMsg(`Đã ghi nhận bón phân (${res.data.dailyWaterCount}/${res.data.dailyLimit} lượt hôm nay).`)
+        }
+      } catch (err) {
+        setOfficialMsg(err instanceof Error ? err.message : "Đã hết lượt chăm sóc cây trong ngày.")
+      } finally {
+        setTimeout(() => setIsFertilizing(false), 700)
+      }
+      return
+    }
 
     setIsFertilizing(true)
 
@@ -444,6 +511,27 @@ export default function EcoFactsPage() {
       maxExp: 220,
     }))
   }
+
+  const filteredFacts = useMemo(() => {
+    const q = factSearch.trim().toLowerCase()
+    return unlockedFacts.filter((f) => {
+      const matchesLevel = factLevelFilter === "all" || f.unlockTreeLevel === factLevelFilter
+      const matchesQ =
+        !q ||
+        f.title.toLowerCase().includes(q) ||
+        f.content.toLowerCase().includes(q) ||
+        f.code.toLowerCase().includes(q)
+      return matchesLevel && matchesQ
+    })
+  }, [unlockedFacts, factLevelFilter, factSearch])
+
+  const pagedFacts = useMemo(
+    () => paginateItems(filteredFacts, factPage, factPageSize),
+    [filteredFacts, factPage, factPageSize],
+  )
+
+  const dailyCareExhausted =
+    Boolean(liveTreeUser && backendTree && backendTree.dailyWaterCount >= backendTree.dailyLimit)
 
   const currentStageIndex = STAGES.findIndex((s) => s.id === tree.stage)
   const currentStage = STAGES[currentStageIndex]
@@ -656,8 +744,12 @@ export default function EcoFactsPage() {
                 <span className="text-[11px] font-bold uppercase tracking-wider text-muted">
                   Hành động chăm sóc
                 </span>
-                <span className="text-[11px] text-muted">
-                  {tree.isDead ? "Cây đang khô héo" : "Nhấn để bổ sung"}
+                <span className="text-[11px] font-semibold text-muted">
+                  {liveTreeUser && backendTree
+                    ? `Lượt hôm nay: ${backendTree.dailyWaterCount}/${backendTree.dailyLimit}`
+                    : tree.isDead
+                      ? "Cây đang khô héo"
+                      : "Nhấn để bổ sung"}
                 </span>
               </div>
 
@@ -674,8 +766,8 @@ export default function EcoFactsPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={handleWater}
-                    disabled={isWatering}
+                    onClick={() => void handleWater()}
+                    disabled={isWatering || dailyCareExhausted}
                     className="group relative flex items-center gap-3 rounded-2xl border border-blue-200/80 bg-gradient-to-b from-blue-50/70 to-blue-100/50 p-3 text-left transition-all duration-150 hover:border-blue-300 hover:bg-blue-100/70 hover:shadow-xs active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
                   >
                     <div className="flex size-12 shrink-0 items-center justify-center p-0.5">
@@ -687,14 +779,16 @@ export default function EcoFactsPage() {
                     </div>
                     <div className="flex flex-col min-w-0">
                       <span className="text-[13px] font-bold text-slate-900 tracking-tight">Tưới nước</span>
-                      <span className="text-[11px] font-medium text-blue-700">+30% • +3 xu</span>
+                      <span className="text-[11px] font-medium text-blue-700">
+                        {liveTreeUser ? "+30% ẩm · Lưu ngày" : "+30% • +3 xu"}
+                      </span>
                     </div>
                   </button>
 
                   <button
                     type="button"
-                    onClick={handleFertilize}
-                    disabled={isFertilizing}
+                    onClick={() => void handleFertilize()}
+                    disabled={isFertilizing || dailyCareExhausted}
                     className="group relative flex items-center gap-3 rounded-2xl border border-emerald-200/80 bg-gradient-to-b from-emerald-50/70 to-emerald-100/50 p-3 text-left transition-all duration-150 hover:border-emerald-300 hover:bg-emerald-100/70 hover:shadow-xs active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
                   >
                     <div className="flex size-12 shrink-0 items-center justify-center p-1">
@@ -706,7 +800,9 @@ export default function EcoFactsPage() {
                     </div>
                     <div className="flex flex-col min-w-0">
                       <span className="text-[13px] font-bold text-slate-900 tracking-tight">Bón phân</span>
-                      <span className="text-[11px] font-medium text-emerald-700">+25 EXP • +6 xu</span>
+                      <span className="text-[11px] font-medium text-emerald-700">
+                        {liveTreeUser ? "+25 EXP · Lưu ngày" : "+25 EXP • +6 xu"}
+                      </span>
                     </div>
                   </button>
                 </div>
@@ -786,25 +882,183 @@ export default function EcoFactsPage() {
           )}
 
           {unlockedFacts.length > 0 && (
-            <ul className="grid gap-3 pt-2 md:grid-cols-2">
-              {unlockedFacts.map((fact) => (
-                <li
-                  key={fact.id}
-                  className="rounded-2xl border border-brand/20 bg-brand/5 p-4"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-brand">{fact.code}</span>
-                    <span className="rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-brand-deep">
-                      Mốc Cấp {fact.unlockTreeLevel}
-                    </span>
-                  </div>
-                  <h3 className="mt-1 text-sm font-bold text-ink">{fact.title}</h3>
-                  <p className="mt-1 text-xs leading-5 text-body">{fact.content}</p>
-                </li>
-              ))}
-            </ul>
+            <div className="flex flex-col gap-4 pt-2">
+              <SearchFilterBar
+                label="Tìm kiếm kiến thức Eco Fact"
+                value={factSearch}
+                onChange={(v) => {
+                  setFactSearch(v)
+                  setFactPage(1)
+                }}
+                placeholder="Tìm tiêu đề, mã EF-... hoặc nội dung..."
+                totalCount={filteredFacts.length}
+                countLabel="bài kiến thức"
+              >
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFactLevelFilter("all")
+                      setFactPage(1)
+                    }}
+                    className={`h-8 rounded-full border px-3 text-xs font-semibold ${
+                      factLevelFilter === "all"
+                        ? "border-brand bg-brand text-white"
+                        : "border-line bg-white text-body hover:bg-surface-2"
+                    }`}
+                  >
+                    Tất cả cấp
+                  </button>
+                  {[1, 2, 3, 4, 5, 6].map((lv) => (
+                    <button
+                      key={lv}
+                      type="button"
+                      onClick={() => {
+                        setFactLevelFilter(lv)
+                        setFactPage(1)
+                      }}
+                      className={`h-8 rounded-full border px-3 text-xs font-semibold ${
+                        factLevelFilter === lv
+                          ? "border-brand bg-brand text-white"
+                          : "border-line bg-white text-body hover:bg-surface-2"
+                      }`}
+                    >
+                      Cấp {lv}
+                    </button>
+                  ))}
+                </div>
+              </SearchFilterBar>
+
+              {pagedFacts.length === 0 ? (
+                <p className="rounded-xl border border-line bg-surface p-6 text-center text-sm text-muted">
+                  Không có Eco Fact phù hợp với bộ lọc hiện tại.
+                </p>
+              ) : (
+                <ul className="grid gap-3 md:grid-cols-2">
+                  {pagedFacts.map((fact) => {
+                    const unlocked = fact.isUnlocked !== false
+                    return (
+                      <li
+                        key={fact.id}
+                        className={`flex flex-col rounded-2xl border p-4 transition-colors ${
+                          unlocked
+                            ? "border-brand/20 bg-brand/5"
+                            : "border-line bg-surface-2/70 opacity-85"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-xs font-bold text-brand">
+                            {fact.code}
+                          </span>
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                              unlocked
+                                ? "bg-white text-brand-deep"
+                                : "bg-surface-3 text-muted"
+                            }`}
+                          >
+                            {!unlocked && <Lock className="size-3" />}
+                            {unlocked
+                              ? `Mốc Cấp ${fact.unlockTreeLevel}`
+                              : `Khóa · Cần Cấp ${fact.unlockTreeLevel}`}
+                          </span>
+                        </div>
+                        <h3 className="mt-1.5 text-sm font-bold text-ink">{fact.title}</h3>
+                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-body">
+                          {fact.content}
+                        </p>
+                        {unlocked && (
+                          <div className="mt-3 pt-2 border-t border-brand/10 flex items-center justify-between">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedFact(fact)}
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-deep hover:underline"
+                            >
+                              <BookOpen className="size-3.5" />
+                              Đọc chi tiết
+                            </button>
+                            {fact.sourceUrl && (
+                              <a
+                                href={fact.sourceUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[11px] font-medium text-muted hover:text-brand"
+                              >
+                                Nguồn ↗
+                              </a>
+                            )}
+                          </div>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+
+              <PaginationBar
+                page={factPage}
+                pageSize={factPageSize}
+                totalCount={filteredFacts.length}
+                onPageChange={setFactPage}
+                onPageSizeChange={setFactPageSize}
+                pageSizeOptions={[6, 12, 24]}
+                itemLabel="Eco Fact"
+              />
+            </div>
           )}
         </section>
+      )}
+
+      {selectedFact && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={selectedFact.title}
+        >
+          <div className="card relative max-h-[85vh] w-full max-w-lg overflow-y-auto bg-white p-6 shadow-xl">
+            <button
+              type="button"
+              onClick={() => setSelectedFact(null)}
+              aria-label="Đóng chi tiết Eco Fact"
+              className="absolute top-4 right-4 rounded-lg p-1.5 text-muted hover:bg-surface-2 hover:text-ink"
+            >
+              <X className="size-4" />
+            </button>
+            <div className="flex flex-wrap items-center gap-2 pr-8">
+              <span className="rounded-full bg-brand/10 px-2.5 py-0.5 font-mono text-xs font-bold text-brand-deep">
+                {selectedFact.code}
+              </span>
+              <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs font-semibold text-ink">
+                Mốc Cấp {selectedFact.unlockTreeLevel}
+              </span>
+            </div>
+            <h3 className="mt-3 text-lg font-bold text-ink">{selectedFact.title}</h3>
+            {selectedFact.imageUrl && (
+              <img
+                src={selectedFact.imageUrl}
+                alt={selectedFact.title}
+                className="mt-3 max-h-56 w-full rounded-xl object-cover border border-line"
+              />
+            )}
+            <p className="mt-3 whitespace-pre-line text-sm leading-6 text-body">
+              {selectedFact.content}
+            </p>
+            {selectedFact.sourceUrl && (
+              <p className="mt-4 border-t border-line-soft pt-3 text-xs text-muted">
+                Nguồn tham khảo:{" "}
+                <a
+                  href={selectedFact.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-semibold text-brand-deep hover:underline break-all"
+                >
+                  {selectedFact.sourceUrl} ↗
+                </a>
+              </p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

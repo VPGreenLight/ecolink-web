@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { PageHead, Field, Status, Table, Td } from "@/components/Portal"
+import SearchFilterBar from "@/components/SearchFilterBar"
 import { POSTS, type Post } from "@/data/ops"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   createStaffBlog,
   deleteStaffBlog,
@@ -39,6 +42,12 @@ export default function BlogEditor() {
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [flash, setFlash] = useState("")
+  const [search, setSearch] = useState("")
+  const debouncedSearch = useDebouncedValue(search, 250)
+  const [statusFilter, setStatusFilter] = useState<"all" | "Draft" | "Approved">("all")
+  const [pendingPage, setPendingPage] = useState(1)
+  const [restPage, setRestPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const loadStaffPosts = async () => {
     setLoading(true)
@@ -166,10 +175,47 @@ export default function BlogEditor() {
     }
   }
 
-  const pendingLive = liveList.filter((p) => p.status === "Pending_Approval")
-  const restLive = liveList.filter((p) => p.status !== "Pending_Approval")
-  const pendingOffline = offlineList.filter((p) => p.status === "pending")
-  const restOffline = offlineList.filter((p) => p.status !== "pending")
+  const blogKeyword = debouncedSearch.trim().toLowerCase()
+  const pendingLive = liveList.filter(
+    (p) =>
+      p.status === "Pending_Approval" &&
+      (!blogKeyword ||
+        p.title.toLowerCase().includes(blogKeyword) ||
+        formatBlogCode(p.id).toLowerCase().includes(blogKeyword)),
+  )
+  const restLive = liveList.filter((p) => {
+    if (p.status === "Pending_Approval") return false
+    if (statusFilter !== "all" && p.status !== statusFilter) return false
+    if (!blogKeyword) return true
+    return (
+      p.title.toLowerCase().includes(blogKeyword) ||
+      formatBlogCode(p.id).toLowerCase().includes(blogKeyword)
+    )
+  })
+  const pendingOffline = offlineList.filter(
+    (p) =>
+      p.status === "pending" &&
+      (!blogKeyword ||
+        p.title.toLowerCase().includes(blogKeyword) ||
+        p.id.toLowerCase().includes(blogKeyword) ||
+        p.author.toLowerCase().includes(blogKeyword)),
+  )
+  const restOffline = offlineList.filter((p) => {
+    if (p.status === "pending") return false
+    if (statusFilter === "Approved" && p.status !== "published") return false
+    if (statusFilter === "Draft" && p.status === "published") return false
+    if (!blogKeyword) return true
+    return (
+      p.title.toLowerCase().includes(blogKeyword) ||
+      p.id.toLowerCase().includes(blogKeyword) ||
+      p.author.toLowerCase().includes(blogKeyword)
+    )
+  })
+
+  const pagedPendingLive = paginateItems(pendingLive, pendingPage, pageSize)
+  const pagedRestLive = paginateItems(restLive, restPage, pageSize)
+  const pagedPendingOffline = paginateItems(pendingOffline, pendingPage, pageSize)
+  const pagedRestOffline = paginateItems(restOffline, restPage, pageSize)
 
   return (
     <div className="flex flex-col gap-6">
@@ -299,6 +345,37 @@ export default function BlogEditor() {
         </div>
       </form>
 
+      <SearchFilterBar
+        value={search}
+        onChange={(v) => {
+          setSearch(v)
+          setPendingPage(1)
+          setRestPage(1)
+        }}
+        label="Tìm kiếm bài viết của tôi"
+        placeholder="Tìm theo mã bài viết hoặc tiêu đề..."
+        totalCount={
+          liveMode
+            ? pendingLive.length + restLive.length
+            : pendingOffline.length + restOffline.length
+        }
+        countLabel="bài viết"
+      >
+        <select
+          aria-label="Lọc trạng thái bài viết"
+          value={statusFilter}
+          onChange={(e) => {
+            setStatusFilter(e.target.value as "all" | "Draft" | "Approved")
+            setRestPage(1)
+          }}
+          className="input h-10 text-xs"
+        >
+          <option value="all">Nháp &amp; Đã xuất bản</option>
+          <option value="Draft">Chỉ bản nháp</option>
+          <option value="Approved">Đã xuất bản</option>
+        </select>
+      </SearchFilterBar>
+
       {liveMode ? (
         <>
           <section>
@@ -307,39 +384,57 @@ export default function BlogEditor() {
               {loading && liveList.length === 0 ? (
                 <p className="text-sm text-muted">Đang tải danh sách bài viết...</p>
               ) : (
-                <Table head={["Mã", "Tiêu đề", "Ngày gửi", "Trạng thái", "Thao tác"]}>
-                  {pendingLive.map((p) => (
-                    <tr key={p.id}>
-                      <Td className="font-mono text-xs tabular-nums whitespace-nowrap">
-                        {formatBlogCode(p.id)}
-                      </Td>
-                      <Td className="font-semibold text-ink">{p.title}</Td>
-                      <Td className="tabular-nums whitespace-nowrap">
-                        {formatViDate(p.submittedAt || p.updatedAt)}
-                      </Td>
-                      <Td>
-                        <Status tone="wait">Chờ duyệt</Status>
-                      </Td>
-                      <Td>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              await recallStaffBlog(p.id)
-                              setFlash("Đã thu hồi bài viết về bản nháp.")
-                              await loadStaffPosts()
-                            } catch (err) {
-                              setFlash(err instanceof Error ? err.message : "Thu hồi thất bại.")
-                            }
-                          }}
-                          className="text-xs font-semibold text-brand hover:underline"
-                        >
-                          Thu hồi
-                        </button>
-                      </Td>
-                    </tr>
-                  ))}
-                </Table>
+                <>
+                  <Table head={["Mã", "Tiêu đề", "Ngày gửi", "Trạng thái", "Thao tác"]}>
+                    {pagedPendingLive.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-6 text-center text-xs text-muted">
+                          Không có bài chờ duyệt nào khớp bộ lọc.
+                        </td>
+                      </tr>
+                    ) : (
+                      pagedPendingLive.map((p) => (
+                        <tr key={p.id}>
+                          <Td className="font-mono text-xs tabular-nums whitespace-nowrap">
+                            {formatBlogCode(p.id)}
+                          </Td>
+                          <Td className="font-semibold text-ink">{p.title}</Td>
+                          <Td className="tabular-nums whitespace-nowrap">
+                            {formatViDate(p.submittedAt || p.updatedAt)}
+                          </Td>
+                          <Td>
+                            <Status tone="wait">Chờ duyệt</Status>
+                          </Td>
+                          <Td>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await recallStaffBlog(p.id)
+                                  setFlash("Đã thu hồi bài viết về bản nháp.")
+                                  await loadStaffPosts()
+                                } catch (err) {
+                                  setFlash(err instanceof Error ? err.message : "Thu hồi thất bại.")
+                                }
+                              }}
+                              className="text-xs font-semibold text-brand hover:underline"
+                            >
+                              Thu hồi
+                            </button>
+                          </Td>
+                        </tr>
+                      ))
+                    )}
+                  </Table>
+                  <PaginationBar
+                    page={pendingPage}
+                    pageSize={pageSize}
+                    totalCount={pendingLive.length}
+                    onPageChange={setPendingPage}
+                    onPageSizeChange={setPageSize}
+                    itemLabel="bài chờ duyệt"
+                  />
+                </>
               )}
             </div>
           </section>
@@ -350,7 +445,14 @@ export default function BlogEditor() {
             </h2>
             <div className="mt-3">
               <Table head={["Mã", "Tiêu đề", "Cập nhật", "Trạng thái", "Thao tác"]}>
-                {restLive.map((p) => {
+                {pagedRestLive.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-6 text-center text-xs text-muted">
+                      Không có bài viết nào khớp bộ lọc.
+                    </td>
+                  </tr>
+                ) : (
+                  pagedRestLive.map((p) => {
                   const meta = BLOG_STATUS_META[p.status] ?? {
                     label: p.status,
                     tone: "off" as const,
@@ -419,8 +521,17 @@ export default function BlogEditor() {
                       </Td>
                     </tr>
                   )
-                })}
+                })
+                )}
               </Table>
+              <PaginationBar
+                page={restPage}
+                pageSize={pageSize}
+                totalCount={restLive.length}
+                onPageChange={setRestPage}
+                onPageSizeChange={setPageSize}
+                itemLabel="bài viết"
+              />
             </div>
           </section>
         </>
@@ -430,7 +541,7 @@ export default function BlogEditor() {
             <h2 className="text-base font-bold text-ink">Chờ duyệt ({pendingOffline.length})</h2>
             <div className="mt-3">
               <Table head={["Mã", "Tiêu đề", "Tác giả", "Ngày", "Trạng thái"]}>
-                {pendingOffline.map((p) => (
+                {pagedPendingOffline.map((p) => (
                   <tr key={p.id}>
                     <Td className="tabular-nums whitespace-nowrap">{p.id}</Td>
                     <Td className="font-semibold text-ink">{p.title}</Td>
@@ -442,14 +553,22 @@ export default function BlogEditor() {
                   </tr>
                 ))}
               </Table>
+              <PaginationBar
+                page={pendingPage}
+                pageSize={pageSize}
+                totalCount={pendingOffline.length}
+                onPageChange={setPendingPage}
+                onPageSizeChange={setPageSize}
+                itemLabel="bài chờ duyệt"
+              />
             </div>
           </section>
 
           <section>
-            <h2 className="text-base font-bold text-ink">Đã xử lý</h2>
+            <h2 className="text-base font-bold text-ink">Đã xử lý ({restOffline.length})</h2>
             <div className="mt-3">
               <Table head={["Mã", "Tiêu đề", "Ngày", "Kết quả", "Lý do"]}>
-                {restOffline.map((p) => (
+                {pagedRestOffline.map((p) => (
                   <tr key={p.id}>
                     <Td className="tabular-nums whitespace-nowrap">{p.id}</Td>
                     <Td className="font-semibold text-ink">{p.title}</Td>
@@ -463,6 +582,14 @@ export default function BlogEditor() {
                   </tr>
                 ))}
               </Table>
+              <PaginationBar
+                page={restPage}
+                pageSize={pageSize}
+                totalCount={restOffline.length}
+                onPageChange={setRestPage}
+                onPageSizeChange={setPageSize}
+                itemLabel="bài đã xử lý"
+              />
             </div>
           </section>
         </>

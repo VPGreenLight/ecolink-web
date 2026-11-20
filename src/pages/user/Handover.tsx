@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
+import SearchFilterBar from "@/components/SearchFilterBar"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   MY_HANDOVERS,
   STATUS_LABEL,
@@ -85,6 +88,11 @@ export default function Handover() {
   const [editId, setEditId] = useState<string | null>(null)
   const [editDateIso, setEditDateIso] = useState<string>(() => getDefaultAppointmentDateAndSlot().dateIso)
   const [flash, setFlash] = useState("")
+  const [search, setSearch] = useState("")
+  const debouncedSearch = useDebouncedValue(search, 250)
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(5)
   const appointmentBounds = getAppointmentDateBounds()
 
   useEffect(() => {
@@ -160,7 +168,7 @@ export default function Handover() {
     )
     const res = await updateHandoverOrderStatus(h.id, "user", "Cancelled", cleanReason)
     setFlash(
-      `${h.displayCode}: đã huỷ${res.syncedWithBackend ? " trên CSDL" : ""}. Người thu gom sẽ không tới.`,
+      `${h.displayCode}: đã huỷ${res.syncedWithBackend ? " trên hệ thống" : ""}. Người thu gom sẽ không tới.`,
     )
   }
 
@@ -197,24 +205,70 @@ export default function Handover() {
             setOpen(false)
             setFlash(
               draft.recyclerName
-                ? `Đã gửi yêu cầu ${draft.displayCode} tới ${draft.recyclerName}${draft.syncedWithBackend ? " (đã lưu PostgreSQL)" : ""}. Đối tác sẽ xác nhận lịch hẹn (${draft.dateVi} · ${draft.slot}).`
+                ? `Đã gửi yêu cầu ${draft.displayCode} tới ${draft.recyclerName}${draft.syncedWithBackend ? " (đã lưu trên hệ thống)" : ""}. Đối tác sẽ xác nhận lịch hẹn (${draft.dateVi} · ${draft.slot}).`
                 : `Đã gửi yêu cầu ${draft.displayCode} (${draft.dateVi} · ${draft.slot}). Người thu gom sẽ xác nhận lịch hẹn.`,
             )
           }}
         />
       )}
 
-      {loading ? (
-        <p className="card px-5 py-8 text-center text-sm text-muted">
-          Đang tải danh sách yêu cầu thu gom...
-        </p>
-      ) : list.length === 0 ? (
-        <p className="card px-5 py-8 text-center text-sm text-muted">
-          Bạn chưa có yêu cầu nào trên hệ thống. Bấm &quot;Tạo yêu cầu mới&quot; để đặt lịch thu gom.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-4">
-          {list.map((h) => {
+      {(() => {
+        const kw = debouncedSearch.trim().toLowerCase()
+        const filteredList = list.filter((h) => {
+          if (statusFilter !== "all" && h.status !== statusFilter) return false
+          if (!kw) return true
+          const wastes = h.lines.map((l) => nameOf(l.wasteId)).join(" ")
+          return `${h.displayCode} ${h.recycler} ${h.address} ${wastes}`.toLowerCase().includes(kw)
+        })
+        const pagedList = paginateItems(filteredList, page, pageSize)
+
+        return (
+          <>
+            <SearchFilterBar
+              value={search}
+              onChange={(v) => {
+                setSearch(v)
+                setPage(1)
+              }}
+              label="Tìm kiếm yêu cầu thu gom"
+              placeholder="Tìm theo mã đơn, tên cơ sở, địa chỉ hoặc loại rác..."
+              totalCount={filteredList.length}
+              countLabel="yêu cầu"
+            >
+              <select
+                aria-label="Lọc trạng thái đơn thu gom"
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value)
+                  setPage(1)
+                }}
+                className="input h-10 text-xs"
+              >
+                <option value="all">Tất cả trạng thái</option>
+                <option value="pending">Chờ nhận</option>
+                <option value="accepted">Đã nhận lịch</option>
+                <option value="collected">Chờ xác nhận biên nhận</option>
+                <option value="done">Hoàn tất</option>
+                <option value="cancelled">Đã huỷ</option>
+              </select>
+            </SearchFilterBar>
+
+            {loading ? (
+              <p className="card px-5 py-8 text-center text-sm text-muted">
+                Đang tải danh sách yêu cầu thu gom...
+              </p>
+            ) : list.length === 0 ? (
+              <p className="card px-5 py-8 text-center text-sm text-muted">
+                Bạn chưa có yêu cầu nào trên hệ thống. Bấm &quot;Tạo yêu cầu mới&quot; để đặt lịch thu gom.
+              </p>
+            ) : filteredList.length === 0 ? (
+              <p className="card px-5 py-8 text-center text-sm text-muted">
+                Không có yêu cầu thu gom nào khớp bộ lọc hiện tại.
+              </p>
+            ) : (
+              <>
+                <ul className="flex flex-col gap-4">
+                  {pagedList.map((h) => {
             const rowPrice = priceForOrder(h)
             return (
             <li key={h.id} className="card overflow-hidden">
@@ -390,7 +444,20 @@ export default function Handover() {
             )
           })}
         </ul>
+        <PaginationBar
+          page={page}
+          pageSize={pageSize}
+          totalCount={filteredList.length}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          pageSizeOptions={[5, 10, 20]}
+          itemLabel="yêu cầu"
+        />
+        </>
       )}
+          </>
+        )
+      })()}
     </div>
   )
 }

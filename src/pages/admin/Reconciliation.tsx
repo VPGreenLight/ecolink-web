@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react"
 import { Download, FileJson, RefreshCw, ShieldCheck, Wrench, X } from "lucide-react"
+import PaginationBar, { extractPagedMeta, paginateItems } from "@/components/PaginationBar"
 import { Empty, Field, PageHead, Stat, Status, Table, Td } from "@/components/admin/ui"
 import { fmtInt, fmtVnd } from "@/data/ops"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { maskEmailClient, maskPhoneClient } from "@/lib/governanceApi"
 import {
   exportReconciliationReportBlob,
@@ -252,8 +254,12 @@ export default function Reconciliation() {
   const [rows, setRows] = useState<ReconciliationLedgerItemDto[]>(DEMO_LEDGER)
   const [statusFilter, setStatusFilter] = useState<string>("")
   const [search, setSearch] = useState("")
+  const debouncedSearch = useDebouncedValue(search, 300)
   const [fromDate, setFromDate] = useState("")
   const [toDate, setToDate] = useState("")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(15)
+  const [totalCount, setTotalCount] = useState(DEMO_LEDGER.length)
   const [loading, setLoading] = useState(false)
   const [exportingFormat, setExportingFormat] = useState<"csv" | "xlsx" | null>(null)
   const [flash, setFlash] = useState("")
@@ -278,22 +284,23 @@ export default function Reconciliation() {
     try {
       const res = await getAdminReconciliationLedger({
         reconciliationStatus: statusFilter || undefined,
-        search: search.trim() || undefined,
+        search: debouncedSearch.trim() || undefined,
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
-        pageNumber: 1,
-        pageSize: 30,
+        pageNumber: page,
+        pageSize,
       })
       if (res.success && res.data) {
         setSummary(res.data.summary)
         setRows(res.data.items.items ?? [])
+        setTotalCount(extractPagedMeta(res.data.items).totalCount)
       }
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : "Không thể tải sổ cái đối soát.")
     } finally {
       setLoading(false)
     }
-  }, [statusFilter, search, fromDate, toDate])
+  }, [statusFilter, debouncedSearch, fromDate, toDate, page, pageSize])
 
   useEffect(() => {
     void loadLedger()
@@ -305,7 +312,7 @@ export default function Reconciliation() {
         const hitStatus =
           !statusFilter ||
           r.reconciliationStatus.toUpperCase() === statusFilter.toUpperCase()
-        const kw = search.trim().toLowerCase()
+        const kw = debouncedSearch.trim().toLowerCase()
         const hitKw =
           !kw ||
           r.referenceCode.toLowerCase().includes(kw) ||
@@ -313,6 +320,10 @@ export default function Reconciliation() {
           (r.paymentReference ?? "").toLowerCase().includes(kw)
         return hitStatus && hitKw
       })
+  const displayedRows = getAccessToken()
+    ? filteredRows
+    : paginateItems(filteredRows, page, pageSize)
+  const effectiveTotal = getAccessToken() ? totalCount : filteredRows.length
 
   const openResolveModal = (item: ReconciliationLedgerItemDto) => {
     const rec = item.reconciliationStatus.toUpperCase()
@@ -533,7 +544,10 @@ export default function Reconciliation() {
             <button
               key={tab.key}
               type="button"
-              onClick={() => setStatusFilter(tab.key)}
+              onClick={() => {
+                setStatusFilter(tab.key)
+                setPage(1)
+              }}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 statusFilter === tab.key
                   ? "bg-brand text-white"
@@ -550,7 +564,10 @@ export default function Reconciliation() {
             type="search"
             className="input h-9 text-xs"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setPage(1)
+            }}
             placeholder="Tìm theo mã đơn ECO..., webhook WH-... hoặc mã giao dịch ngân hàng..."
           />
           <input
@@ -558,21 +575,28 @@ export default function Reconciliation() {
             aria-label="Từ ngày"
             className="input h-9 text-xs"
             value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
+            onChange={(e) => {
+              setFromDate(e.target.value)
+              setPage(1)
+            }}
           />
           <input
             type="date"
             aria-label="Đến ngày"
             className="input h-9 text-xs"
             value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
+            onChange={(e) => {
+              setToDate(e.target.value)
+              setPage(1)
+            }}
           />
         </div>
       </div>
 
-      {filteredRows.length === 0 ? (
+      {displayedRows.length === 0 ? (
         <Empty>Không có giao dịch đối soát nào khớp với bộ lọc hiện tại.</Empty>
       ) : (
+        <>
         <Table
           head={[
             "Mã tham chiếu & NH",
@@ -584,7 +608,7 @@ export default function Reconciliation() {
             "Thao tác",
           ]}
         >
-          {filteredRows.map((item) => {
+          {displayedRows.map((item) => {
             const st = reconciliationBadge(item.reconciliationStatus)
             const sUpper = item.reconciliationStatus.toUpperCase()
             const needsResolve =
@@ -676,6 +700,16 @@ export default function Reconciliation() {
             )
           })}
         </Table>
+        <PaginationBar
+          page={page}
+          pageSize={pageSize}
+          totalCount={effectiveTotal}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          pageSizeOptions={[10, 15, 30, 50]}
+          itemLabel="giao dịch đối soát"
+        />
+        </>
       )}
 
       {/* Modal Inspector Raw Webhook JSON bất biến */}

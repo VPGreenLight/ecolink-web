@@ -300,7 +300,7 @@ export default function Receipt() {
       setH((prev) => (prev ? { ...prev, status: "done" } : prev))
       setFlashMessage(
         res.syncedWithBackend
-          ? `Đã xác nhận biên nhận #${res.receipt?.receiptCode || h.displayCode} thành công (đã cộng Điểm Xanh và hoàn tất giao dịch trên PostgreSQL).`
+          ? `Đã xác nhận biên nhận #${res.receipt?.receiptCode || h.displayCode} thành công (đã cộng Điểm Xanh và hoàn tất giao dịch trên hệ thống).`
           : "Đã xác nhận khối lượng bàn giao (chế độ dự phòng ngoại tuyến).",
       )
     } catch (err) {

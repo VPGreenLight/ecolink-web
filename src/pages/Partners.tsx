@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { CTA, MATERIAL_TYPES, PARTNERS, REGIONS, type Partner } from "@/data/partners"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   formatDistance,
   formatVnd,
@@ -15,8 +17,13 @@ import {
 
 export default function Partners() {
   const [query, setQuery] = useState("")
+  const debouncedQuery = useDebouncedValue(query, 250)
   const [material, setMaterial] = useState(MATERIAL_TYPES[0])
   const [region, setRegion] = useState(REGIONS[0])
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(6)
+  const [livePage, setLivePage] = useState(1)
+  const [livePageSize] = useState(4)
   const [liveRecyclers, setLiveRecyclers] = useState<CollectionPartnerDto[]>([])
   const [reviewSummaries, setReviewSummaries] = useState<Record<string, RecyclerReviewsSummaryDto>>({})
   const [openReviewId, setOpenReviewId] = useState<string | null>(null)
@@ -60,7 +67,7 @@ export default function Partners() {
   }, [])
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = debouncedQuery.trim().toLowerCase()
     return PARTNERS.filter((p) => {
       const matchQuery =
         !q ||
@@ -73,12 +80,20 @@ export default function Partners() {
       const matchRegion = region === REGIONS[0] || p.region.includes(region)
       return matchQuery && matchMaterial && matchRegion
     })
-  }, [query, material, region])
+  }, [debouncedQuery, material, region])
+
+  const pagedPartners = paginateItems(filtered, page, pageSize)
+  const pagedLiveRecyclers = paginateItems(liveRecyclers, livePage, livePageSize)
+
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedQuery, material, region])
 
   const reset = () => {
     setQuery("")
     setMaterial(MATERIAL_TYPES[0])
     setRegion(REGIONS[0])
+    setPage(1)
   }
 
   return (
@@ -118,7 +133,7 @@ export default function Partners() {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              {liveRecyclers.slice(0, 4).map((r) => (
+              {pagedLiveRecyclers.map((r) => (
                 <div
                   key={r.id}
                   className="flex flex-col justify-between gap-3 rounded-xl border border-line bg-white p-4"
@@ -192,6 +207,13 @@ export default function Partners() {
                 </div>
               ))}
             </div>
+            <PaginationBar
+              page={livePage}
+              pageSize={livePageSize}
+              totalCount={liveRecyclers.length}
+              onPageChange={setLivePage}
+              itemLabel="cơ sở trực tuyến"
+            />
           </section>
         )}
 
@@ -241,11 +263,22 @@ export default function Partners() {
 
         {/* Cards */}
         {filtered.length > 0 ? (
-          <div className="grid gap-6 md:grid-cols-2">
-            {filtered.map((p) => (
-              <PartnerCard key={p.name} partner={p} />
-            ))}
-          </div>
+          <>
+            <div className="grid gap-6 md:grid-cols-2">
+              {pagedPartners.map((p) => (
+                <PartnerCard key={p.name} partner={p} />
+              ))}
+            </div>
+            <PaginationBar
+              page={page}
+              pageSize={pageSize}
+              totalCount={filtered.length}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              pageSizeOptions={[6, 12, 24]}
+              itemLabel="đối tác"
+            />
+          </>
         ) : (
           <p className="card p-10 text-center text-sm text-muted">
             Không tìm thấy đơn vị phù hợp. Thử bỏ bớt bộ lọc hoặc{" "}

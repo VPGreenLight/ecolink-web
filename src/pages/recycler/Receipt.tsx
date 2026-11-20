@@ -293,7 +293,7 @@ export default function Receipt() {
       setExistingProofUrls(res.receipt.scaleProofPhotoUrls ?? scaleProofPhotoUrls)
       setStatusMessage(
         res.syncedWithBackend
-          ? `Đã phát hành biên nhận #${res.receipt.receiptCode} thành công (đã lưu PostgreSQL và chuyển đơn sang AwaitingConfirmation). Chờ người dân xác nhận!`
+          ? `Đã phát hành biên nhận #${res.receipt.receiptCode} thành công. Chờ người dân xác nhận!`
           : "Đã gửi biên nhận (chế độ dự phòng ngoại tuyến). Chờ người dùng xác nhận khối lượng.",
       )
     } catch (err) {

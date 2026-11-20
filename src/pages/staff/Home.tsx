@@ -51,7 +51,7 @@ export default function StaffHome() {
           setPendingAiCount(res.data.pendingCount)
         }
       })
-      .catch(() => {})
+      .catch(() => { })
 
     fetchAiDatasetDashboard()
       .then((res) => {
@@ -63,7 +63,7 @@ export default function StaffHome() {
           })
         }
       })
-      .catch(() => {})
+      .catch(() => { })
 
     fetchStaffComplaints({ pageSize: 1, includeReportedReviews: false })
       .then((res) => {
@@ -71,7 +71,7 @@ export default function StaffHome() {
           setOpenComplaintCount(res.data.openCount + res.data.investigatingCount)
         }
       })
-      .catch(() => {})
+      .catch(() => { })
 
     fetchStaffBlogs({ pageSize: 50 })
       .then((res) => {
@@ -84,7 +84,7 @@ export default function StaffHome() {
           )
         }
       })
-      .catch(() => {})
+      .catch(() => { })
 
     fetchStaffGifts({ pageSize: 50 })
       .then((res) => {
@@ -97,7 +97,7 @@ export default function StaffHome() {
           )
         }
       })
-      .catch(() => {})
+      .catch(() => { })
 
     fetchStaffEcoFacts({ pageSize: 50 })
       .then((res) => {
@@ -108,7 +108,7 @@ export default function StaffHome() {
           )
         }
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [liveAuth])
 
   const queue = [

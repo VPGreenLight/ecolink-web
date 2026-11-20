@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react"
 import { PageHead, Field, Status, Table, Td } from "@/components/Portal"
+import SearchFilterBar from "@/components/SearchFilterBar"
+import PaginationBar from "@/components/PaginationBar"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { GIFTS, type Gift } from "@/data/ops"
 import {
   createStaffGift,
@@ -10,17 +13,44 @@ import {
   restockStaffGift,
   setStaffGiftStatus,
   updateStaffGift,
+  uploadStaffGiftImage,
   type GiftItemDto,
   type RedemptionDto,
 } from "@/lib/gamificationApi"
 import { hasLiveBackendAuth } from "@/lib/session"
+
+const PRESET_REWARD_IMAGES = [
+  { label: "Voucher 10%", url: "/assets/rewards/coupon10.jpg" },
+  { label: "Bộ kit cây xanh", url: "/assets/rewards/kit.jpg" },
+  { label: "Túi vải canvas", url: "/assets/rewards/bag.jpg" },
+  { label: "Ly thủy tinh", url: "/assets/rewards/glasses.jpg" },
+  { label: "Hạt giống / cây", url: "/assets/rewards/seedling.jpg" },
+  { label: "Thùng phân loại / ép", url: "/assets/rewards/compactor.jpg" },
+  { label: "Bộ nồi cao cấp", url: "/assets/rewards/grand-cookware.jpg" },
+  { label: "Xe điện xanh", url: "/assets/rewards/grand-scooter.jpg" },
+  { label: "Chuyến du lịch xanh", url: "/assets/rewards/grand-trip.jpg" },
+]
 
 /** S-10 Quản lý kho quà tặng & xử lý đơn đổi quà. */
 export default function Gifts() {
   const [liveMode] = useState(() => hasLiveBackendAuth())
   const [offlineList, setOfflineList] = useState<Gift[]>(GIFTS)
   const [liveGifts, setLiveGifts] = useState<GiftItemDto[]>([])
+  const [giftsTotal, setGiftsTotal] = useState(0)
+  const [giftSearch, setGiftSearch] = useState("")
+  const debouncedGiftSearch = useDebouncedValue(giftSearch, 300)
+  const [giftTypeFilter, setGiftTypeFilter] = useState("")
+  const [giftPage, setGiftPage] = useState(1)
+  const [giftPageSize, setGiftPageSize] = useState(10)
+
   const [redemptions, setRedemptions] = useState<RedemptionDto[]>([])
+  const [redTotal, setRedTotal] = useState(0)
+  const [redSearch, setRedSearch] = useState("")
+  const debouncedRedSearch = useDebouncedValue(redSearch, 300)
+  const [redStatusFilter, setRedStatusFilter] = useState("")
+  const [redPage, setRedPage] = useState(1)
+  const [redPageSize, setRedPageSize] = useState(10)
+
   const [loading, setLoading] = useState(liveMode)
 
   const [name, setName] = useState("")
@@ -28,19 +58,24 @@ export default function Gifts() {
   const [cost, setCost] = useState(200)
   const [stock, setStock] = useState(20)
   const [description, setDescription] = useState("")
-  const [imageUrl, setImageUrl] = useState("")
+  const [imageUrl, setImageUrl] = useState("/assets/rewards/bag.jpg")
+  const [uploadingImg, setUploadingImg] = useState(false)
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState("")
 
-  const loadAll = async () => {
+  const loadGifts = async () => {
     setLoading(true)
     try {
-      const [gRes, rRes] = await Promise.all([
-        fetchStaffGifts({ pageSize: 50 }),
-        fetchStaffRedemptions({ pageSize: 50 }),
-      ])
-      if (gRes.data?.items) setLiveGifts(gRes.data.items)
-      if (rRes.data?.items) setRedemptions(rRes.data.items)
+      const gRes = await fetchStaffGifts({
+        type: giftTypeFilter || undefined,
+        search: debouncedGiftSearch.trim() || undefined,
+        page: giftPage,
+        pageSize: giftPageSize,
+      })
+      if (gRes.data?.items) {
+        setLiveGifts(gRes.data.items)
+        setGiftsTotal(gRes.data.totalCount ?? gRes.data.items.length)
+      }
     } catch {
       // Giữ trạng thái hiện tại
     } finally {
@@ -48,9 +83,34 @@ export default function Gifts() {
     }
   }
 
+  const loadRedemptions = async () => {
+    try {
+      const rRes = await fetchStaffRedemptions({
+        status: redStatusFilter || undefined,
+        search: debouncedRedSearch.trim() || undefined,
+        page: redPage,
+        pageSize: redPageSize,
+      })
+      if (rRes.data?.items) {
+        setRedemptions(rRes.data.items)
+        setRedTotal(rRes.data.totalCount ?? rRes.data.items.length)
+      }
+    } catch {
+      // Giữ trạng thái hiện tại
+    }
+  }
+
+  const loadAll = async () => {
+    await Promise.all([loadGifts(), loadRedemptions()])
+  }
+
   useEffect(() => {
-    if (liveMode) void loadAll()
-  }, [liveMode])
+    if (liveMode) void loadGifts()
+  }, [liveMode, giftTypeFilter, debouncedGiftSearch, giftPage, giftPageSize])
+
+  useEffect(() => {
+    if (liveMode) void loadRedemptions()
+  }, [liveMode, redStatusFilter, debouncedRedSearch, redPage, redPageSize])
 
   const add = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -141,35 +201,92 @@ export default function Gifts() {
         </div>
 
         {liveMode && (
-          <div className="grid gap-5 sm:grid-cols-3">
-            <Field label="Loại quà">
-              <select
-                className="input"
-                value={giftType}
-                onChange={(e) =>
-                  setGiftType(e.target.value === "Voucher" ? "Voucher" : "Physical")
-                }
-              >
-                <option value="Physical">Quà vật lý (Physical)</option>
-                <option value="Voucher">E-Voucher</option>
-              </select>
-            </Field>
-            <Field label="URL ảnh (tuỳ chọn)">
-              <input
-                className="input"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="/assets/rewards/bag.jpg"
-              />
-            </Field>
-            <Field label="Mô tả ngắn (tuỳ chọn)">
-              <input
-                className="input"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Điều kiện sử dụng / chi tiết quà"
-              />
-            </Field>
+          <div className="flex flex-col gap-4">
+            <div className="grid gap-5 sm:grid-cols-3">
+              <Field label="Loại quà">
+                <select
+                  className="input"
+                  value={giftType}
+                  onChange={(e) =>
+                    setGiftType(e.target.value === "Voucher" ? "Voucher" : "Physical")
+                  }
+                >
+                  <option value="Physical">Quà vật lý (Physical)</option>
+                  <option value="Voucher">E-Voucher</option>
+                </select>
+              </Field>
+              <Field label="Mô tả ngắn (tuỳ chọn)">
+                <input
+                  className="input"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Điều kiện sử dụng / chi tiết quà"
+                />
+              </Field>
+              <Field label="Nguồn ảnh (URL hoặc tải lên R2)">
+                <div className="flex items-center gap-2">
+                  <input
+                    className="input min-w-0 flex-1"
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    placeholder="/assets/rewards/bag.jpg"
+                  />
+                  <label className="btn-outline h-10 shrink-0 cursor-pointer px-3 text-xs flex items-center">
+                    <input
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                      className="sr-only"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0]
+                        e.target.value = ""
+                        if (!file) return
+                        setUploadingImg(true)
+                        setFlash("")
+                        try {
+                          const upRes = await uploadStaffGiftImage(file)
+                          if (upRes.data?.fileUrl) {
+                            setImageUrl(upRes.data.fileUrl)
+                            setFlash("Đã tải ảnh quà tặng lên hệ thống.")
+                          }
+                        } catch (err) {
+                          setFlash(err instanceof Error ? err.message : "Tải ảnh thất bại.")
+                        } finally {
+                          setUploadingImg(false)
+                        }
+                      }}
+                    />
+                    {uploadingImg ? "Đang tải..." : "Tải ảnh"}
+                  </label>
+                </div>
+              </Field>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line-soft bg-surface p-3">
+              {imageUrl.trim() && (
+                <img
+                  src={imageUrl.trim()}
+                  alt="Xem trước ảnh quà"
+                  className="size-12 shrink-0 rounded-lg border border-line object-cover"
+                />
+              )}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-muted mr-1">Chọn nhanh ảnh mẫu:</span>
+                {PRESET_REWARD_IMAGES.map((img) => (
+                  <button
+                    key={img.url}
+                    type="button"
+                    onClick={() => setImageUrl(img.url)}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                      imageUrl.trim() === img.url
+                        ? "border-brand bg-brand/10 text-brand-deep"
+                        : "border-line bg-white text-body hover:bg-surface-2"
+                    }`}
+                  >
+                    {img.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -187,19 +304,58 @@ export default function Gifts() {
 
       {liveMode ? (
         <>
-          <section>
-            <h2 className="mb-3 text-base font-bold text-ink">
-              Danh mục kho quà ({liveGifts.length})
+          <section className="flex flex-col gap-3">
+            <h2 className="text-base font-bold text-ink">
+              Danh mục kho quà ({giftsTotal.toLocaleString("vi-VN")})
             </h2>
+            <SearchFilterBar
+              label="Tìm quà trong kho"
+              value={giftSearch}
+              onChange={(v) => {
+                setGiftSearch(v)
+                setGiftPage(1)
+              }}
+              placeholder="Tên quà tặng hoặc voucher..."
+              totalCount={giftsTotal}
+              countLabel="món quà"
+            >
+              <select
+                className="input h-9 text-xs"
+                value={giftTypeFilter}
+                onChange={(e) => {
+                  setGiftTypeFilter(e.target.value)
+                  setGiftPage(1)
+                }}
+                aria-label="Lọc theo loại quà"
+              >
+                <option value="">Tất cả loại</option>
+                <option value="Physical">Quà vật lý</option>
+                <option value="Voucher">E-Voucher</option>
+              </select>
+            </SearchFilterBar>
             {loading && liveGifts.length === 0 ? (
               <p className="text-sm text-muted">Đang tải kho quà...</p>
             ) : (
-              <Table head={["Quà", "Loại", "Điểm đổi", "Tồn kho", "Trạng thái", "Thao tác"]}>
-                {liveGifts.map((g) => {
-                  const active = g.status === "ACTIVE"
-                  return (
-                    <tr key={g.id}>
-                      <Td className="font-semibold text-ink">{g.name}</Td>
+              <>
+                <Table head={["Ảnh", "Quà", "Loại", "Điểm đổi", "Tồn kho", "Trạng thái", "Thao tác"]}>
+                  {liveGifts.map((g) => {
+                    const active = g.status === "ACTIVE"
+                    return (
+                      <tr key={g.id}>
+                        <Td>
+                          {g.imageUrl ? (
+                            <img
+                              src={g.imageUrl}
+                              alt={g.name}
+                              className="size-10 rounded-lg border border-line object-cover"
+                            />
+                          ) : (
+                            <span className="grid size-10 place-items-center rounded-lg border border-dashed border-line text-[10px] text-muted">
+                              Trống
+                            </span>
+                          )}
+                        </Td>
+                        <Td className="font-semibold text-ink">{g.name}</Td>
                       <Td className="whitespace-nowrap">
                         {g.type === "Voucher" ? "E-Voucher" : "Quà vật lý"}
                       </Td>
@@ -295,13 +451,49 @@ export default function Gifts() {
                   )
                 })}
               </Table>
+              <PaginationBar
+                page={giftPage}
+                pageSize={giftPageSize}
+                totalCount={giftsTotal}
+                onPageChange={setGiftPage}
+                onPageSizeChange={setGiftPageSize}
+                itemLabel="món quà"
+              />
+              </>
             )}
           </section>
 
-          <section>
-            <h2 className="mb-3 text-base font-bold text-ink">
-              Đơn đổi quà của người dùng ({redemptions.length})
+          <section className="flex flex-col gap-3">
+            <h2 className="text-base font-bold text-ink">
+              Đơn đổi quà của người dùng ({redTotal.toLocaleString("vi-VN")})
             </h2>
+            <SearchFilterBar
+              label="Tìm đơn đổi quà"
+              value={redSearch}
+              onChange={(v) => {
+                setRedSearch(v)
+                setRedPage(1)
+              }}
+              placeholder="Mã đơn RDM-..., mã voucher hoặc tên người đổi..."
+              totalCount={redTotal}
+              countLabel="đơn đổi quà"
+            >
+              <select
+                className="input h-9 text-xs"
+                value={redStatusFilter}
+                onChange={(e) => {
+                  setRedStatusFilter(e.target.value)
+                  setRedPage(1)
+                }}
+                aria-label="Lọc trạng thái đơn đổi quà"
+              >
+                <option value="">Tất cả trạng thái</option>
+                <option value="Pending">Chờ giao (Pending)</option>
+                <option value="Redeemed">Đã cấp mã (Redeemed)</option>
+                <option value="Delivered">Đã giao (Delivered)</option>
+                <option value="Cancelled">Đã hủy (Cancelled)</option>
+              </select>
+            </SearchFilterBar>
             <Table head={["Mã đơn", "Người đổi", "Quà tặng", "Giao nhận / Mã", "Trạng thái", "Xử lý"]}>
               {redemptions.map((r) => {
                 const actionable = r.status === "Pending" || r.status === "Redeemed"
@@ -371,6 +563,14 @@ export default function Gifts() {
                 )
               })}
             </Table>
+            <PaginationBar
+              page={redPage}
+              pageSize={redPageSize}
+              totalCount={redTotal}
+              onPageChange={setRedPage}
+              onPageSizeChange={setRedPageSize}
+              itemLabel="đơn đổi quà"
+            />
           </section>
         </>
       ) : (
