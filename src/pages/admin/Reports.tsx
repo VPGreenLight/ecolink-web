@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react"
+import PaginationBar, { extractPagedMeta } from "@/components/PaginationBar"
 import { Empty, Field, PageHead, Stat, Status, Table, Td } from "@/components/admin/ui"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { FLOWS } from "@/data/cashflow"
 import { MY_HANDOVERS } from "@/data/handover"
 import { ACCOUNTS, STATS, fmtInt, fmtVnd } from "@/data/ops"
@@ -167,6 +169,7 @@ export default function Reports() {
   const [auditTotal, setAuditTotal] = useState<number>(FALLBACK_AUDIT_LOGS.length)
   const [actionFilter, setActionFilter] = useState("")
   const [keyword, setKeyword] = useState("")
+  const debouncedKeyword = useDebouncedValue(keyword, 300)
   const [page, setPage] = useState(1)
   const [selectedLog, setSelectedLog] = useState<AuditLogItemDto | null>(null)
 
@@ -190,10 +193,10 @@ export default function Reports() {
     }
   }, [])
 
-  const loadAuditLogs = (targetPage = page) => {
+  const loadAuditLogs = (targetPage = page, targetKeyword = debouncedKeyword) => {
     getAdminAuditLogs({
       action: actionFilter || undefined,
-      keyword: keyword || undefined,
+      keyword: targetKeyword.trim() || undefined,
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
       pageNumber: targetPage,
@@ -202,7 +205,7 @@ export default function Reports() {
       .then((res) => {
         if (!res.data) return
         setAuditLogs(res.data.items)
-        setAuditTotal(res.data.totalCount)
+        setAuditTotal(extractPagedMeta(res.data).totalCount)
       })
       .catch(() => {
         // Giữ dữ liệu mẫu khi chưa đăng nhập Admin
@@ -211,9 +214,10 @@ export default function Reports() {
 
   useEffect(() => {
     if (tab === "audit") {
-      loadAuditLogs(page)
+      loadAuditLogs(page, debouncedKeyword)
     }
-  }, [tab, page, actionFilter])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, page, actionFilter, debouncedKeyword])
 
   const handleExport = async (dataset: ReportDatasetType) => {
     setBusyKey(dataset)
@@ -395,7 +399,10 @@ export default function Reports() {
                 className="input w-64"
                 type="search"
                 value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
+                onChange={(e) => {
+                  setKeyword(e.target.value)
+                  setPage(1)
+                }}
                 placeholder="Email, mã thực thể hoặc lý do..."
               />
             </Field>
@@ -421,7 +428,7 @@ export default function Reports() {
               type="button"
               onClick={() => {
                 setPage(1)
-                loadAuditLogs(1)
+                loadAuditLogs(1, keyword)
               }}
               className="btn-outline h-12 px-4 text-[13px]"
             >
@@ -513,25 +520,13 @@ export default function Reports() {
             </div>
           )}
 
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="btn-ghost h-9 px-3 text-[13px]"
-            >
-              ← Trang trước
-            </button>
-            <span className="text-[12px] tabular-nums text-muted">Trang {page}</span>
-            <button
-              type="button"
-              disabled={page * 15 >= auditTotal}
-              onClick={() => setPage((p) => p + 1)}
-              className="btn-ghost h-9 px-3 text-[13px]"
-            >
-              Trang tiếp →
-            </button>
-          </div>
+          <PaginationBar
+            page={page}
+            pageSize={15}
+            totalCount={auditTotal}
+            onPageChange={setPage}
+            itemLabel="bản ghi"
+          />
         </section>
       )}
     </div>

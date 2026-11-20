@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from "react"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import SearchFilterBar from "@/components/SearchFilterBar"
 import { ApiError } from "@/lib/api"
 import { PageHead, Field, Status } from "@/components/admin/ui"
 import { CYCLES } from "@/data/ops"
 import { LEADERBOARD, fmt } from "@/data/rewards"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { formatViDate } from "@/lib/blogApi"
 import {
   activateLeaderboardCycle,
@@ -80,6 +83,11 @@ export default function LeaderboardConfig() {
 
   const [flash, setFlash] = useState("")
   const [error, setError] = useState("")
+  const [boardSearch, setBoardSearch] = useState("")
+  const debouncedBoardSearch = useDebouncedValue(boardSearch, 250)
+  const [boardRoleFilter, setBoardRoleFilter] = useState<"all" | "User" | "Recycler">("all")
+  const [boardPage, setBoardPage] = useState(1)
+  const [boardPageSize, setBoardPageSize] = useState(10)
 
   const loadData = useCallback(async (preferredCycleId?: string) => {
     setLoading(true)
@@ -97,7 +105,7 @@ export default function LeaderboardConfig() {
 
       setSelectedCycleId(targetId)
       const boardRes = await fetchLeaderboard({
-        top: 20,
+        top: 50,
         cycleId: targetId || undefined,
       })
       setBoard(boardRes.data ?? null)
@@ -119,9 +127,10 @@ export default function LeaderboardConfig() {
 
   const previewCycleBoard = async (cycleId: string) => {
     setSelectedCycleId(cycleId)
+    setBoardPage(1)
     setError("")
     try {
-      const res = await fetchLeaderboard({ top: 20, cycleId })
+      const res = await fetchLeaderboard({ top: 50, cycleId })
       setBoard(res.data ?? null)
     } catch (err) {
       setError(
@@ -483,36 +492,109 @@ export default function LeaderboardConfig() {
               </p>
             </div>
 
-            {!board || board.items.length === 0 ? (
-              <div className="card mt-4 px-5 py-8 text-center text-sm text-muted">
-                Chưa có người dân nào ghi nhận điểm xếp hạng trong chu kỳ này.
-              </div>
-            ) : (
-              <ol className="card mt-4 divide-y divide-line-soft overflow-hidden">
-                {board.items.map((r) => (
-                  <li
-                    key={r.userId}
-                    className={`flex items-center gap-3 px-4 py-3 ${r.isCurrentUser ? "bg-brand/8" : ""}`}
+            {(() => {
+              const kw = debouncedBoardSearch.trim().toLowerCase()
+              const filteredItems = (board?.items ?? []).filter((r) => {
+                const roleMatch =
+                  boardRoleFilter === "all" ||
+                  (boardRoleFilter === "Recycler"
+                    ? r.role?.toLowerCase() === "recycler"
+                    : r.role?.toLowerCase() !== "recycler")
+                if (!roleMatch) return false
+                if (!kw) return true
+                return `${r.fullName} ${r.area ?? ""} #${r.rank}`.toLowerCase().includes(kw)
+              })
+              const pagedItems = paginateItems(filteredItems, boardPage, boardPageSize)
+
+              return (
+                <>
+                  <SearchFilterBar
+                    value={boardSearch}
+                    onChange={(v) => {
+                      setBoardSearch(v)
+                      setBoardPage(1)
+                    }}
+                    label="Tìm trong bảng xếp hạng"
+                    placeholder="Tìm tên người dân, cơ sở thu mua hoặc khu vực..."
+                    totalCount={filteredItems.length}
+                    countLabel="tài khoản"
+                    className="mt-4"
                   >
-                    <span className="w-7 shrink-0 text-sm font-semibold tabular-nums text-muted">
-                      #{r.rank}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-ink">
-                        {r.fullName}
-                      </p>
-                      <p className="truncate text-xs text-muted">
-                        {r.area || "Chưa cập nhật khu vực"} · Đã thu gom{" "}
-                        {r.totalRecycledKg.toFixed(1)} kg
-                      </p>
+                    <select
+                      aria-label="Lọc vai trò bảng xếp hạng"
+                      value={boardRoleFilter}
+                      onChange={(e) => {
+                        setBoardRoleFilter(e.target.value as "all" | "User" | "Recycler")
+                        setBoardPage(1)
+                      }}
+                      className="input h-10 text-xs"
+                    >
+                      <option value="all">Tất cả vai trò</option>
+                      <option value="User">Người dân</option>
+                      <option value="Recycler">Cơ sở thu mua</option>
+                    </select>
+                  </SearchFilterBar>
+
+                  {filteredItems.length === 0 ? (
+                    <div className="card mt-4 px-5 py-8 text-center text-sm text-muted">
+                      {!board || board.items.length === 0
+                        ? "Chưa có người dân hoặc cơ sở thu mua nào ghi nhận điểm xếp hạng trong chu kỳ này."
+                        : "Không tìm thấy kết quả phù hợp bộ lọc."}
                     </div>
-                    <span className="shrink-0 text-sm font-bold tabular-nums text-ink">
-                      {fmt(r.periodPoints > 0 ? r.periodPoints : r.totalPoints)}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            )}
+                  ) : (
+                    <>
+                      <ol className="card mt-4 divide-y divide-line-soft overflow-hidden">
+                        {pagedItems.map((r) => {
+                          const isRecycler = r.role?.toLowerCase() === "recycler"
+                          return (
+                            <li
+                              key={r.userId}
+                              className={`flex items-center gap-3 px-4 py-3 ${r.isCurrentUser ? "bg-brand/8" : ""}`}
+                            >
+                              <span className="w-7 shrink-0 text-sm font-semibold tabular-nums text-muted">
+                                #{r.rank}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="truncate text-sm font-semibold text-ink">
+                                    {r.fullName}
+                                  </p>
+                                  <span
+                                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                      isRecycler
+                                        ? "bg-amber-50 text-amber-800"
+                                        : "bg-surface-2 text-brand-deep"
+                                    }`}
+                                  >
+                                    {isRecycler ? "Cơ sở thu mua" : "Người dân"}
+                                  </span>
+                                </div>
+                                <p className="truncate text-xs text-muted">
+                                  {r.area || "Chưa cập nhật khu vực"} · Đã{" "}
+                                  {isRecycler ? "thu mua" : "thu gom"}{" "}
+                                  {r.totalRecycledKg.toFixed(1)} kg
+                                </p>
+                              </div>
+                              <span className="shrink-0 text-sm font-bold tabular-nums text-ink">
+                                {fmt(r.periodPoints > 0 ? r.periodPoints : r.totalPoints)}
+                              </span>
+                            </li>
+                          )
+                        })}
+                      </ol>
+                      <PaginationBar
+                        page={boardPage}
+                        pageSize={boardPageSize}
+                        totalCount={filteredItems.length}
+                        onPageChange={setBoardPage}
+                        onPageSizeChange={setBoardPageSize}
+                        itemLabel="tài khoản"
+                      />
+                    </>
+                  )}
+                </>
+              )
+            })()}
           </section>
         </>
       ) : (
@@ -556,32 +638,63 @@ export default function LeaderboardConfig() {
                 Bảng xếp hạng {CYCLES.find((c) => c.id === on)?.label.toLowerCase()}
               </h2>
               <p className="text-sm text-muted">
-                Theo điểm xếp hạng, đổi quà không làm tụt hạng
+                Theo điểm xếp hạng (Người dân &amp; Cơ sở thu mua), đổi quà không làm tụt hạng
               </p>
             </div>
 
-            <ol className="card mt-4 divide-y divide-line-soft overflow-hidden">
-              {LEADERBOARD.map((r, i) => (
-                <li
-                  key={r.name}
-                  className={`flex items-center gap-3 px-4 py-3 ${r.you ? "bg-brand/8" : ""}`}
-                >
-                  <span className="w-6 shrink-0 text-sm font-semibold tabular-nums text-muted">
-                    {i + 1}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-ink">
-                      {r.name}
-                      {r.you && <span className="ml-1.5 text-xs text-brand">(tài khoản mẫu)</span>}
-                    </p>
-                    <p className="truncate text-xs text-muted">{r.area}</p>
-                  </div>
-                  <span className="shrink-0 text-sm font-bold tabular-nums text-ink">
-                    {fmt(r.points)}
-                  </span>
-                </li>
-              ))}
-            </ol>
+            {(() => {
+              const kw = debouncedBoardSearch.trim().toLowerCase()
+              const filteredOffline = LEADERBOARD.map((r, idx) => ({ ...r, rank: idx + 1 })).filter(
+                (r) => !kw || `${r.name} ${r.area}`.toLowerCase().includes(kw),
+              )
+              const pagedOffline = paginateItems(filteredOffline, boardPage, boardPageSize)
+              return (
+                <>
+                  <SearchFilterBar
+                    value={boardSearch}
+                    onChange={(v) => {
+                      setBoardSearch(v)
+                      setBoardPage(1)
+                    }}
+                    label="Tìm trong bảng xếp hạng"
+                    placeholder="Tìm tên người dân, cơ sở thu mua hoặc khu vực..."
+                    totalCount={filteredOffline.length}
+                    countLabel="tài khoản"
+                    className="mt-4"
+                  />
+                  <ol className="card mt-4 divide-y divide-line-soft overflow-hidden">
+                    {pagedOffline.map((r) => (
+                      <li
+                        key={r.name}
+                        className={`flex items-center gap-3 px-4 py-3 ${r.you ? "bg-brand/8" : ""}`}
+                      >
+                        <span className="w-6 shrink-0 text-sm font-semibold tabular-nums text-muted">
+                          {r.rank}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-ink">
+                            {r.name}
+                            {r.you && <span className="ml-1.5 text-xs text-brand">(tài khoản mẫu)</span>}
+                          </p>
+                          <p className="truncate text-xs text-muted">{r.area}</p>
+                        </div>
+                        <span className="shrink-0 text-sm font-bold tabular-nums text-ink">
+                          {fmt(r.points)}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                  <PaginationBar
+                    page={boardPage}
+                    pageSize={boardPageSize}
+                    totalCount={filteredOffline.length}
+                    onPageChange={setBoardPage}
+                    onPageSizeChange={setBoardPageSize}
+                    itemLabel="tài khoản"
+                  />
+                </>
+              )
+            })()}
           </section>
         </>
       )}

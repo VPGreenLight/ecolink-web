@@ -81,7 +81,7 @@ const CASES = [
   ["Blog", Blog, "Bài viết về rác thải"],
   ["Home", Home, "Phân loại đúng"],
   ["Rewards", Rewards, "Điểm tiêu dùng"],
-  ["Leaderboard", LeaderboardPage, "Xếp hạng người dùng"],
+  ["Leaderboard", LeaderboardPage, "Bảng xếp hạng đóng góp Sống Xanh"],
   // assert the idle state: result copy is only rendered after a scan
   ["Scanner", Scanner, "Dùng trang này thế nào"],
   ["MapPage", MapPage, "Cơ sở thu mua gần bạn"],
@@ -127,7 +127,7 @@ const CASES = [
   ["staff/Dataset", Dataset, "Tập dữ liệu kiểm chứng"],
   ["staff/Applications", Applications, "Thẩm định hồ sơ cơ sở thu mua"],
   ["staff/Complaints", Complaints, "Khiếu nại giao dịch"],
-  ["staff/Accounts", Accounts, "Danh sách User và Buyer"],
+  ["staff/Accounts", Accounts, "Danh sách User và Recycler"],
   ["staff/BlogEditor", BlogEditor, "Soạn bài Blog"],
   ["staff/EcoFacts", EcoFacts, "Quản lý Eco Fact"],
   ["staff/Gifts", Gifts, "Quà tặng và voucher"],

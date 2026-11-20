@@ -118,6 +118,7 @@ export interface EcoFactItemDto {
   sourceUrl?: string | null
   imageUrl?: string | null
   unlockTreeLevel: number
+  isUnlocked?: boolean
   status: "ACTIVE" | "INACTIVE" | string
   createdAt: string
   updatedAt: string
@@ -182,6 +183,7 @@ export interface LeaderboardEntryDto {
   rank: number
   userId: string
   fullName: string
+  role?: "User" | "Recycler" | string
   area: string
   totalPoints: number
   periodPoints: number
@@ -196,6 +198,7 @@ export interface LeaderboardWinnerDto {
   rank: number
   userId: string
   fullName: string
+  role?: "User" | "Recycler" | string
   area: string
   points: number
   bonusPointsAwarded: number
@@ -222,6 +225,7 @@ export interface LeaderboardViewDto {
   activeCycle?: LeaderboardCycleDto | null
   items: LeaderboardEntryDto[]
   myEntry?: LeaderboardEntryDto | null
+  recentFinalizedCycles?: LeaderboardCycleDto[]
 }
 
 export interface SaveLeaderboardCyclePayload {
@@ -282,11 +286,13 @@ export function fetchLeaderboard(params?: {
   top?: number
   period?: string
   cycleId?: string
+  role?: "all" | "user" | "recycler" | string
 }): Promise<ApiResponse<LeaderboardViewDto>> {
   const qs = buildQuery({
     top: params?.top,
     period: params?.period,
     cycleId: params?.cycleId,
+    role: params?.role && params.role !== "all" ? params.role : undefined,
   })
   return apiRequest<LeaderboardViewDto>(`/api/v1/gamification/leaderboard${qs}`)
 }
@@ -373,6 +379,17 @@ export async function fetchMyVirtualTree(): Promise<ApiResponse<VirtualTreeDto>>
   return res
 }
 
+export async function careVirtualTree(
+  actionType: "water" | "fertilize" = "water",
+): Promise<ApiResponse<VirtualTreeDto>> {
+  const res = await apiRequest<VirtualTreeDto>("/api/v1/gamification/tree/care", {
+    method: "POST",
+    body: JSON.stringify({ actionType }),
+  })
+  if (typeof res.data?.walletBalance === "number") setSpendPoints(res.data.walletBalance)
+  return res
+}
+
 export async function upgradeVirtualTree(): Promise<ApiResponse<WaterTreeResultDto>> {
   const res = await apiRequest<WaterTreeResultDto>("/api/v1/gamification/tree/upgrade", {
     method: "POST",
@@ -383,8 +400,11 @@ export async function upgradeVirtualTree(): Promise<ApiResponse<WaterTreeResultD
   return res
 }
 
-export function fetchMyUnlockedEcoFacts(): Promise<ApiResponse<EcoFactItemDto[]>> {
-  return apiRequest<EcoFactItemDto[]>("/api/v1/gamification/eco-facts/me")
+export function fetchMyUnlockedEcoFacts(
+  includeLocked = false,
+): Promise<ApiResponse<EcoFactItemDto[]>> {
+  const qs = includeLocked ? "?includeLocked=true" : ""
+  return apiRequest<EcoFactItemDto[]>(`/api/v1/gamification/eco-facts/me${qs}`)
 }
 
 // ============================================================
@@ -458,6 +478,20 @@ export function fetchStaffGifts(params?: {
     pageSize: params?.pageSize,
   })
   return apiRequest<GamPagedResult<GiftItemDto>>(`/api/v1/staff/gifts${qs}`)
+}
+
+export function uploadStaffGiftImage(
+  file: File,
+): Promise<ApiResponse<{ fileUrl: string; objectKey?: string; contentType?: string; sizeBytes?: number }>> {
+  const form = new FormData()
+  form.append("file", file)
+  return apiRequest<{ fileUrl: string; objectKey?: string; contentType?: string; sizeBytes?: number }>(
+    "/api/v1/staff/gifts/upload-image",
+    {
+      method: "POST",
+      body: form,
+    },
+  )
 }
 
 export function createStaffGift(payload: SaveGiftPayload): Promise<ApiResponse<GiftItemDto>> {

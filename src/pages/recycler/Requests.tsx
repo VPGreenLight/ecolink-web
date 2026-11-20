@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
+import SearchFilterBar from "@/components/SearchFilterBar"
 import {
   INCOMING,
   STATUS_LABEL,
@@ -11,6 +13,7 @@ import {
   type Handover as HandoverItem,
 } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { hasLiveBackendAuth } from "@/lib/session"
 import {
   fetchHandoverOrdersResult,
@@ -67,6 +70,12 @@ export default function Requests() {
   const [cmpDesc, setCmpDesc] = useState("")
   const [cmpFiles, setCmpFiles] = useState<File[]>([])
   const [cmpBusy, setCmpBusy] = useState(false)
+  const [search, setSearch] = useState("")
+  const debouncedSearch = useDebouncedValue(search, 250)
+  const [pendingPage, setPendingPage] = useState(1)
+  const [pendingPageSize, setPendingPageSize] = useState(5)
+  const [activePage, setActivePage] = useState(1)
+  const [activePageSize, setActivePageSize] = useState(10)
 
   useEffect(() => {
     let active = true
@@ -114,15 +123,15 @@ export default function Requests() {
     setBusy(h.id)
     try {
       setList((ls) => ls.map((l) => (l.id === h.id ? { ...l, status: next } : l)))
-      const res = await updateHandoverOrderStatus(
+      await updateHandoverOrderStatus(
         h.id,
         "recycler",
         next === "accepted" ? "Accepted" : "Rejected",
       )
       setFlash(
         next === "accepted"
-          ? `Đã tiếp nhận đơn ${h.displayCode} và chốt khung giờ ${h.slot}${res.syncedWithBackend ? " (đã lưu PostgreSQL)" : ""}.`
-          : `Đã từ chối đơn ${h.displayCode}${res.syncedWithBackend ? " (đã cập nhật PostgreSQL)" : ""}.`,
+          ? `Đã tiếp nhận đơn ${h.displayCode} và chốt khung giờ ${h.slot}.`
+          : `Đã từ chối đơn ${h.displayCode}.`,
       )
     } finally {
       setBusy("")
@@ -150,7 +159,7 @@ export default function Requests() {
         cleanReason,
       )
       setFlash(
-        `Đã huỷ lịch thu gom ${h.displayCode}${res.syncedWithBackend ? " trên PostgreSQL" : ""}.`,
+        `Đã huỷ lịch thu gom ${h.displayCode}${res.syncedWithBackend ? " trên hệ thống" : ""}.`,
       )
     } finally {
       setBusy("")
@@ -196,8 +205,19 @@ export default function Requests() {
     }
   }
 
-  const pending = list.filter((h) => h.status === "pending")
-  const active = list.filter((h) => h.status !== "pending")
+  const reqKeyword = debouncedSearch.trim().toLowerCase()
+  const matchRequest = (h: IncomingView) => {
+    if (!reqKeyword) return true
+    const wastes = h.lines.map((l) => nameOf(l.wasteId)).join(" ")
+    return `${h.displayCode} ${h.address} ${h.citizenName ?? ""} ${wastes}`
+      .toLowerCase()
+      .includes(reqKeyword)
+  }
+
+  const pending = list.filter((h) => h.status === "pending" && matchRequest(h))
+  const active = list.filter((h) => h.status !== "pending" && matchRequest(h))
+  const pagedPending = paginateItems(pending, pendingPage, pendingPageSize)
+  const pagedActive = paginateItems(active, activePage, activePageSize)
 
   return (
     <div className="flex flex-col gap-6">
@@ -205,6 +225,19 @@ export default function Requests() {
         eyebrow="YÊU CẦU ĐẾN"
         title="Tiếp nhận yêu cầu bàn giao"
         body="Nhận yêu cầu nghĩa là bạn cam kết tới đúng khung giờ và điểm hẹn người dân đã ghim. Không tới được thì huỷ kèm lý do, họ sẽ tìm người khác."
+      />
+
+      <SearchFilterBar
+        value={search}
+        onChange={(v) => {
+          setSearch(v)
+          setPendingPage(1)
+          setActivePage(1)
+        }}
+        label="Tìm kiếm yêu cầu"
+        placeholder="Tìm theo mã đơn, tên người dân, địa chỉ điểm hẹn hoặc loại rác..."
+        totalCount={pending.length + active.length}
+        countLabel="yêu cầu"
       />
 
       {flash && (
@@ -223,11 +256,12 @@ export default function Requests() {
           </p>
         ) : pending.length === 0 ? (
           <p className="card mt-3 px-5 py-8 text-center text-sm text-muted">
-            Không có yêu cầu nào đang chờ xác nhận.
+            Không có yêu cầu nào đang chờ xác nhận khớp bộ lọc.
           </p>
         ) : (
+          <>
           <ul className="mt-3 flex flex-col gap-4">
-            {pending.map((h) => {
+            {pagedPending.map((h) => {
               const hasPin = typeof h.pickupLat === "number" && typeof h.pickupLng === "number"
               const mapExpanded = openMapId === h.id
 
@@ -315,19 +349,30 @@ export default function Requests() {
               )
             })}
           </ul>
+          <PaginationBar
+            page={pendingPage}
+            pageSize={pendingPageSize}
+            totalCount={pending.length}
+            onPageChange={setPendingPage}
+            onPageSizeChange={setPendingPageSize}
+            pageSizeOptions={[5, 10, 20]}
+            itemLabel="yêu cầu chờ"
+          />
+          </>
         )}
       </section>
 
       <section>
-        <h2 className="text-base font-bold text-ink">Lịch đã nhận</h2>
+        <h2 className="text-base font-bold text-ink">Lịch đã nhận ({active.length})</h2>
         <div className="mt-3">
           {active.length === 0 ? (
             <p className="card px-5 py-6 text-center text-sm text-muted">
               Chưa có lịch hẹn nào đã nhận.
             </p>
           ) : (
+            <>
             <Table head={["Mã", "Địa chỉ", "Khung giờ", "Tiền ước tính", "Trạng thái", "Thao tác"]}>
-              {active.map((h) => (
+              {pagedActive.map((h) => (
                 <tr key={h.id}>
                   <Td className="tabular-nums whitespace-nowrap">{h.displayCode}</Td>
                   <Td>
@@ -415,14 +460,21 @@ export default function Requests() {
                 </tr>
               ))}
             </Table>
+            <PaginationBar
+              page={activePage}
+              pageSize={activePageSize}
+              totalCount={active.length}
+              onPageChange={setActivePage}
+              onPageSizeChange={setActivePageSize}
+              itemLabel="lịch đã nhận"
+            />
+            </>
           )}
         </div>
       </section>
 
       <p className="max-w-[70ch] text-sm leading-6 text-muted">
-        Sau khi tạo biên nhận và người dùng xác nhận khối lượng, tiền về tài khoản
-        của họ và bạn bị trừ phí nền tảng trên mỗi giao dịch. Các khung giờ đã
-        chốt: {TIME_SLOTS.join(" · ")}.
+        Sau khi tạo biên nhận và người dùng xác nhận khối lượng, biên nhận sẽ được lưu trữ để hai bên đối chiếu và ghi nhận Điểm Xanh. Các khung giờ thu gom: {TIME_SLOTS.join(" · ")}.
       </p>
 
       {complaintOrder && (

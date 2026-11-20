@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { ARTICLES, FEATURED, METRICS } from "@/data/insights"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   estimateReadTime,
   fetchPublishedBlogs,
@@ -21,8 +23,16 @@ export default function Blog() {
   const [posts, setPosts] = useState<BlogPostSummaryDto[] | null>(null)
   const [loading, setLoading] = useState(liveMode)
   const [search, setSearch] = useState("")
+  const debouncedSearch = useDebouncedValue(search, 300)
   const [activeTag, setActiveTag] = useState("")
   const [queryText, setQueryText] = useState("")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(6)
+
+  useEffect(() => {
+    setQueryText(debouncedSearch.trim())
+    setPage(1)
+  }, [debouncedSearch])
 
   useEffect(() => {
     let active = true
@@ -30,7 +40,7 @@ export default function Blog() {
     fetchPublishedBlogs({
       search: queryText || undefined,
       tag: activeTag || undefined,
-      pageSize: 20,
+      pageSize: 50,
     })
       .then((res) => {
         if (!active) return
@@ -51,6 +61,14 @@ export default function Blog() {
   const useBackend = posts !== null && (posts.length > 0 || liveMode || queryText !== "" || activeTag !== "")
   const featuredLive = useBackend && posts.length > 0 ? posts[0] : null
   const restLive = useBackend && posts.length > 1 ? posts.slice(1) : useBackend ? posts : []
+  const pagedRestLive = paginateItems(restLive, page, pageSize)
+  const offlineKw = queryText.trim().toLowerCase()
+  const filteredOfflineArticles = ARTICLES.filter(
+    (a) =>
+      !offlineKw ||
+      `${a.title} ${a.source} ${a.excerpt ?? ""}`.toLowerCase().includes(offlineKw),
+  )
+  const pagedOfflineArticles = paginateItems(filteredOfflineArticles, page, pageSize)
   const availableTags = Array.from(
     new Set((posts ?? []).flatMap((p) => p.tags ?? [])),
   ).slice(0, 8)
@@ -108,7 +126,10 @@ export default function Blog() {
                 <button
                   key={tag}
                   type="button"
-                  onClick={() => setActiveTag(selected ? "" : tag)}
+                  onClick={() => {
+                    setActiveTag(selected ? "" : tag)
+                    setPage(1)
+                  }}
                   className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
                     selected
                       ? "bg-brand text-white"
@@ -235,98 +256,124 @@ export default function Blog() {
                 : "Bài viết mới nhất đang được hiển thị ở mục Tiêu điểm phía trên."}
             </p>
           ) : (
-            <ul>
-              {restLive.map((p, i) => (
-                <li
-                  key={p.id}
-                  className={`flex flex-col gap-6 pt-8 pb-8 sm:flex-row sm:gap-8 ${
-                    i > 0 ? "border-t border-line" : ""
-                  }`}
-                >
-                  <Link
-                    to={`/blog/${p.slug}`}
-                    className="h-36 w-full shrink-0 overflow-clip rounded-xl bg-surface-2 sm:h-32 sm:w-48"
+            <>
+              <ul>
+                {pagedRestLive.map((p, i) => (
+                  <li
+                    key={p.id}
+                    className={`flex flex-col gap-6 pt-8 pb-8 sm:flex-row sm:gap-8 ${
+                      i > 0 ? "border-t border-line" : ""
+                    }`}
                   >
+                    <Link
+                      to={`/blog/${p.slug}`}
+                      className="h-36 w-full shrink-0 overflow-clip rounded-xl bg-surface-2 sm:h-32 sm:w-48"
+                    >
+                      <img
+                        src={p.coverImageUrl || "/assets/insights/c4ba2.png"}
+                        alt={p.title}
+                        className="size-full object-cover"
+                        loading="lazy"
+                      />
+                    </Link>
+
+                    <div className="flex flex-1 flex-col">
+                      <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
+                        <span className="font-semibold text-brand">
+                          {p.author?.fullName || "EcoLink"}
+                        </span>
+                        <span className="text-body">
+                          • {formatViDate(p.publishedAt || p.createdAt)}
+                        </span>
+                        <span className="text-body">
+                          • {estimateReadTime(p.summary)}
+                        </span>
+                      </div>
+                      <h3 className="text-xl leading-7 font-bold tracking-tight text-ink">
+                        <Link to={`/blog/${p.slug}`} className="hover:text-brand">
+                          {p.title}
+                        </Link>
+                      </h3>
+                      {p.summary && (
+                        <p className="mt-2 text-sm leading-[22.75px] text-body">
+                          {p.summary}
+                        </p>
+                      )}
+                      {p.tags.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {p.tags.map((t) => (
+                            <span
+                              key={t}
+                              className="rounded-full bg-surface-2 px-2.5 py-0.5 text-[11px] font-medium text-muted"
+                            >
+                              #{t}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <PaginationBar
+                page={page}
+                pageSize={pageSize}
+                totalCount={restLive.length}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+                pageSizeOptions={[6, 12, 24]}
+                itemLabel="bài viết"
+              />
+            </>
+          )
+        ) : pagedOfflineArticles.length === 0 ? (
+          <p className="py-10 text-sm text-muted">
+            Không tìm thấy bài viết phù hợp với từ khóa hiện tại.
+          </p>
+        ) : (
+          <>
+            <ul>
+              {pagedOfflineArticles.map((a, i) => (
+                <li
+                  key={a.title}
+                  className={`flex gap-8 pt-8 pb-8 ${i > 0 ? "border-t border-line" : ""}`}
+                >
+                  <div className="h-32 w-48 shrink-0 overflow-clip rounded-xl bg-surface-2">
                     <img
-                      src={p.coverImageUrl || "/assets/insights/c4ba2.png"}
-                      alt={p.title}
+                      src={a.image}
+                      alt={a.source}
                       className="size-full object-cover"
                       loading="lazy"
                     />
-                  </Link>
+                  </div>
 
                   <div className="flex flex-1 flex-col">
                     <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
-                      <span className="font-semibold text-brand">
-                        {p.author?.fullName || "EcoLink"}
-                      </span>
-                      <span className="text-body">
-                        • {formatViDate(p.publishedAt || p.createdAt)}
-                      </span>
-                      <span className="text-body">
-                        • {estimateReadTime(p.summary)}
-                      </span>
+                      <span className="font-semibold text-brand">{a.source}</span>
+                      <span className="text-body">• {a.readTime}</span>
                     </div>
                     <h3 className="text-xl leading-7 font-bold tracking-tight text-ink">
-                      <Link to={`/blog/${p.slug}`} className="hover:text-brand">
-                        {p.title}
-                      </Link>
+                      {a.title}
                     </h3>
-                    {p.summary && (
+                    {a.excerpt && (
                       <p className="mt-2 text-sm leading-[22.75px] text-body">
-                        {p.summary}
+                        {a.excerpt}
                       </p>
-                    )}
-                    {p.tags.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {p.tags.map((t) => (
-                          <span
-                            key={t}
-                            className="rounded-full bg-surface-2 px-2.5 py-0.5 text-[11px] font-medium text-muted"
-                          >
-                            #{t}
-                          </span>
-                        ))}
-                      </div>
                     )}
                   </div>
                 </li>
               ))}
             </ul>
-          )
-        ) : (
-          <ul>
-            {ARTICLES.map((a, i) => (
-              <li
-                key={a.title}
-                className={`flex gap-8 pt-8 pb-8 ${i > 0 ? "border-t border-line" : ""}`}
-              >
-                <div className="h-32 w-48 shrink-0 overflow-clip rounded-xl bg-surface-2">
-                  <img
-                    src={a.image}
-                    alt={a.source}
-                    className="size-full object-cover"
-                    loading="lazy"
-                  />
-                </div>
-
-                <div className="flex flex-1 flex-col">
-                  <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
-                    <span className="font-semibold text-brand">{a.source}</span>
-                    <span className="text-body">• {a.readTime}</span>
-                  </div>
-                  <h3 className="text-xl leading-7 font-bold tracking-tight text-ink">
-                    {a.title}
-                  </h3>
-                  {a.excerpt && (
-                    <p className="mt-2 text-sm leading-[22.75px] text-body">
-                      {a.excerpt}
-                    </p>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+            <PaginationBar
+              page={page}
+              pageSize={pageSize}
+              totalCount={filteredOfflineArticles.length}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              pageSizeOptions={[6, 12, 24]}
+              itemLabel="bài viết"
+            />
+          </>
         )}
       </section>
     </div>

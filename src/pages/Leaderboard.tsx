@@ -12,20 +12,21 @@ export default function LeaderboardPage() {
     <div className="page flex flex-col pb-16">
       <header className="pt-10 md:pt-14">
         <h1 className="display text-[28px] leading-9 md:text-[34px] md:leading-11">
-          Xếp hạng người dùng
+          Bảng xếp hạng đóng góp Sống Xanh
         </h1>
-        <p className="mt-2 max-w-[62ch] text-base leading-7 text-body">
-          Xếp theo điểm xếp hạng — tức là điểm tích luỹ trọn đời, không bao giờ
-          bị trừ khi bạn đổi quà. Chuỗi điểm của bạn còn nguyên.
+        <p className="mt-2 max-w-[66ch] text-base leading-7 text-body">
+          Áp dụng cho cả Người dân và Người thu gom (Cơ sở thu mua). Xếp hạng theo Điểm Xanh
+          tích lũy trong chu kỳ từ các giao dịch hoàn tất và điểm danh hằng ngày — đổi quà không
+          bao giờ làm tụt hạng của bạn.
         </p>
       </header>
 
       <Leaderboard />
 
-      <p className="mt-8 max-w-[68ch] text-sm leading-6 text-muted">
-        Điểm xếp hạng cộng dồn từ giao rác đúng phân loại và điểm danh hằng
-        ngày. Hạng được tính lại mỗi chu kỳ do Admin cấu hình, đang là chu kỳ
-        tháng.
+      <p className="mt-8 max-w-[70ch] text-sm leading-6 text-muted">
+        Cuối mỗi chu kỳ (Tuần / Tháng / Quý), Top 3 thành viên dẫn đầu được trao thưởng Điểm Xanh
+        vào ví theo cơ cấu giải do Admin cấu hình. Nếu đồng điểm, hệ thống xét theo điểm trọn đời
+        và tổng khối lượng phế liệu đã tái chế.
       </p>
     </div>
   )

@@ -218,7 +218,7 @@ export default function RecyclerHome() {
       setEditingLocation(false)
       setFlash(
         res.fromBackend
-          ? "Đã cập nhật toạ độ kho bãi lên PostGIS. Ghim trên bản đồ /map đã dời sang vị trí mới."
+          ? "Đã cập nhật toạ độ kho bãi lên hệ thống. Ghim trên bản đồ /map đã dời sang vị trí mới."
           : "Đã lưu vị trí kho bãi mới và đồng bộ với bản đồ.",
       )
     } finally {
@@ -502,7 +502,7 @@ export default function RecyclerHome() {
             </h2>
             <p className="mt-1 text-xs leading-5 text-body">
               Gói <b>PRO (1.000.000 đ / 365 ngày)</b> cấp Tích xanh thương hiệu, tắt quảng cáo và
-              đẩy ghim cơ sở lên đầu kết quả tìm kiếm bản đồ PostGIS (<code className="rounded bg-surface-2 px-1 py-0.5">+100 ưu tiên</code>).
+              đẩy ghim cơ sở lên đầu kết quả tìm kiếm bản đồ khu vực (<code className="rounded bg-surface-2 px-1 py-0.5">+100 ưu tiên</code>).
               Nâng cấp từ Premium sang Pro sẽ kích hoạt Pro ngay lập tức (<code>BR-PAY-04</code>).
             </p>
           </div>

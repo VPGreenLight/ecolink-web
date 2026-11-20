@@ -94,9 +94,9 @@ export const SEEDED_DEMO_ACCOUNTS: readonly SeededDemoAccount[] = [
   },
   {
     label: "Cơ sở thu mua",
-    username: "collector",
-    email: "collector@ecolink.vn",
-    password: "collector123",
+    username: "recycler",
+    email: "recycler@ecolink.vn",
+    password: "recycler123",
     role: "recycler",
     displayName: "Trần Thu Gom (Vựa phế liệu EcoGreen)",
   },
@@ -122,11 +122,11 @@ export const SEEDED_DEMO_ACCOUNTS: readonly SeededDemoAccount[] = [
 const OFFLINE_LEGACY_ALIASES: Record<string, { role: Role; name: string; email: string }> = {
   user: { role: "user", name: "Nguyễn Đức", email: "citizen@ecolink.vn" },
   citizen: { role: "user", name: "Nguyễn Văn Dân", email: "citizen@ecolink.vn" },
-  recycler: { role: "recycler", name: "Cô Ba Thu Gom", email: "collector@ecolink.vn" },
+  recycler: { role: "recycler", name: "Trần Thu Gom (Vựa phế liệu EcoGreen)", email: "recycler@ecolink.vn" },
   collector: {
     role: "recycler",
     name: "Trần Thu Gom (Vựa phế liệu EcoGreen)",
-    email: "collector@ecolink.vn",
+    email: "recycler@ecolink.vn",
   },
   staff: { role: "staff", name: "Lê Thu Hà", email: "staff@ecolink.vn" },
   admin: { role: "admin", name: "Quản trị viên EcoLink", email: "admin@ecolink.vn" },

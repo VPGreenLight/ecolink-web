@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import SearchFilterBar from "@/components/SearchFilterBar"
 import { ApiError } from "@/lib/api"
 import { PageHead, Status, Table, Td } from "@/components/admin/ui"
 import { POSTS, type Post } from "@/data/ops"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   fetchAdminBlogDetail,
   fetchAdminPendingBlogs,
@@ -42,8 +45,19 @@ export default function BlogReview() {
 
   const [sort, setSort] = useState<"oldest" | "newest">("oldest")
   const [searchInput, setSearchInput] = useState("")
+  const debouncedSearch = useDebouncedValue(searchInput, 250)
   const [searchQuery, setSearchQuery] = useState("")
+  const [pendingPage, setPendingPage] = useState(1)
+  const [pendingPageSize, setPendingPageSize] = useState(5)
+  const [donePage, setDonePage] = useState(1)
+  const [donePageSize, setDonePageSize] = useState(10)
   const [loading, setLoading] = useState(liveMode)
+
+  useEffect(() => {
+    setSearchQuery(debouncedSearch.trim())
+    setPendingPage(1)
+    setDonePage(1)
+  }, [debouncedSearch])
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const [rejectingId, setRejectingId] = useState<string | null>(null)
@@ -225,8 +239,26 @@ export default function BlogReview() {
       })),
   ]
 
-  const doneRows = liveMode ? liveDone : offlineDone
-  const pendingCount = liveMode ? pendingLive.length : offlinePending.length
+  const blogKeyword = searchQuery.trim().toLowerCase()
+  const filteredOfflinePending = offlinePending.filter(
+    (p) =>
+      !blogKeyword ||
+      p.title.toLowerCase().includes(blogKeyword) ||
+      p.id.toLowerCase().includes(blogKeyword) ||
+      p.author.toLowerCase().includes(blogKeyword),
+  )
+  const doneRows = (liveMode ? liveDone : offlineDone).filter(
+    (p) =>
+      !blogKeyword ||
+      p.title.toLowerCase().includes(blogKeyword) ||
+      p.code.toLowerCase().includes(blogKeyword) ||
+      p.author.toLowerCase().includes(blogKeyword) ||
+      (p.note ?? "").toLowerCase().includes(blogKeyword),
+  )
+  const pendingCount = liveMode ? pendingLive.length : filteredOfflinePending.length
+  const pagedPendingLive = paginateItems(pendingLive, pendingPage, pendingPageSize)
+  const pagedOfflinePending = paginateItems(filteredOfflinePending, pendingPage, pendingPageSize)
+  const pagedDoneRows = paginateItems(doneRows, donePage, donePageSize)
 
   return (
     <div className="flex flex-col gap-6">
@@ -259,36 +291,29 @@ export default function BlogReview() {
         </p>
       )}
 
-      {liveMode && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            setSearchQuery(searchInput.trim())
-          }}
-          className="flex flex-wrap items-center gap-3"
-        >
-          <input
-            type="search"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Tìm bài chờ duyệt theo tiêu đề..."
-            aria-label="Tìm bài chờ duyệt"
-            className="input h-10 max-w-xs flex-1"
-          />
+      <SearchFilterBar
+        value={searchInput}
+        onChange={(v) => setSearchInput(v)}
+        label="Tìm kiếm bài viết"
+        placeholder="Tìm theo tiêu đề, mã bài viết hoặc tác giả..."
+        totalCount={pendingCount + doneRows.length}
+        countLabel="bài viết"
+      >
+        {liveMode && (
           <select
             value={sort}
-            onChange={(e) => setSort(e.target.value === "newest" ? "newest" : "oldest")}
+            onChange={(e) => {
+              setSort(e.target.value === "newest" ? "newest" : "oldest")
+              setPendingPage(1)
+            }}
             aria-label="Thứ tự chờ duyệt"
-            className="input h-10 w-auto"
+            className="input h-10 w-auto text-xs"
           >
             <option value="oldest">Cũ nhất trước</option>
             <option value="newest">Mới nhất trước</option>
           </select>
-          <button type="submit" className="btn-ghost h-10 px-4 text-sm">
-            Lọc
-          </button>
-        </form>
-      )}
+        )}
+      </SearchFilterBar>
 
       <section>
         <h2 className="text-base font-bold text-ink">Chờ duyệt ({pendingCount})</h2>
@@ -301,8 +326,9 @@ export default function BlogReview() {
             Không có bài nào chờ duyệt.
           </p>
         ) : liveMode ? (
+          <>
           <ul className="mt-3 flex flex-col gap-4">
-            {pendingLive.map((p) => {
+            {pagedPendingLive.map((p) => {
               const code = formatBlogCode(p.id)
               const detail = detailsById[p.id]
               const isExpanded = expandedId === p.id
@@ -444,9 +470,20 @@ export default function BlogReview() {
               )
             })}
           </ul>
+          <PaginationBar
+            page={pendingPage}
+            pageSize={pendingPageSize}
+            totalCount={pendingLive.length}
+            onPageChange={setPendingPage}
+            onPageSizeChange={setPendingPageSize}
+            pageSizeOptions={[5, 10, 20]}
+            itemLabel="bài chờ duyệt"
+          />
+          </>
         ) : (
+          <>
           <ul className="mt-3 flex flex-col gap-4">
-            {offlinePending.map((p) => {
+            {pagedOfflinePending.map((p) => {
               const isRejecting = rejectingId === p.id
               return (
                 <li key={p.id} className="card flex flex-col gap-3 p-5">
@@ -529,21 +566,31 @@ export default function BlogReview() {
               )
             })}
           </ul>
+          <PaginationBar
+            page={pendingPage}
+            pageSize={pendingPageSize}
+            totalCount={filteredOfflinePending.length}
+            onPageChange={setPendingPage}
+            onPageSizeChange={setPendingPageSize}
+            pageSizeOptions={[5, 10, 20]}
+            itemLabel="bài chờ duyệt"
+          />
+          </>
         )}
       </section>
 
       <section>
-        <h2 className="text-base font-bold text-ink">Đã xử lý</h2>
+        <h2 className="text-base font-bold text-ink">Đã xử lý ({doneRows.length})</h2>
         <div className="mt-3">
           <Table head={["Mã", "Tiêu đề", "Tác giả", "Kết quả", "Lý do"]}>
-            {doneRows.length === 0 ? (
+            {pagedDoneRows.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-3 py-6 text-center text-[13px] text-muted">
                   Chưa có bài viết nào đã xuất bản hoặc bị hủy.
                 </td>
               </tr>
             ) : (
-              doneRows.map((p) => (
+              pagedDoneRows.map((p) => (
                 <tr key={p.id}>
                   <Td className="tabular-nums whitespace-nowrap">{p.code}</Td>
                   <Td className="font-semibold text-ink">
@@ -566,6 +613,14 @@ export default function BlogReview() {
               ))
             )}
           </Table>
+          <PaginationBar
+            page={donePage}
+            pageSize={donePageSize}
+            totalCount={doneRows.length}
+            onPageChange={setDonePage}
+            onPageSizeChange={setDonePageSize}
+            itemLabel="bài đã xử lý"
+          />
         </div>
       </section>
 

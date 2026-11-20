@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { PageHead, Status } from "@/components/Portal"
 import { AI_CASES } from "@/data/ops"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { AI_CLASS_OPTIONS, getCategoryMeta } from "@/lib/wasteScanApi"
 import { getAccessToken } from "@/lib/session"
 import {
@@ -66,10 +68,41 @@ export default function AiReview() {
   const [savingLabel, setSavingLabel] = useState(false)
   const [flashLabel, setFlashLabel] = useState<string>("")
 
+  // Search & Pagination state
+  const [fbSearch, setFbSearch] = useState("")
+  const debouncedFbSearch = useDebouncedValue(fbSearch, 250)
+  const [fbPage, setFbPage] = useState(1)
+  const [fbPageSize, setFbPageSize] = useState(8)
+  const [labelSearch, setLabelSearch] = useState("")
+  const debouncedLabelSearch = useDebouncedValue(labelSearch, 250)
+  const [labelPage, setLabelPage] = useState(1)
+  const [labelPageSize, setLabelPageSize] = useState(8)
+
+  const fbKeyword = debouncedFbSearch.trim().toLowerCase()
+  const filteredFeedbacks = feedbacks.filter((c) => {
+    if (!liveConnected && statusFilter !== "All" && c.status !== statusFilter) return false
+    if (!fbKeyword) return true
+    return [c.id, c.predictedLabel, c.userReportedLabel, c.reporterName, c.modelUsed]
+      .join(" ")
+      .toLowerCase()
+      .includes(fbKeyword)
+  })
+  const pagedFeedbacks = paginateItems(filteredFeedbacks, fbPage, fbPageSize)
+
+  const labelKeyword = debouncedLabelSearch.trim().toLowerCase()
+  const filteredLabelItems = labelItems.filter((item) => {
+    if (!labelKeyword) return true
+    return [item.id, item.groundTruthLabel ?? "", item.predictedLabel ?? "", item.sourceType]
+      .join(" ")
+      .toLowerCase()
+      .includes(labelKeyword)
+  })
+  const pagedLabelItems = paginateItems(filteredLabelItems, labelPage, labelPageSize)
+
   const currentFb =
-    feedbacks.find((f) => f.id === selectedFbId) ?? feedbacks[0] ?? null
+    feedbacks.find((f) => f.id === selectedFbId) ?? filteredFeedbacks[0] ?? feedbacks[0] ?? null
   const currentItem =
-    labelItems.find((i) => i.id === selectedItemId) ?? labelItems[0] ?? null
+    labelItems.find((i) => i.id === selectedItemId) ?? filteredLabelItems[0] ?? labelItems[0] ?? null
 
   const loadFeedbackQueue = async (filter: FeedbackFilter = statusFilter) => {
     const token = getAccessToken()
@@ -287,7 +320,7 @@ export default function AiReview() {
         </div>
 
         <span className="text-xs text-muted">
-          {liveConnected ? "Đã kết nối dữ liệu thực PostgreSQL" : "Chế độ xem mẫu tĩnh (Offline)"}
+          {liveConnected ? "Dữ liệu đồng bộ trực tiếp" : "Chế độ xem mẫu tĩnh (Offline)"}
         </span>
       </div>
 
@@ -412,6 +445,17 @@ export default function AiReview() {
           )}
 
           <aside className="flex flex-col gap-3">
+            <input
+              type="search"
+              value={fbSearch}
+              onChange={(e) => {
+                setFbSearch(e.target.value)
+                setFbPage(1)
+              }}
+              placeholder="Tìm mã, nhãn AI/User, người báo..."
+              aria-label="Tìm báo cáo AI"
+              className="input h-9 text-xs"
+            />
             <div className="flex flex-wrap gap-1.5">
               {(["All", "Pending", "Reviewed", "Rejected"] as const).map((st) => (
                 <button
@@ -419,6 +463,7 @@ export default function AiReview() {
                   type="button"
                   onClick={() => {
                     setStatusFilter(st)
+                    setFbPage(1)
                     void loadFeedbackQueue(st)
                   }}
                   className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -438,8 +483,13 @@ export default function AiReview() {
               ))}
             </div>
 
-            <ul className="flex max-h-[540px] flex-col gap-2 overflow-y-auto pr-1">
-              {feedbacks.map((c) => (
+            {pagedFeedbacks.length === 0 ? (
+              <p className="rounded-lg border border-line bg-surface px-3 py-5 text-center text-xs text-muted">
+                Không có báo cáo nào khớp bộ lọc.
+              </p>
+            ) : (
+              <ul className="flex max-h-[540px] flex-col gap-2 overflow-y-auto pr-1">
+                {pagedFeedbacks.map((c) => (
                 <li key={c.id}>
                   <button
                     type="button"
@@ -483,6 +533,16 @@ export default function AiReview() {
                 </li>
               ))}
             </ul>
+            )}
+            <PaginationBar
+              page={fbPage}
+              pageSize={fbPageSize}
+              totalCount={filteredFeedbacks.length}
+              onPageChange={setFbPage}
+              onPageSizeChange={setFbPageSize}
+              pageSizeOptions={[8, 15, 30]}
+              itemLabel="báo cáo"
+            />
           </aside>
         </div>
       ) : (
@@ -601,6 +661,17 @@ export default function AiReview() {
           </div>
 
           <aside className="flex flex-col gap-3">
+            <input
+              type="search"
+              value={labelSearch}
+              onChange={(e) => {
+                setLabelSearch(e.target.value)
+                setLabelPage(1)
+              }}
+              placeholder="Tìm theo mã mẫu, nhãn hoặc nguồn..."
+              aria-label="Tìm mẫu gán nhãn"
+              className="input h-9 text-xs"
+            />
             <div className="flex flex-wrap gap-1.5">
               {(["Unlabeled", "LowConfidenceAuto", "VerifiedLabeled", "All"] as const).map(
                 (f) => (
@@ -609,6 +680,7 @@ export default function AiReview() {
                     type="button"
                     onClick={() => {
                       setLabelFilter(f)
+                      setLabelPage(1)
                       void loadLabelQueue(f)
                     }}
                     className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -629,8 +701,13 @@ export default function AiReview() {
               )}
             </div>
 
-            <ul className="flex max-h-[540px] flex-col gap-2 overflow-y-auto pr-1">
-              {labelItems.map((item) => (
+            {pagedLabelItems.length === 0 ? (
+              <p className="rounded-lg border border-line bg-surface px-3 py-5 text-center text-xs text-muted">
+                Không có ảnh nào khớp từ khóa tìm kiếm.
+              </p>
+            ) : (
+              <ul className="flex max-h-[540px] flex-col gap-2 overflow-y-auto pr-1">
+                {pagedLabelItems.map((item) => (
                 <li
                   key={item.id}
                   className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 ${
@@ -680,6 +757,16 @@ export default function AiReview() {
                 </li>
               ))}
             </ul>
+            )}
+            <PaginationBar
+              page={labelPage}
+              pageSize={labelPageSize}
+              totalCount={filteredLabelItems.length}
+              onPageChange={setLabelPage}
+              onPageSizeChange={setLabelPageSize}
+              pageSizeOptions={[8, 15, 30]}
+              itemLabel="ảnh"
+            />
           </aside>
         </div>
       )}

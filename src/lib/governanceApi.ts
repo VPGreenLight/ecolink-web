@@ -444,10 +444,12 @@ function buildQueryString(
 
 function mapRawAccountSummary(r: RawManagedAccountSummaryDto): StaffAccountListItemDto {
   const prefix =
-    r.role.toLowerCase() === "recycler" || r.role.toLowerCase() === "collector" ? "B" : "U"
+    r.role.toLowerCase() === "recycler" || r.role.toLowerCase() === "collector" ? "R" : "U"
+  const cleanHex = r.userId.replace(/-/g, "").toUpperCase()
+  const shortHex = cleanHex.startsWith("9999") ? cleanHex.slice(-4) : cleanHex.slice(0, 4)
   return {
     id: r.userId,
-    accountCode: `${prefix}-${r.userId.slice(0, 4).toUpperCase()}`,
+    accountCode: `${prefix}-${shortHex}`,
     username: r.username,
     fullName: r.fullName,
     email: r.email,
@@ -526,7 +528,7 @@ export async function getAdminKpiSummary(
       completedHandovers: d.completedHandoversCount,
       recycledWeightKg: d.totalRecycledWeightKg,
       grossMerchandiseValueVnd: d.grossTradeValueVnd,
-      platformFeeRevenueVnd: Math.round(d.grossTradeValueVnd * 0.08),
+      platformFeeRevenueVnd: 0,
       vietQrServiceRevenueVnd: d.vietQrServiceRevenueVnd,
       co2SavedKg: Math.round(d.totalRecycledWeightKg * 1.5),
       aiAccuracyPercent: d.aiBenchmark?.overallAccuracyPercent ?? 94.6,

@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { PageHead, Stat, Table, Td } from "@/components/Portal"
+import SearchFilterBar from "@/components/SearchFilterBar"
 import { GIFTS } from "@/data/ops"
 import { GRAND_PRIZES, getSpendPoints, fmt } from "@/data/rewards"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   fetchAvailableGifts,
   fetchMyUnlockedEcoFacts,
@@ -43,13 +46,21 @@ export default function Gamification() {
   const [gifts, setGifts] = useState<GiftItemDto[]>([])
   const [upgrading, setUpgrading] = useState(false)
   const [flash, setFlash] = useState("")
+  const [factSearch, setFactSearch] = useState("")
+  const debouncedFactSearch = useDebouncedValue(factSearch, 250)
+  const [factPage, setFactPage] = useState(1)
+  const [factPageSize, setFactPageSize] = useState(6)
+  const [giftSearch, setGiftSearch] = useState("")
+  const debouncedGiftSearch = useDebouncedValue(giftSearch, 250)
+  const [giftPage, setGiftPage] = useState(1)
+  const [giftPageSize, setGiftPageSize] = useState(8)
 
   const loadAll = async () => {
     try {
       const [wRes, tRes, fRes, gRes] = await Promise.all([
         fetchPointWallet(),
         fetchMyVirtualTree(),
-        fetchMyUnlockedEcoFacts(),
+        fetchMyUnlockedEcoFacts(true),
         fetchAvailableGifts({ sort: "points_asc" }),
       ])
       if (wRes.data) setWallet(wRes.data)
@@ -221,11 +232,10 @@ export default function Gamification() {
                 {(tree?.levels ?? []).map((lv) => (
                   <div
                     key={lv.level}
-                    className={`rounded-lg border px-3.5 py-2.5 text-sm ${
-                      lv.reached
-                        ? "border-brand/30 bg-brand/6 text-ink"
-                        : "border-line bg-surface text-muted"
-                    }`}
+                    className={`rounded-lg border px-3.5 py-2.5 text-sm ${lv.reached
+                      ? "border-brand/30 bg-brand/6 text-ink"
+                      : "border-line bg-surface text-muted"
+                      }`}
                   >
                     <p className="font-bold">
                       Cấp {lv.level}: {lv.title} {lv.reached ? "✓" : ""}
@@ -239,47 +249,90 @@ export default function Gamification() {
                 ))}
               </div>
 
-              <h3 className="mt-2 text-sm font-bold text-ink">
-                Eco Fact đã mở khoá ({facts.length})
-              </h3>
-              {facts.length === 0 ? (
-                <p className="text-sm text-muted">
-                  Chưa có Eco Fact nào được mở khoá. Hãy nâng cấp cây để mở thêm kiến thức!
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {facts.map((f) => (
-                    <li
-                      key={f.id}
-                      className="rounded-lg border border-brand/25 bg-brand/6 px-4 py-3"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-bold text-ink">{f.title}</p>
-                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-brand-deep">
-                          Mốc Cấp {f.unlockTreeLevel}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs leading-5 text-body">{f.content}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-bold text-ink">
+                  Thư viện Eco Fact ({tree?.unlockedFactCount ?? facts.filter((f) => f.isUnlocked !== false).length}/{tree?.totalFactCount ?? facts.length} đã mở)
+                </h3>
+                <input
+                  type="search"
+                  value={factSearch}
+                  onChange={(e) => {
+                    setFactSearch(e.target.value)
+                    setFactPage(1)
+                  }}
+                  placeholder="Tìm kiến thức Eco Fact..."
+                  aria-label="Tìm Eco Fact"
+                  className="input h-9 w-full max-w-xs text-xs"
+                />
+              </div>
+              {(() => {
+                const fkw = debouncedFactSearch.trim().toLowerCase()
+                const filteredFacts = facts.filter(
+                  (f) =>
+                    !fkw ||
+                    `${f.title} ${f.content} ${f.code}`.toLowerCase().includes(fkw),
+                )
+                const pagedFacts = paginateItems(filteredFacts, factPage, factPageSize)
+                if (filteredFacts.length === 0) {
+                  return (
+                    <p className="text-sm text-muted">
+                      Chưa có Eco Fact nào khớp tìm kiếm. Hãy nâng cấp cây để mở thêm kiến thức!
+                    </p>
+                  )
+                }
+                return (
+                  <>
+                    <ul className="flex flex-col gap-2">
+                      {pagedFacts.map((f) => {
+                        const unlocked = f.isUnlocked !== false
+                        return (
+                          <li
+                            key={f.id}
+                            className={`rounded-lg border px-4 py-3 ${
+                              unlocked
+                                ? "border-brand/25 bg-brand/6"
+                                : "border-line bg-surface opacity-75"
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-bold text-ink">{f.title}</p>
+                              <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-brand-deep">
+                                {unlocked ? `Mốc Cấp ${f.unlockTreeLevel} · Đã mở` : `Khóa · Mở ở Cấp ${f.unlockTreeLevel}`}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-body">
+                              {unlocked ? f.content : "Nâng cấp cây ảo đến cấp tương ứng để mở khóa nội dung kiến thức chi tiết."}
+                            </p>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    <PaginationBar
+                      page={factPage}
+                      pageSize={factPageSize}
+                      totalCount={filteredFacts.length}
+                      onPageChange={setFactPage}
+                      onPageSizeChange={setFactPageSize}
+                      pageSizeOptions={[6, 12, 24]}
+                      itemLabel="Eco Fact"
+                    />
+                  </>
+                )
+              })()}
             </div>
           ) : (
             <ul className="flex flex-col gap-2.5">
               {BRANCHES.map((b, i) => (
                 <li
                   key={b.cost}
-                  className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3 ${
-                    i < 2 ? "border-brand/30 bg-brand/6" : "border-line bg-surface"
-                  }`}
+                  className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3 ${i < 2 ? "border-brand/30 bg-brand/6" : "border-line bg-surface"
+                    }`}
                 >
                   <span className="flex min-w-0 items-center gap-2.5">
                     <span
                       aria-hidden="true"
-                      className={`grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-bold ${
-                        i < 2 ? "bg-brand text-white" : "bg-surface-2 text-muted"
-                      }`}
+                      className={`grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-bold ${i < 2 ? "bg-brand text-white" : "bg-surface-2 text-muted"
+                        }`}
                     >
                       {i < 2 ? "✓" : "·"}
                     </span>
@@ -309,54 +362,123 @@ export default function Gamification() {
           Đổi bằng điểm tiêu dùng. Đổi xong mới trừ, và điểm xếp hạng giữ nguyên nên
           không bị tụt hạng.
         </p>
-        <div className="mt-4">
+        <div className="mt-4 flex flex-col gap-4">
+          <SearchFilterBar
+            value={giftSearch}
+            onChange={(v) => {
+              setGiftSearch(v)
+              setGiftPage(1)
+            }}
+            label="Tìm quà tặng"
+            placeholder="Tìm theo tên quà tặng hoặc loại quà..."
+          />
           {liveMode ? (
-            <Table head={["Quà tặng", "Loại", "Điểm", "Tồn kho"]}>
-              {gifts.map((g) => (
-                <tr key={g.id}>
-                  <Td className="font-semibold text-ink">{g.name}</Td>
-                  <Td>{g.type === "Voucher" ? "E-Voucher" : "Quà vật lý"}</Td>
-                  <Td className="tabular-nums">{fmt(g.pointsRequired)}</Td>
-                  <Td>
-                    {g.stockQuantity <= 0
-                      ? "Hết hàng"
-                      : `${fmt(g.stockQuantity)} món`}
-                  </Td>
-                </tr>
-              ))}
-            </Table>
+            (() => {
+              const gkw = debouncedGiftSearch.trim().toLowerCase()
+              const filteredGifts = gifts.filter(
+                (g) =>
+                  !gkw ||
+                  `${g.name} ${g.type === "Voucher" ? "e-voucher" : "quà vật lý"}`
+                    .toLowerCase()
+                    .includes(gkw),
+              )
+              const pagedGifts = paginateItems(filteredGifts, giftPage, giftPageSize)
+              return (
+                <>
+                  <Table head={["Quà tặng", "Loại", "Điểm", "Tồn kho"]}>
+                    {pagedGifts.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-6 text-center text-xs text-muted">
+                          Không tìm thấy quà tặng phù hợp.
+                        </td>
+                      </tr>
+                    ) : (
+                      pagedGifts.map((g) => (
+                        <tr key={g.id}>
+                          <Td className="font-semibold text-ink">{g.name}</Td>
+                          <Td>{g.type === "Voucher" ? "E-Voucher" : "Quà vật lý"}</Td>
+                          <Td className="tabular-nums">{fmt(g.pointsRequired)}</Td>
+                          <Td>
+                            {g.stockQuantity <= 0
+                              ? "Hết hàng"
+                              : `${fmt(g.stockQuantity)} món`}
+                          </Td>
+                        </tr>
+                      ))
+                    )}
+                  </Table>
+                  <PaginationBar
+                    page={giftPage}
+                    pageSize={giftPageSize}
+                    totalCount={filteredGifts.length}
+                    onPageChange={setGiftPage}
+                    onPageSizeChange={setGiftPageSize}
+                    pageSizeOptions={[8, 16, 32]}
+                    itemLabel="quà tặng"
+                  />
+                </>
+              )
+            })()
           ) : (
-            <Table head={["Quà tặng", "Loại", "Điểm", "Tồn kho"]}>
-              {GIFTS.filter((g) => g.active)
-                .sort((a, b) => a.cost - b.cost)
-                .map((g) => (
-                  <tr key={g.id}>
-                    <Td className="font-semibold text-ink">{g.name}</Td>
-                    <Td>{g.kind === "voucher" ? "Phiếu giảm giá" : "Quà vật lý"}</Td>
-                    <Td className="tabular-nums">{g.cost.toLocaleString("vi-VN")}</Td>
-                    <Td>
-                      {g.stock === null
+            (() => {
+              const gkw = debouncedGiftSearch.trim().toLowerCase()
+              const offlineGifts = [
+                ...GIFTS.filter((g) => g.active)
+                  .sort((a, b) => a.cost - b.cost)
+                  .map((g) => ({
+                    id: g.id,
+                    name: g.name,
+                    kindLabel: g.kind === "voucher" ? "Phiếu giảm giá" : "Quà vật lý",
+                    cost: g.cost,
+                    stockLabel:
+                      g.stock === null
                         ? "Không giới hạn"
                         : g.stock === 0
                           ? "Hết hàng"
-                          : `${g.stock.toLocaleString("vi-VN")} món`}
-                    </Td>
-                  </tr>
-                ))}
-              {GRAND_PRIZES.map((g) => (
-                <tr key={g.id}>
-                  <Td className="font-semibold text-ink">
-                    {g.name}
-                    <span className="ml-2 rounded-full bg-mint/30 px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-brand-deep">
-                      Giải lớn
-                    </span>
-                  </Td>
-                  <Td>Quà vật lý</Td>
-                  <Td className="tabular-nums">{g.cost.toLocaleString("vi-VN")}</Td>
-                  <Td>Giới hạn theo mùa</Td>
-                </tr>
-              ))}
-            </Table>
+                          : `${g.stock.toLocaleString("vi-VN")} món`,
+                    isGrand: false,
+                  })),
+                ...GRAND_PRIZES.map((g) => ({
+                  id: g.id,
+                  name: g.name,
+                  kindLabel: "Quà vật lý",
+                  cost: g.cost,
+                  stockLabel: "Giới hạn theo mùa",
+                  isGrand: true,
+                })),
+              ].filter((g) => !gkw || `${g.name} ${g.kindLabel}`.toLowerCase().includes(gkw))
+              const pagedOfflineGifts = paginateItems(offlineGifts, giftPage, giftPageSize)
+              return (
+                <>
+                  <Table head={["Quà tặng", "Loại", "Điểm", "Tồn kho"]}>
+                    {pagedOfflineGifts.map((g) => (
+                      <tr key={g.id}>
+                        <Td className="font-semibold text-ink">
+                          {g.name}
+                          {g.isGrand && (
+                            <span className="ml-2 rounded-full bg-mint/30 px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-brand-deep">
+                              Giải lớn
+                            </span>
+                          )}
+                        </Td>
+                        <Td>{g.kindLabel}</Td>
+                        <Td className="tabular-nums">{g.cost.toLocaleString("vi-VN")}</Td>
+                        <Td>{g.stockLabel}</Td>
+                      </tr>
+                    ))}
+                  </Table>
+                  <PaginationBar
+                    page={giftPage}
+                    pageSize={giftPageSize}
+                    totalCount={offlineGifts.length}
+                    onPageChange={setGiftPage}
+                    onPageSizeChange={setGiftPageSize}
+                    pageSizeOptions={[8, 16, 32]}
+                    itemLabel="quà tặng"
+                  />
+                </>
+              )
+            })()
           )}
         </div>
       </section>

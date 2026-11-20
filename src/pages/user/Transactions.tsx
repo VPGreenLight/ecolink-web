@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { PageHead, Stat, Status, Table, Td } from "@/components/Portal"
+import SearchFilterBar from "@/components/SearchFilterBar"
 import { FLOWS, KIND_LABEL } from "@/data/cashflow"
 import { fmtVnd } from "@/data/ops"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { fetchUserTransactions, type TransactionHistoryDto } from "@/lib/recyclerWorkflowApi"
 import { hasLiveBackendAuth } from "@/lib/session"
 
@@ -16,12 +19,16 @@ export default function Transactions() {
   const [liveData, setLiveData] = useState<TransactionHistoryDto | null>(null)
   const [fromBackend, setFromBackend] = useState(false)
   const [loading, setLoading] = useState<boolean>(() => liveAuth)
+  const [search, setSearch] = useState("")
+  const debouncedSearch = useDebouncedValue(search, 250)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   useEffect(() => {
     let active = true
     async function load() {
       try {
-        const res = await fetchUserTransactions()
+        const res = await fetchUserTransactions(undefined, undefined, 1, 100)
         if (!active) return
         if (res.fromBackend || res.data.items.length > 0) {
           setLiveData(res.data)
@@ -55,7 +62,7 @@ export default function Transactions() {
       <PageHead
         eyebrow="DÒNG TIỀN"
         title="Lịch sử tiền vào tài khoản"
-        body="Mỗi lần bàn giao thành công tạo ra ba dòng: người thu gom chuyển vào, phí nền tảng giữ lại, và khoản tiền bị bắn về bạn."
+        body="Lưu trữ biên nhận các lượt bàn giao đã xác nhận, tổng giá trị đối tác thanh toán và Điểm Xanh tích lũy của bạn."
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -64,7 +71,7 @@ export default function Transactions() {
           value={fmtVnd(totalPayout)}
           note={
             fromBackend
-              ? "Tổng tiền thu được từ các đơn hoàn tất (PostgreSQL)"
+              ? "Tổng tiền thu được từ các đơn hoàn tất"
               : "Tổng tiền về tài khoản"
           }
         />
@@ -86,59 +93,117 @@ export default function Transactions() {
         />
       </div>
 
-      {loading ? (
-        <p className="card px-5 py-8 text-center text-sm text-muted">
-          Đang tải lịch sử giao dịch...
-        </p>
-      ) : liveData && liveData.items.length > 0 ? (
-        <Table head={["Ngày", "Mã đơn", "Đối tác", "Khối lượng", "Số tiền nhận", "Điểm xanh"]}>
-          {liveData.items.map((item) => (
-            <tr key={item.receiptId} className="bg-brand/6">
-              <Td className="whitespace-nowrap tabular-nums">
-                {new Date(item.completedAt).toLocaleDateString("vi-VN")}
-              </Td>
-              <Td className="whitespace-nowrap tabular-nums font-medium text-ink">
-                {item.requestCode}
-              </Td>
-              <Td className="whitespace-nowrap">{item.counterpartName}</Td>
-              <Td className="tabular-nums font-semibold text-ink">
-                {item.totalWeightKg.toLocaleString("vi-VN")} kg
-              </Td>
-              <Td className="font-semibold tabular-nums text-brand">
-                {fmtVnd(item.totalAmountCash)}
-              </Td>
-              <Td className="tabular-nums font-semibold text-mint-leaf">
-                +{item.pointsAwarded} pts
-              </Td>
-            </tr>
-          ))}
-        </Table>
-      ) : fromBackend || liveAuth ? (
-        <p className="card px-5 py-8 text-center text-sm text-muted">
-          Tài khoản chưa có giao dịch hoàn tất nào trên hệ thống. Khi bạn xác nhận biên nhận thu
-          gom, tiền thanh toán và Điểm Xanh sẽ tự động ghi nhận tại đây.
-        </p>
-      ) : (
-        <Table head={["Ngày", "Mã", "Loại", "Số tiền", "Đối tác", "Ghi chú"]}>
-          {FLOWS.map((f) => (
-            <tr key={f.id} className={f.kind === "payout" ? "bg-brand/6" : ""}>
-              <Td className="whitespace-nowrap tabular-nums">{f.date}</Td>
-              <Td className="whitespace-nowrap tabular-nums">{f.handoverId}</Td>
-              <Td>
-                <Status tone={f.kind === "payout" ? "ok" : f.kind === "fee" ? "off" : "wait"}>
-                  {KIND_LABEL[f.kind]}
-                </Status>
-              </Td>
-              <Td className="font-semibold tabular-nums text-ink">
-                {f.kind === "fee" ? "−" : ""}
-                {fmtVnd(f.amount)}
-              </Td>
-              <Td className="whitespace-nowrap">{f.party}</Td>
-              <Td>{f.note}</Td>
-            </tr>
-          ))}
-        </Table>
-      )}
+      {(() => {
+        const kw = debouncedSearch.trim().toLowerCase()
+        const liveItems = (liveData?.items ?? []).filter(
+          (item) =>
+            !kw ||
+            `${item.requestCode} ${item.counterpartName} ${item.receiptId}`.toLowerCase().includes(kw),
+        )
+        const pagedLive = paginateItems(liveItems, page, pageSize)
+        const offlineItems = FLOWS.filter(
+          (f) => !kw || `${f.handoverId} ${f.party} ${f.note} ${KIND_LABEL[f.kind]}`.toLowerCase().includes(kw),
+        )
+        const pagedOffline = paginateItems(offlineItems, page, pageSize)
+
+        return (
+          <>
+            <SearchFilterBar
+              value={search}
+              onChange={(v) => {
+                setSearch(v)
+                setPage(1)
+              }}
+              label="Tìm kiếm giao dịch"
+              placeholder="Tìm theo mã đơn, tên cơ sở thu mua..."
+              totalCount={liveData ? liveItems.length : fromBackend || liveAuth ? 0 : offlineItems.length}
+              countLabel="giao dịch"
+            />
+
+            {loading ? (
+              <p className="card px-5 py-8 text-center text-sm text-muted">
+                Đang tải lịch sử giao dịch...
+              </p>
+            ) : liveData && liveData.items.length > 0 ? (
+              <>
+                <Table head={["Ngày", "Mã đơn", "Đối tác", "Khối lượng", "Số tiền nhận", "Điểm xanh"]}>
+                  {pagedLive.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-6 text-center text-xs text-muted">
+                        Không có giao dịch nào khớp từ khóa tìm kiếm.
+                      </td>
+                    </tr>
+                  ) : (
+                    pagedLive.map((item) => (
+                      <tr key={item.receiptId} className="bg-brand/6">
+                        <Td className="whitespace-nowrap tabular-nums">
+                          {new Date(item.completedAt).toLocaleDateString("vi-VN")}
+                        </Td>
+                        <Td className="whitespace-nowrap tabular-nums font-medium text-ink">
+                          {item.requestCode}
+                        </Td>
+                        <Td className="whitespace-nowrap">{item.counterpartName}</Td>
+                        <Td className="tabular-nums font-semibold text-ink">
+                          {item.totalWeightKg.toLocaleString("vi-VN")} kg
+                        </Td>
+                        <Td className="font-semibold tabular-nums text-brand">
+                          {fmtVnd(item.totalAmountCash)}
+                        </Td>
+                        <Td className="tabular-nums font-semibold text-mint-leaf">
+                          +{item.pointsAwarded} pts
+                        </Td>
+                      </tr>
+                    ))
+                  )}
+                </Table>
+                <PaginationBar
+                  page={page}
+                  pageSize={pageSize}
+                  totalCount={liveItems.length}
+                  onPageChange={setPage}
+                  onPageSizeChange={setPageSize}
+                  itemLabel="giao dịch"
+                />
+              </>
+            ) : fromBackend || liveAuth ? (
+              <p className="card px-5 py-8 text-center text-sm text-muted">
+                Tài khoản chưa có giao dịch hoàn tất nào trên hệ thống. Khi bạn xác nhận biên nhận thu
+                gom, tiền thanh toán và Điểm Xanh sẽ tự động ghi nhận tại đây.
+              </p>
+            ) : (
+              <>
+                <Table head={["Ngày", "Mã", "Loại", "Số tiền", "Đối tác", "Ghi chú"]}>
+                  {pagedOffline.map((f) => (
+                    <tr key={f.id} className={f.kind === "payout" ? "bg-brand/6" : ""}>
+                      <Td className="whitespace-nowrap tabular-nums">{f.date}</Td>
+                      <Td className="whitespace-nowrap tabular-nums">{f.handoverId}</Td>
+                      <Td>
+                        <Status tone={f.kind === "payout" ? "ok" : f.kind === "fee" ? "off" : "wait"}>
+                          {KIND_LABEL[f.kind]}
+                        </Status>
+                      </Td>
+                      <Td className="font-semibold tabular-nums text-ink">
+                        {f.kind === "fee" ? "−" : ""}
+                        {fmtVnd(f.amount)}
+                      </Td>
+                      <Td className="whitespace-nowrap">{f.party}</Td>
+                      <Td>{f.note}</Td>
+                    </tr>
+                  ))}
+                </Table>
+                <PaginationBar
+                  page={page}
+                  pageSize={pageSize}
+                  totalCount={offlineItems.length}
+                  onPageChange={setPage}
+                  onPageSizeChange={setPageSize}
+                  itemLabel="giao dịch"
+                />
+              </>
+            )}
+          </>
+        )
+      })()}
 
       <p className="max-w-[70ch] text-sm leading-6 text-muted">
         Nếu một giao dịch có dòng &quot;Thu vào từ đối tác&quot; mà thiếu dòng &quot;Bắn ra về

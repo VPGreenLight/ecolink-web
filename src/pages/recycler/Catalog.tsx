@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
+import SearchFilterBar from "@/components/SearchFilterBar"
 import { VND, WASTES } from "@/data/waste"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   fetchRecyclerPrices,
   fetchWasteCategories,
@@ -46,6 +49,11 @@ export default function Catalog() {
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const debouncedSearch = useDebouncedValue(search, 250)
+  const [activeFilter, setActiveFilter] = useState<"all" | "on" | "off">("all")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   useEffect(() => {
     let active = true
@@ -120,7 +128,7 @@ export default function Catalog() {
       setDirty(false)
       setFlash(
         res.syncedWithBackend
-          ? "Đã lưu và công bố bảng giá thành công lên hệ thống (đã cập nhật PostgreSQL)."
+          ? "Đã lưu và công bố bảng giá thành công lên hệ thống."
           : "Đã lưu bảng giá tạm thời (chế độ dự phòng ngoại tuyến).",
       )
     } finally {
@@ -152,43 +160,102 @@ export default function Catalog() {
         </div>
       )}
 
-      <Table head={["Loại rác", "Nhóm", "Thu mua", "Giá bạn trả", "Giá hệ thống"]}>
-        {rows.map((r) => {
-          const w = WASTES.find((x) => x.id === r.id)!
-          return (
-            <tr key={r.id}>
-              <Td className="font-semibold text-ink">{w.name}</Td>
-              <Td>{w.group}</Td>
-              <Td>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-brand"
-                    checked={r.on}
-                    onChange={(e) => set(r.id, { on: e.target.checked })}
-                  />
-                  <span className="text-[13px] text-body">
-                    {r.on ? "Có" : "Không"}
-                  </span>
-                </label>
-              </Td>
-              <Td>
-                <input
-                  className="input h-9 w-32 tabular-nums"
-                  type="number"
-                  min={0}
-                  step={100}
-                  disabled={!r.on}
-                  value={r.price}
-                  onChange={(e) => set(r.id, { price: Number(e.target.value) })}
-                  aria-label={`Giá thu mua ${w.name}`}
-                />
-              </Td>
-              <Td className="tabular-nums text-muted">{VND(priceOf(r.id))}</Td>
-            </tr>
-          )
-        })}
-      </Table>
+      {(() => {
+        const kw = debouncedSearch.trim().toLowerCase()
+        const filteredRows = rows.filter((r) => {
+          if (activeFilter === "on" && !r.on) return false
+          if (activeFilter === "off" && r.on) return false
+          if (!kw) return true
+          const w = WASTES.find((x) => x.id === r.id)
+          return `${w?.name ?? ""} ${w?.group ?? ""} ${r.categoryCode}`.toLowerCase().includes(kw)
+        })
+        const pagedRows = paginateItems(filteredRows, page, pageSize)
+
+        return (
+          <>
+            <SearchFilterBar
+              value={search}
+              onChange={(v) => {
+                setSearch(v)
+                setPage(1)
+              }}
+              label="Tìm kiếm loại rác"
+              placeholder="Tìm theo tên loại rác hoặc nhóm (Nhựa, Giấy, Kim loại)..."
+              totalCount={filteredRows.length}
+              countLabel="loại rác"
+            >
+              <select
+                aria-label="Lọc trạng thái thu mua"
+                value={activeFilter}
+                onChange={(e) => {
+                  setActiveFilter(e.target.value as "all" | "on" | "off")
+                  setPage(1)
+                }}
+                className="input h-10 text-xs"
+              >
+                <option value="all">Tất cả</option>
+                <option value="on">Đang thu mua</option>
+                <option value="off">Tạm ngưng</option>
+              </select>
+            </SearchFilterBar>
+
+            <Table head={["Loại rác", "Nhóm", "Thu mua", "Giá bạn trả", "Giá hệ thống"]}>
+              {pagedRows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-xs text-muted">
+                    Không có loại rác nào khớp bộ lọc hiện tại.
+                  </td>
+                </tr>
+              ) : (
+                pagedRows.map((r) => {
+                  const w = WASTES.find((x) => x.id === r.id)!
+                  return (
+                    <tr key={r.id}>
+                      <Td className="font-semibold text-ink">{w.name}</Td>
+                      <Td>{w.group}</Td>
+                      <Td>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            className="size-4 accent-brand"
+                            checked={r.on}
+                            onChange={(e) => set(r.id, { on: e.target.checked })}
+                          />
+                          <span className="text-[13px] text-body">
+                            {r.on ? "Có" : "Không"}
+                          </span>
+                        </label>
+                      </Td>
+                      <Td>
+                        <input
+                          className="input h-9 w-32 tabular-nums"
+                          type="number"
+                          min={0}
+                          step={100}
+                          disabled={!r.on}
+                          value={r.price}
+                          onChange={(e) => set(r.id, { price: Number(e.target.value) })}
+                          aria-label={`Giá thu mua ${w.name}`}
+                        />
+                      </Td>
+                      <Td className="tabular-nums text-muted">{VND(priceOf(r.id))}</Td>
+                    </tr>
+                  )
+                })
+              )}
+            </Table>
+
+            <PaginationBar
+              page={page}
+              pageSize={pageSize}
+              totalCount={filteredRows.length}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              itemLabel="loại rác"
+            />
+          </>
+        )
+      })()}
 
       <p className="max-w-[70ch] text-sm leading-6 text-muted">
         Giá hệ thống là mức trần EcoLink hiển thị cho người dân. Không đặt cao

@@ -504,7 +504,7 @@ export default function AuthForm({ mode: initialMode }: { mode: Mode }) {
         {mode === "login" && (
           <div className="mt-5 rounded-xl border border-line-soft bg-surface p-3">
             <p className="text-[11px] font-semibold tracking-wide text-muted uppercase">
-              Điền nhanh tài khoản mẫu trên CSDL
+              Điền nhanh tài khoản mẫu trên hệ thống
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {SEEDED_DEMO_ACCOUNTS.map((acc) => (

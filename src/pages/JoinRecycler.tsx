@@ -1,12 +1,26 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
 import { PageHead } from "@/components/Portal"
+import { ApiError } from "@/lib/api"
 import { LOCATION_PRESETS } from "@/lib/recyclerDiscoveryApi"
 import {
+  fetchMyRecyclerApplication,
+  formatRecyclerApplicationCode,
   submitRecyclerOnboarding,
+  type RecyclerApplicationDetailDto,
   type SubmitRecyclerOnboardingResult,
 } from "@/lib/recyclerWorkflowApi"
+import { hasLiveBackendAuth, useSession } from "@/lib/session"
+
+const MATERIALS = [
+  "Nhựa",
+  "Giấy và bìa carton",
+  "Kim loại",
+  "Thủy tinh",
+  "Điện tử",
+  "Rác hữu cơ",
+]
 
 /** U-17 Đăng ký cơ sở thu mua (kèm chấm ghim toạ độ kho bãi PostGIS & tải chứng từ lên R2).
  *
@@ -14,7 +28,9 @@ import {
  *  ảnh mặt tiền kho bãi và toạ độ thu gom cố định trên bản đồ (`BR-MTH-01`).
  *  Chỉ sau khi Nhân viên EcoLink (`S-04`) phê duyệt, ghim kho bãi mới hiển thị trên `/map`. */
 export default function JoinRecycler() {
-  const [docs, setDocs] = useState<File[]>([])
+  const session = useSession()
+  const [permitFile, setPermitFile] = useState<File | null>(null)
+  const [facilityPhotoFile, setFacilityPhotoFile] = useState<File | null>(null)
   const [name, setName] = useState("")
   const [owner, setOwner] = useState("")
   const [phone, setPhone] = useState("")
@@ -25,19 +41,67 @@ export default function JoinRecycler() {
   const [mats, setMats] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [doneResult, setDoneResult] = useState<SubmitRecyclerOnboardingResult | null>(null)
+  const [existingApp, setExistingApp] = useState<RecyclerApplicationDetailDto | null>(null)
   const [err, setErr] = useState("")
+  const hasTouchedPinRef = useRef(false)
 
-  const MATERIALS = [
-    "Nhựa",
-    "Giấy và bìa carton",
-    "Kim loại",
-    "Thủy tinh",
-    "Điện tử",
-    "Rác hữu cơ",
-  ]
+  useEffect(() => {
+    if (!session) return
+    setOwner((prev) => (prev.trim() ? prev : session.name ?? ""))
+    setPhone((prev) => (prev.trim() ? prev : session.phoneNumber ?? ""))
+    setEmail((prev) => (prev.trim() ? prev : session.email ?? ""))
+  }, [session])
+
+  useEffect(() => {
+    let active = true
+    if (!hasLiveBackendAuth()) {
+      setExistingApp(null)
+      return
+    }
+    void fetchMyRecyclerApplication().then((app) => {
+      if (!active) return
+      setExistingApp(app)
+      if (!app) return
+      setName((prev) => (prev.trim() ? prev : app.facilityName))
+      setOwner((prev) =>
+        prev.trim() ? prev : (app.representativeName ?? app.applicantFullName ?? ""),
+      )
+      setPhone((prev) => (prev.trim() ? prev : app.contactPhone))
+      setEmail((prev) => (prev.trim() ? prev : app.email))
+      setAddress((prev) => (prev.trim() ? prev : app.businessAddress))
+      if (!hasTouchedPinRef.current && app.latitude && app.longitude) {
+        setLat(Number(app.latitude))
+        setLng(Number(app.longitude))
+      }
+      const rawDesc = app.description?.replace(/^Thu mua:\s*/i, "").trim()
+      if (rawDesc) {
+        const matched = MATERIALS.filter((m) =>
+          rawDesc.toLowerCase().includes(m.toLowerCase()),
+        )
+        if (matched.length > 0) {
+          setMats((prev) => (prev.length > 0 ? prev : matched))
+        }
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [session?.id, session?.fromBackend])
+
+  const isAlreadyLockedStatus =
+    existingApp?.verificationStatus === "Pending" ||
+    existingApp?.verificationStatus === "Verified"
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isAlreadyLockedStatus) {
+      setErr(
+        existingApp?.verificationStatus === "Verified"
+          ? "Hồ sơ cơ sở của bạn đã được phê duyệt trước đó."
+          : "Hồ sơ cơ sở của bạn đang trong hàng đợi thẩm định. Vui lòng chờ kết quả từ nhân viên.",
+      )
+      return
+    }
     if (name.trim().length < 3) {
       setErr("Cần tên cơ sở để thẩm định hồ sơ.")
       return
@@ -58,8 +122,12 @@ export default function JoinRecycler() {
       setErr("Chọn ít nhất một loại rác bạn thu mua.")
       return
     }
-    if (docs.length === 0) {
-      setErr("Tải ít nhất một giấy tờ để hồ sơ được thẩm định.")
+    if (!permitFile) {
+      setErr("Vui lòng tải lên Giấy phép kinh doanh hoặc chứng từ pháp lý.")
+      return
+    }
+    if (!facilityPhotoFile) {
+      setErr("Vui lòng tải lên Ảnh chụp mặt tiền / kho bãi thu gom.")
       return
     }
 
@@ -75,10 +143,20 @@ export default function JoinRecycler() {
         latitude: lat,
         longitude: lng,
         materials: mats,
-        documents: docs,
+        documents: [permitFile, facilityPhotoFile],
       })
       setDoneResult(result)
     } catch (submitErr) {
+      if (
+        submitErr instanceof ApiError &&
+        submitErr.messageCode === "MSG-AUTH-01" &&
+        !session
+      ) {
+        setErr(
+          `${submitErr.message} Nếu đây là email tài khoản EcoLink của bạn, vui lòng Đăng nhập trước để gửi hồ sơ nâng cấp tài khoản hiện có.`,
+        )
+        return
+      }
       setErr(
         submitErr instanceof Error
           ? submitErr.message
@@ -101,6 +179,14 @@ export default function JoinRecycler() {
     )
   }
 
+  const existingCode = existingApp
+    ? formatRecyclerApplicationCode(existingApp.userId, existingApp.submittedAt)
+    : ""
+  const existingDateVi =
+    existingApp?.submittedAt && !Number.isNaN(Date.parse(existingApp.submittedAt))
+      ? new Date(existingApp.submittedAt).toLocaleDateString("vi-VN")
+      : ""
+
   return (
     <div className="page flex flex-col gap-6">
       <PageHead
@@ -108,6 +194,95 @@ export default function JoinRecycler() {
         title="Đăng ký cơ sở thu mua"
         body="Điền hồ sơ, chấm vị trí kho bãi trên bản đồ và tải giấy tờ pháp lý lên. Hồ sơ được thẩm định trước khi điểm thu mua của bạn xuất hiện trên bản đồ GPS."
       />
+
+      {session && hasLiveBackendAuth() && (
+        <div className="rounded-xl border border-brand/25 bg-brand/6 px-4 py-3 text-[13px] text-brand-deep">
+          Đang nộp hồ sơ nâng cấp cho tài khoản{" "}
+          <strong>
+            {session.name}
+            {session.email ? ` (${session.email})` : ""}
+          </strong>{" "}
+          — tài khoản người dân hiện tại vẫn hoạt động bình thường trong thời gian chờ duyệt.
+        </div>
+      )}
+
+      {existingApp && existingApp.verificationStatus === "Pending" && (
+        <div className="card flex flex-wrap items-center justify-between gap-4 border-brand/30 bg-surface-2 px-5 py-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-brand/12 px-3 py-1 text-xs font-semibold text-brand-deep">
+                Đã ghi nhận trên hệ thống (Trạng thái: Chờ thẩm định)
+              </span>
+              <span className="text-xs font-bold tabular-nums text-ink">{existingCode}</span>
+              {existingDateVi && (
+                <span className="text-xs text-muted">· Nộp ngày {existingDateVi}</span>
+              )}
+            </div>
+            <p className="mt-2 font-bold text-ink">{existingApp.facilityName}</p>
+            <p className="mt-0.5 text-[13px] text-muted">
+              {existingApp.businessAddress} · GPS ({Number(existingApp.latitude).toFixed(4)},{" "}
+              {Number(existingApp.longitude).toFixed(4)})
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setName(existingApp.facilityName)
+              setLat(Number(existingApp.latitude))
+              setLng(Number(existingApp.longitude))
+              setDoneResult({
+                referenceCode: existingCode,
+                syncedWithBackend: true,
+                userId: existingApp.userId,
+              })
+            }}
+            className="btn-outline h-10 px-4 text-xs"
+          >
+            Xem biên nhận hồ sơ
+          </button>
+        </div>
+      )}
+
+      {existingApp && existingApp.verificationStatus === "Rejected" && (
+        <div className="card flex flex-col gap-1.5 border-warn/40 bg-surface-2 px-5 py-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-warn/15 px-3 py-1 text-xs font-semibold text-warn">
+              Hồ sơ cần bổ sung ({existingCode})
+            </span>
+          </div>
+          <p className="text-sm font-semibold text-ink">
+            Lý do từ chối từ nhân viên thẩm định:{" "}
+            <span className="text-warn">
+              {existingApp.rejectionReason || "Thông tin hoặc chứng từ chưa đạt yêu cầu."}
+            </span>
+          </p>
+          <p className="text-[13px] text-muted">
+            Vui lòng cập nhật lại thông tin kho bãi, tải chứng từ mới rõ nét ở biểu mẫu bên dưới và
+            bấm &quot;Gửi lại hồ sơ thẩm định&quot;.
+          </p>
+        </div>
+      )}
+
+      {existingApp && existingApp.verificationStatus === "Verified" && (
+        <div className="card flex flex-wrap items-center justify-between gap-4 border-brand/30 bg-brand/6 px-5 py-4">
+          <div>
+            <p className="font-bold text-brand-deep">
+              Cơ sở {existingApp.facilityName} ({existingCode}) đã được phê duyệt!
+            </p>
+            <p className="mt-0.5 text-[13px] text-body">
+              Tài khoản của bạn đã đủ điều kiện hoạt động và hiển thị ghim thu mua trên bản đồ EcoLink.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link to="/recycler" className="btn-primary h-9 px-4 text-xs">
+              Mở cổng Cơ sở thu mua
+            </Link>
+            <Link to="/map" className="btn-outline h-9 px-4 text-xs">
+              Xem trên Bản đồ
+            </Link>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={(e) => void submit(e)} noValidate className="card flex flex-col gap-6 p-5 md:p-6">
         <div className="grid gap-5 sm:grid-cols-2">
@@ -148,7 +323,7 @@ export default function JoinRecycler() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="ten@thugom.vn"
+              placeholder="ten@recycler.vn"
             />
           </label>
         </div>
@@ -177,6 +352,7 @@ export default function JoinRecycler() {
             pinTitle={name.trim() || "Kho bãi thu mua"}
             helperText="Toạ độ chính xác của kho bãi (SRID 4326)"
             onChange={(nextLat, nextLng, addressHint) => {
+              hasTouchedPinRef.current = true
               setLat(nextLat)
               setLng(nextLng)
               if (addressHint && !address.trim()) {
@@ -217,35 +393,68 @@ export default function JoinRecycler() {
           </div>
         </fieldset>
 
-        <div className="flex flex-col gap-2">
-          <span className="text-[13px] font-semibold text-ink">
-            Giấy tờ bắt buộc
-          </span>
-          <span className="text-[12px] text-muted">
-            Giấy đăng ký doanh nghiệp hoặc hộ kinh doanh, giấy phép thu gom chất thải rắn
-            và ảnh chụp mặt tiền kho bãi. Ảnh rõ chữ, tối đa 5 tệp.
-          </span>
-          <label
-            className={`mt-1 flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-6 text-center transition-colors ${
-              err.startsWith("Tải ít nhất")
-                ? "border-warn bg-surface-2"
-                : "border-sage-line bg-surface-2 hover:bg-surface-3"
-            }`}
-          >
-            <input
-              type="file"
-              accept="image/*,application/pdf"
-              multiple
-              className="sr-only"
-              onChange={(e) => setDocs(Array.from(e.target.files ?? []).slice(0, 5))}
-            />
-            <span className="text-sm font-semibold text-brand">
-              {docs.length === 0 ? "Chọn giấy tờ & ảnh kho bãi" : docs.map((d) => d.name).join(" · ")}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-semibold text-ink">
+              1. Giấy phép kinh doanh / Chứng từ pháp lý <span className="text-warn">*</span>
             </span>
-            {docs.length === 0 && (
-              <span className="text-[12px] text-muted">Chấp nhận ảnh (.jpg, .png, .webp) và PDF</span>
-            )}
-          </label>
+            <span className="text-[12px] text-muted">
+              Giấy đăng ký doanh nghiệp / hộ kinh doanh hoặc giấy phép thu gom chất thải (Ảnh hoặc PDF).
+            </span>
+            <label
+              className={`mt-1 flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed px-4 py-5 text-center transition-colors ${
+                err.includes("Giấy phép")
+                  ? "border-warn bg-surface-2"
+                  : "border-sage-line bg-surface-2 hover:bg-surface-3"
+              }`}
+            >
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                className="sr-only"
+                onChange={(e) => setPermitFile(e.target.files?.[0] ?? null)}
+              />
+              <span className="text-sm font-semibold text-brand break-all">
+                {permitFile ? permitFile.name : "Chọn tệp giấy phép (.pdf, .jpg, .png)"}
+              </span>
+              <span className="text-[11px] text-muted">
+                {permitFile
+                  ? `${(permitFile.size / 1024).toFixed(0)} KB · Bấm để đổi tệp`
+                  : "Hỗ trợ PDF, JPG, PNG, WEBP"}
+              </span>
+            </label>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-semibold text-ink">
+              2. Ảnh thực tế mặt tiền / kho bãi <span className="text-warn">*</span>
+            </span>
+            <span className="text-[12px] text-muted">
+              Ảnh chụp rõ biển hiệu, khu vực cân đo hoặc mặt bằng thu gom thực tế tại địa chỉ đăng ký.
+            </span>
+            <label
+              className={`mt-1 flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed px-4 py-5 text-center transition-colors ${
+                err.includes("Ảnh chụp")
+                  ? "border-warn bg-surface-2"
+                  : "border-sage-line bg-surface-2 hover:bg-surface-3"
+              }`}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(e) => setFacilityPhotoFile(e.target.files?.[0] ?? null)}
+              />
+              <span className="text-sm font-semibold text-brand break-all">
+                {facilityPhotoFile ? facilityPhotoFile.name : "Chọn ảnh kho bãi (.jpg, .png)"}
+              </span>
+              <span className="text-[11px] text-muted">
+                {facilityPhotoFile
+                  ? `${(facilityPhotoFile.size / 1024).toFixed(0)} KB · Bấm để đổi ảnh`
+                  : "Chỉ chấp nhận tệp hình ảnh rõ nét"}
+              </span>
+            </label>
+          </div>
         </div>
 
         {err && <p className="text-[13px] text-warn">{err}</p>}
@@ -253,10 +462,18 @@ export default function JoinRecycler() {
         <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
           <button
             type="submit"
-            disabled={submitting}
-            className="btn-primary h-11 px-6"
+            disabled={submitting || isAlreadyLockedStatus}
+            className="btn-primary h-11 px-6 disabled:cursor-not-allowed disabled:opacity-55"
           >
-            {submitting ? "Đang gửi hồ sơ..." : "Gửi hồ sơ thẩm định"}
+            {submitting
+              ? "Đang gửi hồ sơ..."
+              : existingApp?.verificationStatus === "Rejected"
+                ? "Gửi lại hồ sơ thẩm định"
+                : existingApp?.verificationStatus === "Pending"
+                  ? "Hồ sơ đang chờ thẩm định"
+                  : existingApp?.verificationStatus === "Verified"
+                    ? "Cơ sở đã được phê duyệt"
+                    : "Gửi hồ sơ thẩm định"}
           </button>
           <p className="text-[13px] text-muted">
             Chờ duyệt thì bạn vẫn dùng được tài khoản người dân như thường.
@@ -300,7 +517,7 @@ function Done({
         <div className="ml-auto flex flex-col items-end gap-1 text-right">
           <span className="rounded-full bg-brand/10 px-3 py-1 text-xs font-semibold text-brand-deep">
             {syncedWithBackend
-              ? "Đã ghi nhận vào CSDL PostGIS (Trạng thái: Chờ thẩm định)"
+              ? "Đã ghi nhận trên hệ thống (Trạng thái: Chờ thẩm định)"
               : "Đã lưu hàng đợi thẩm định trình duyệt"}
           </span>
           <p className="text-xs text-muted">

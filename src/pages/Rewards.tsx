@@ -1,5 +1,8 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import CheckIn from "@/components/CheckIn"
+import SearchFilterBar from "@/components/SearchFilterBar"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   EARN,
   fmt,
@@ -61,17 +64,34 @@ function RewardIcon({ kind }: { kind: Reward["kind"] }) {
   )
 }
 
+function resolveGiftImageFallback(name: string, type?: string): string {
+  const lower = name.toLowerCase()
+  if (lower.includes("voucher") || lower.includes("10%") || type === "Voucher") return "/assets/rewards/coupon10.jpg"
+  if (lower.includes("kit") || lower.includes("ươm")) return "/assets/rewards/kit.jpg"
+  if (lower.includes("túi") || lower.includes("canvas")) return "/assets/rewards/bag.jpg"
+  if (lower.includes("hạt") || lower.includes("cây")) return "/assets/rewards/seedling.jpg"
+  if (lower.includes("ly") || lower.includes("bình") || lower.includes("thủy")) return "/assets/rewards/glasses.jpg"
+  if (lower.includes("nén") || lower.includes("thùng")) return "/assets/rewards/compactor.jpg"
+  return "/assets/rewards/bag.jpg"
+}
+
 function Thumb({ img, name, kind }: { img?: string | null; name: string; kind: Reward["kind"] }) {
+  const resolved = img || resolveGiftImageFallback(name, kind === "discount" ? "Voucher" : "Physical")
   const [broken, setBroken] = useState(false)
+
+  useEffect(() => {
+    setBroken(false)
+  }, [resolved])
+
   return (
     <div className="relative aspect-[4/3] w-full overflow-hidden bg-surface-2">
-      {!img || broken ? (
+      {!resolved || broken ? (
         <span className="grid h-full place-items-center text-body">
           <RewardIcon kind={kind} />
         </span>
       ) : (
         <img
-          src={img}
+          src={resolved}
           alt={name}
           loading="lazy"
           decoding="async"
@@ -118,7 +138,18 @@ export default function Rewards() {
   const [rankPoints, setRankPoints] = useState(() => (liveRewardsUser ? 0 : RANK_POINTS))
   const [spentTotal, setSpentTotal] = useState(() => (liveRewardsUser ? 0 : REDEEMED))
   const [gifts, setGifts] = useState<GiftItemDto[]>([])
+  const [giftSearch, setGiftSearch] = useState("")
+  const debouncedGiftSearch = useDebouncedValue(giftSearch, 250)
+  const [giftTypeFilter, setGiftTypeFilter] = useState("")
+  const [giftSort, setGiftSort] = useState<"points_asc" | "points_desc" | "newest">("points_asc")
+  const [giftPage, setGiftPage] = useState(1)
+  const [giftPageSize, setGiftPageSize] = useState(6)
+
   const [redemptions, setRedemptions] = useState<RedemptionDto[]>([])
+  const [redTotal, setRedTotal] = useState(0)
+  const [redPage, setRedPage] = useState(1)
+  const [redPageSize, setRedPageSize] = useState(5)
+
   const [tree, setTree] = useState<VirtualTreeDto | null>(null)
   const [loading, setLoading] = useState(liveRewardsUser)
   const [redeemingId, setRedeemingId] = useState<string | null>(null)
@@ -131,8 +162,8 @@ export default function Rewards() {
     try {
       const [walletRes, giftRes, redRes] = await Promise.all([
         fetchPointWallet(),
-        fetchAvailableGifts({ sort: "points_asc" }),
-        fetchMyRedemptions({ pageSize: 12 }),
+        fetchAvailableGifts({ sort: giftSort }),
+        fetchMyRedemptions({ page: redPage, pageSize: redPageSize }),
       ])
       if (walletRes.data) {
         setSpend(walletRes.data.balance)
@@ -140,7 +171,10 @@ export default function Rewards() {
         setSpentTotal(walletRes.data.totalSpent)
       }
       if (giftRes.data) setGifts(giftRes.data)
-      if (redRes.data?.items) setRedemptions(redRes.data.items)
+      if (redRes.data?.items) {
+        setRedemptions(redRes.data.items)
+        setRedTotal(redRes.data.totalCount ?? redRes.data.items.length)
+      }
       if (session?.role === "user") {
         fetchMyVirtualTree()
           .then((tr) => {
@@ -159,7 +193,7 @@ export default function Rewards() {
     if (liveRewardsUser) {
       void loadLiveData()
     }
-  }, [liveRewardsUser])
+  }, [liveRewardsUser, giftSort, redPage, redPageSize])
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -174,7 +208,41 @@ export default function Rewards() {
     ? computeTierFromPoints(rankPoints)
     : offlineTier
 
-  const offlineSorted = [...REWARDS].sort((a, b) => a.cost - b.cost)
+  const offlineSorted = useMemo(() => {
+    const q = debouncedGiftSearch.trim().toLowerCase()
+    const base = [...REWARDS].sort((a, b) =>
+      giftSort === "points_desc" ? b.cost - a.cost : a.cost - b.cost,
+    )
+    return base.filter((r) => {
+      const matchesType =
+        !giftTypeFilter ||
+        (giftTypeFilter === "Voucher" ? r.kind === "discount" : r.kind !== "discount")
+      const matchesQuery =
+        !q || r.name.toLowerCase().includes(q) || (r.desc ?? "").toLowerCase().includes(q)
+      return matchesType && matchesQuery
+    })
+  }, [debouncedGiftSearch, giftTypeFilter, giftSort])
+
+  const filteredLiveGifts = useMemo(() => {
+    const q = debouncedGiftSearch.trim().toLowerCase()
+    return gifts.filter((g) => {
+      const matchesType = !giftTypeFilter || g.type === giftTypeFilter
+      const matchesQuery =
+        !q ||
+        g.name.toLowerCase().includes(q) ||
+        (g.description ?? "").toLowerCase().includes(q)
+      return matchesType && matchesQuery
+    })
+  }, [gifts, debouncedGiftSearch, giftTypeFilter])
+
+  const pagedLiveGifts = useMemo(
+    () => paginateItems(filteredLiveGifts, giftPage, giftPageSize),
+    [filteredLiveGifts, giftPage, giftPageSize],
+  )
+  const pagedOfflineGifts = useMemo(
+    () => paginateItems(offlineSorted, giftPage, giftPageSize),
+    [offlineSorted, giftPage, giftPageSize],
+  )
 
   const handleLiveRedeem = async (gift: GiftItemDto, address?: string) => {
     if (redeemingId) return
@@ -312,23 +380,65 @@ export default function Rewards() {
             {liveRewardsUser
               ? loading
                 ? "Đang tải kho quà..."
-                : `${gifts.length} món từ hệ thống`
-              : `${offlineSorted.length} món, sắp theo giá tăng dần`}
+                : `${filteredLiveGifts.length} món từ hệ thống`
+              : `${offlineSorted.length} món`}
           </p>
         </div>
+
+        <SearchFilterBar
+          className="mt-4"
+          label="Tìm kiếm quà tặng / E-Voucher"
+          value={giftSearch}
+          onChange={(v) => {
+            setGiftSearch(v)
+            setGiftPage(1)
+          }}
+          placeholder="Nhập tên quà hoặc ưu đãi..."
+          totalCount={liveRewardsUser ? filteredLiveGifts.length : offlineSorted.length}
+          countLabel="phần quà"
+        >
+          <select
+            className="input h-9 text-xs"
+            value={giftTypeFilter}
+            onChange={(e) => {
+              setGiftTypeFilter(e.target.value)
+              setGiftPage(1)
+            }}
+            aria-label="Lọc loại quà"
+          >
+            <option value="">Tất cả loại quà</option>
+            <option value="Physical">Quà vật lý</option>
+            <option value="Voucher">E-Voucher</option>
+          </select>
+          <select
+            className="input h-9 text-xs"
+            value={giftSort}
+            onChange={(e) => {
+              const v = e.target.value
+              setGiftSort(v === "points_desc" ? "points_desc" : v === "newest" ? "newest" : "points_asc")
+              setGiftPage(1)
+            }}
+            aria-label="Sắp xếp quà tặng"
+          >
+            <option value="points_asc">Điểm tăng dần</option>
+            <option value="points_desc">Điểm giảm dần</option>
+            <option value="newest">Mới nhất</option>
+          </select>
+        </SearchFilterBar>
 
         {liveRewardsUser ? (
           loading && gifts.length === 0 ? (
             <p className="card mt-5 px-5 py-8 text-center text-sm text-muted">
               Đang tải danh mục quà từ máy chủ...
             </p>
-          ) : gifts.length === 0 ? (
+          ) : filteredLiveGifts.length === 0 ? (
             <p className="card mt-5 px-5 py-8 text-center text-sm text-muted">
-              Hiện chưa có phần quà nào đang mở bán.
+              Không tìm thấy phần quà phù hợp.
             </p>
           ) : (
-            <ul className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {gifts.map((g) => {
+            <>
+              <ul className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {pagedLiveGifts.map((g) => {
                 const enough = spend >= g.pointsRequired
                 const soldOut = !g.inStock || g.stockQuantity <= 0
                 const can = enough && !soldOut && redeemingId !== g.id
@@ -449,11 +559,22 @@ export default function Rewards() {
                   </li>
                 )
               })}
-            </ul>
+              </ul>
+              <PaginationBar
+                page={giftPage}
+                pageSize={giftPageSize}
+                totalCount={filteredLiveGifts.length}
+                onPageChange={setGiftPage}
+                onPageSizeChange={setGiftPageSize}
+                pageSizeOptions={[6, 12, 24]}
+                itemLabel="phần quà"
+              />
+            </>
           )
         ) : (
-          <ul className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {offlineSorted.map((r) => {
+          <>
+            <ul className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {pagedOfflineGifts.map((r) => {
               const enough = spend >= r.cost
               const soldOut = r.stock === 0
               const can = enough && !soldOut
@@ -520,8 +641,18 @@ export default function Rewards() {
                   </div>
                 </li>
               )
-            })}
-          </ul>
+              })}
+            </ul>
+            <PaginationBar
+              page={giftPage}
+              pageSize={giftPageSize}
+              totalCount={offlineSorted.length}
+              onPageChange={setGiftPage}
+              onPageSizeChange={setGiftPageSize}
+              pageSizeOptions={[6, 12, 24]}
+              itemLabel="phần quà"
+            />
+          </>
         )}
 
         <p className="mt-6 max-w-[68ch] text-sm leading-6 text-muted">
@@ -585,6 +716,15 @@ export default function Rewards() {
               </tbody>
             </table>
           </div>
+          <PaginationBar
+            page={redPage}
+            pageSize={redPageSize}
+            totalCount={redTotal}
+            onPageChange={setRedPage}
+            onPageSizeChange={setRedPageSize}
+            pageSizeOptions={[5, 10, 20]}
+            itemLabel="đơn đổi quà"
+          />
         </section>
       )}
 
