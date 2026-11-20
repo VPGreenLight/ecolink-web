@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { Suspense, useEffect } from "react"
 import { Outlet, useLocation } from "react-router-dom"
 import { ensureActiveAuthSession } from "@/lib/api"
 import Navbar from "./Navbar"
@@ -18,7 +18,9 @@ export default function Layout() {
     <div className="min-h-dvh bg-page pb-20 lg:pb-0">
       <Navbar />
       <main className="pt-[70px] md:pt-[76px]">
-        <Outlet />
+        <Suspense fallback={null}>
+          <Outlet />
+        </Suspense>
       </main>
       <Footer />
       <MobileNav />

@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import { Outlet } from "react-router-dom"
 
 /** Khung dùng chung cho form đăng nhập / đăng ký.
@@ -10,7 +11,9 @@ export default function AuthLayout() {
   return (
     <div className="flex min-h-dvh flex-col justify-center bg-page px-6 py-8">
       <main className="mx-auto w-full max-w-[420px]">
-        <Outlet />
+        <Suspense fallback={null}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   )

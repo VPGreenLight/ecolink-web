@@ -10,7 +10,7 @@ npm run dev                  # http://localhost:5173 (tự proxy /api và /hubs 
 
 | Script | Việc |
 | --- | --- |
-| `npm run dev` | dev server + HMR + proxy sang `.NET WebApi` |
+| `npm run dev` | dev server + proxy sang `.NET WebApi` (đang **tắt HMR**, xem chú thích trong `vite.config.ts`) |
 | `npm run build` | typecheck rồi build production vào `dist/` |
 | `npm run preview` | serve `dist/` |
 | `npm run typecheck` | `tsc --noEmit` |

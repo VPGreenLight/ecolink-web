@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom"
 import { PORTAL_NAV } from "@/data/portal"
 import { ROLE_LABEL, signOut, useSession } from "@/lib/session"
@@ -139,7 +139,9 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
         </aside>
 
         <main className="min-w-0 flex-1 px-4 py-6 lg:px-8 lg:py-8">
-          <Outlet />
+          <Suspense fallback={null}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
 
