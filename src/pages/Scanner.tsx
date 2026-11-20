@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
 import {
@@ -1331,7 +1331,7 @@ function OodResult({
       <div className="rounded-xl border border-line-soft bg-surface-2 p-3.5 text-[13px] leading-5 text-body">
         <p className="font-semibold text-ink">Mẹo chụp lại để hệ thống kết luận chính xác:</p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-body">
-          <li>Đặt món rác vào <b>khung ngắm trung tâm</b> trên camera, cách 20–40 cm.</li>
+          <li>Đặt món rác vào giữa khung hình camera, cách 20–40 cm.</li>
           <li>Tránh chụp ngược sáng hoặc để tay che khuất phần lớn nhãn/thân chai.</li>
           <li>Đặt vật rác trên nền thoáng, đủ sáng để hệ thống nhận diện chính xác nhất.</li>
         </ul>
@@ -1533,7 +1533,7 @@ const T = {
   actions: 1440,
 } as const
 
-/* ---------------------------------------------------------------- camera + Khung ngắm trung tâm (Đề xuất 2) */
+/* ---------------------------------------------------------------- camera (chụp ảnh trực tiếp) */
 
 function CameraPanel({
   onShoot,
@@ -1589,23 +1589,38 @@ function CameraPanel({
     }
   }, [])
 
-  const shoot = (autoScan: boolean) => {
-    const v = video.current
-    if (!v || !v.videoWidth) return
-    const c = document.createElement("canvas")
-    c.width = v.videoWidth
-    c.height = v.videoHeight
-    c.getContext("2d")?.drawImage(v, 0, 0, c.width, c.height)
-    c.toBlob(
-      (blob) => {
-        if (blob) {
-          onShoot(new File([blob], `camera-${Date.now()}.jpg`, { type: "image/jpeg" }), autoScan)
-        }
-      },
-      "image/jpeg",
-      0.92,
-    )
-  }
+  const shoot = useCallback(
+    (autoScan: boolean) => {
+      const v = video.current
+      if (!v || !v.videoWidth) return
+      const c = document.createElement("canvas")
+      c.width = v.videoWidth
+      c.height = v.videoHeight
+      c.getContext("2d")?.drawImage(v, 0, 0, c.width, c.height)
+      c.toBlob(
+        (blob) => {
+          if (blob) {
+            onShoot(new File([blob], `camera-${Date.now()}.jpg`, { type: "image/jpeg" }), autoScan)
+          }
+        },
+        "image/jpeg",
+        0.92,
+      )
+    },
+    [onShoot],
+  )
+
+  // Phím Enter = chụp & quét ngay (giữ đúng hành vi của nút chính trên panel)
+  useEffect(() => {
+    if (!ready || err) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || e.repeat) return
+      e.preventDefault()
+      shoot(true)
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [ready, err, shoot])
 
   return (
     <div className="overflow-clip rounded-2xl border border-line/70 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
@@ -1632,25 +1647,6 @@ function CameraPanel({
               </p>
             )}
 
-            {/* Khung ngắm trung tâm (Center Focus Reticle) — giúp AI ưu tiên đúng vật thể #1 */}
-            {ready && (
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center p-4"
-              >
-                <div className="relative h-[68%] w-[54%] max-w-[280px] rounded-2xl border border-white/25 bg-white/[0.02] shadow-[0_0_0_9999px_rgba(10,24,18,0.22)]">
-                  <span className="absolute -top-0.5 -left-0.5 size-5 rounded-tl-xl border-t-[3px] border-l-[3px] border-mint-bright" />
-                  <span className="absolute -top-0.5 -right-0.5 size-5 rounded-tr-xl border-t-[3px] border-r-[3px] border-mint-bright" />
-                  <span className="absolute -bottom-0.5 -left-0.5 size-5 rounded-bl-xl border-b-[3px] border-l-[3px] border-mint-bright" />
-                  <span className="absolute -right-0.5 -bottom-0.5 size-5 rounded-br-xl border-r-[3px] border-b-[3px] border-mint-bright" />
-                  <span className="absolute top-1/2 left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-mint-bright/80 ring-4 ring-mint-bright/20" />
-                </div>
-                <span className="mt-2.5 rounded-full bg-ink/80 px-3 py-1 text-[11px] font-medium text-white/95 backdrop-blur-sm">
-                  Đặt vật rác vào khung ngắm trung tâm (AI ưu tiên #1)
-                </span>
-              </div>
-            )}
-
             <span className="absolute top-3 left-3 inline-flex items-center gap-1.5 rounded-full bg-ink/85 px-3 py-1.5 text-[11px] font-semibold text-white">
               <i className="pulse-bar size-1.5 rounded-full bg-mint-bright" />
               Camera đang mở
@@ -1661,7 +1657,7 @@ function CameraPanel({
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-surface-2 px-4 py-2.5">
         <p className="text-[13px] text-muted">
-          {err ? "Hoặc đóng rồi dùng nút tải ảnh lên" : "Giữ vật thể ở giữa khung ngắm rồi chụp"}
+          {err ? "Hoặc đóng rồi dùng nút tải ảnh lên" : "Nhấn Enter để chụp & quét ngay"}
         </p>
         <div className="flex shrink-0 flex-wrap gap-2">
           <button type="button" onClick={onClose} className="btn-ghost h-9 px-3.5 text-[13px]">
