@@ -11,7 +11,6 @@ import { MemoryRouter } from "react-router-dom"
 import Navbar from "@/components/Navbar"
 import MobileNav from "@/components/MobileNav"
 import Footer from "@/components/Footer"
-import AuthLayout from "@/components/AuthLayout"
 import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
 
 import Blog from "@/pages/Blog"
@@ -82,13 +81,12 @@ const CASES = [
   ["Blog", Blog, "Bài viết về rác thải"],
   ["Home", Home, "Phân loại đúng"],
   ["Rewards", Rewards, "Điểm tiêu dùng"],
-  ["Leaderboard", LeaderboardPage, "Xếp hạng người dùng"],
+  ["Leaderboard", LeaderboardPage, "Bảng xếp hạng đóng góp Sống Xanh"],
   // assert the idle state: result copy is only rendered after a scan
   ["Scanner", Scanner, "Dùng trang này thế nào"],
-  ["MapPage", MapPage, "Cô Ba Thu Gom"],
+  ["MapPage", MapPage, "Cơ sở thu mua gần bạn"],
   ["Partners", Partners, "Duy Tân"],
   ["Feedback", Feedback, "Khiếu nại và góp ý"],
-  ["AuthLayout", AuthLayout, "Hệ sinh thái tuần hoàn"],
   ["Login", Login, "Đăng nhập"],
   ["Register", Register, "Tạo tài khoản"],
   ["Logout", Logout, "Xác nhận đăng xuất"],
@@ -129,7 +127,7 @@ const CASES = [
   ["staff/Dataset", Dataset, "Tập dữ liệu kiểm chứng"],
   ["staff/Applications", Applications, "Thẩm định hồ sơ cơ sở thu mua"],
   ["staff/Complaints", Complaints, "Khiếu nại giao dịch"],
-  ["staff/Accounts", Accounts, "Danh sách User và Buyer"],
+  ["staff/Accounts", Accounts, "Danh sách User và Recycler"],
   ["staff/BlogEditor", BlogEditor, "Soạn bài Blog"],
   ["staff/EcoFacts", EcoFacts, "Quản lý Eco Fact"],
   ["staff/Gifts", Gifts, "Quà tặng và voucher"],

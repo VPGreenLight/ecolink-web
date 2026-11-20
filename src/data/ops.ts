@@ -205,9 +205,9 @@ export const ACCOUNTS: Account[] = [
   { id: "U-1042", name: "Nguyễn Đức", email: "duc.nguyen@email.vn", role: "user", area: "Quận 3", joined: "12/03/2026", status: "active", deals: 24 },
   { id: "U-1039", name: "Lê Thị Ngọc Hân", email: "han.le@email.vn", role: "user", area: "Quận 7", joined: "10/03/2026", status: "active", deals: 31 },
   { id: "U-1031", name: "Phạm Quốc Việt", email: "viet.pham@email.vn", role: "user", area: "Thủ Đức", joined: "08/03/2026", status: "active", deals: 12 },
-  { id: "B-0207", name: "Cô Ba Thu Gom", email: "coba@thugom.vn", role: "recycler", area: "Quận 1", joined: "02/04/2026", status: "active", deals: 268 },
-  { id: "B-0211", name: "Anh Tuấn", email: "tuan@thugom.vn", role: "recycler", area: "Quận 1", joined: "18/04/2026", status: "active", deals: 143 },
-  { id: "B-0202", name: "Vựa Minh Khai", email: "minhkhai@thugom.vn", role: "recycler", area: "Quận 5", joined: "25/02/2026", status: "locked", deals: 86 },
+  { id: "R-0207", name: "Cô Ba Thu Gom", email: "coba@recycler.ecolink.vn", role: "recycler", area: "Quận 1", joined: "02/04/2026", status: "active", deals: 268 },
+  { id: "R-0211", name: "Anh Tuấn", email: "tuan@recycler.ecolink.vn", role: "recycler", area: "Quận 1", joined: "18/04/2026", status: "active", deals: 143 },
+  { id: "R-0202", name: "Vựa Minh Khai", email: "minhkhai@recycler.ecolink.vn", role: "recycler", area: "Quận 5", joined: "25/02/2026", status: "locked", deals: 86 },
   { id: "U-1028", name: "Đặng Thu Hà", email: "ha.dang@email.vn", role: "user", area: "Gò Vấp", joined: "05/03/2026", status: "active", deals: 7 },
   { id: "U-1015", name: "Võ Thành Long", email: "long.vo@email.vn", role: "user", area: "Quận 8", joined: "28/02/2026", status: "active", deals: 19 },
 ]

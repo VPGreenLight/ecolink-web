@@ -19,23 +19,64 @@ export const ROLE_HOME: Record<Role, string> = {
 }
 
 const KEY = "ecolink:user"
+export const ACCESS_TOKEN_KEY = "ecolink:token"
+export const REFRESH_TOKEN_KEY = "ecolink:refresh_token"
+export const TOKEN_EXPIRES_AT_KEY = "ecolink:token_expires_at"
+
+const ROLE_JWT_KEYS = [
+  "ecolink:jwt:user",
+  "ecolink:jwt:recycler",
+  "ecolink:jwt:staff",
+  "ecolink:jwt:admin",
+] as const
+
 const listeners = new Set<() => void>()
 
 const emit = () => listeners.forEach((l) => l())
 
-export type Session = { name: string; role: Role }
+export type Session = {
+  name: string
+  role: Role
+  id?: string
+  username?: string
+  email?: string
+  phoneNumber?: string | null
+  avatarUrl?: string | null
+  status?: string
+  isGoogleAuth?: boolean
+  currentGreenPoints?: number
+  treeLevel?: number
+  totalRecycledKg?: number
+  fromBackend?: boolean
+}
+
+export type SessionExtra = Omit<Session, "name" | "role">
+
+type LogoutHook = (refreshToken: string | null, accessToken: string | null) => void
+let logoutHook: LogoutHook | null = null
+
+export function registerLogoutHook(fn: LogoutHook) {
+  logoutHook = fn
+}
+
+/**
+ * Chuẩn hoá tên vai trò trả về từ Backend C# (`Citizen`/`User`, `Recycler`/`Collector`, `Staff`, `Admin`)
+ * sang tập 4 vai trò chuẩn của Frontend.
+ */
+export function mapBackendRole(rawRole?: string | null): Role {
+  const norm = (rawRole ?? "").trim().toLowerCase()
+  if (norm === "admin") return "admin"
+  if (norm === "staff") return "staff"
+  if (norm === "recycler" || norm === "collector") return "recycler"
+  return "user"
+}
 
 /** Bộ nhớ đệm của getSnapshot.
  *
  *  BẮT BUỘC phải có. `useSyncExternalStore` so sánh kết quả của `getSnapshot`
  *  bằng `Object.is`: nếu mỗi lần gọi đều trả về object MỚI thì luôn khác
  *  nhau, React coi là đã đổi rồi render lại, lại gọi, lại khác... đến khi vượt
- *  "Maximum update depth exceeded" và **dựng lại cả cây — trang trắng**.
- *
- *  Trước đây `session.ts` trả về một CHUỖI, primitive nên `Object.is` ổn định
- *  và không có vòng lặp. Đổi sang object mà quên chuyện này là nguyên nhân trang
- *  trắng — và nó xảy ra ở MỌI trang khi đã đăng nhập, vì navbar gọi
- *  `useSession()` trên khắp app chứ không riêng trang quản trị. */
+ *  "Maximum update depth exceeded" và **dựng lại cả cây — trang trắng**. */
 let cached: Session | null = null
 let primed = false
 
@@ -48,9 +89,29 @@ function readSession(): Session | null {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return null
-    const v = JSON.parse(raw)
-    if (typeof v?.name !== "string") return null
-    return { name: v.name, role: ROLE_LABEL[v.role as Role] ? (v.role as Role) : "user" }
+    const v = JSON.parse(raw) as Partial<Session> | null
+    if (!v || typeof v.name !== "string") return null
+    const resolvedRole: Role = ROLE_LABEL[v.role as Role]
+      ? (v.role as Role)
+      : mapBackendRole(typeof v.role === "string" ? v.role : undefined)
+
+    return {
+      name: v.name,
+      role: resolvedRole,
+      ...(typeof v.id === "string" ? { id: v.id } : {}),
+      ...(typeof v.username === "string" ? { username: v.username } : {}),
+      ...(typeof v.email === "string" ? { email: v.email } : {}),
+      ...(v.phoneNumber !== undefined ? { phoneNumber: v.phoneNumber } : {}),
+      ...(v.avatarUrl !== undefined ? { avatarUrl: v.avatarUrl } : {}),
+      ...(typeof v.status === "string" ? { status: v.status } : {}),
+      ...(typeof v.isGoogleAuth === "boolean" ? { isGoogleAuth: v.isGoogleAuth } : {}),
+      ...(typeof v.currentGreenPoints === "number"
+        ? { currentGreenPoints: v.currentGreenPoints }
+        : {}),
+      ...(typeof v.treeLevel === "number" ? { treeLevel: v.treeLevel } : {}),
+      ...(typeof v.totalRecycledKg === "number" ? { totalRecycledKg: v.totalRecycledKg } : {}),
+      ...(typeof v.fromBackend === "boolean" ? { fromBackend: v.fromBackend } : {}),
+    }
   } catch {
     return null
   }
@@ -70,16 +131,145 @@ export function getSession(): Session | null {
   return cached
 }
 
-export function signIn(name: string, role: Role = "user") {
-  localStorage.setItem(KEY, JSON.stringify({ name, role }))
+export function getAccessToken(): string | null {
+  if (typeof localStorage === "undefined") return null
+  try {
+    return localStorage.getItem(ACCESS_TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function getRefreshToken(): string | null {
+  if (typeof localStorage === "undefined") return null
+  try {
+    return localStorage.getItem(REFRESH_TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function hasLiveBackendAuth(): boolean {
+  return Boolean(getSession()?.fromBackend || getAccessToken())
+}
+
+/**
+ * Kiểm tra payload `exp` của JWT phía client (không xác minh chữ ký).
+ * Trả về `false` nếu chuỗi không phải JWT chuẩn để tránh xóa nhầm token demo/tùy biến.
+ */
+export function isJwtExpired(token?: string | null, leewaySeconds = 10): boolean {
+  if (!token) return false
+  const parts = token.split(".")
+  if (parts.length !== 3) return false
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/")
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")
+    if (typeof atob !== "function") return false
+    const json = atob(padded)
+    const payload = JSON.parse(json) as { exp?: unknown }
+    if (typeof payload.exp !== "number") return false
+    return Date.now() >= payload.exp * 1000 - leewaySeconds * 1000
+  } catch {
+    return false
+  }
+}
+
+export function isStoredAccessTokenExpired(leewaySeconds = 10): boolean {
+  if (typeof localStorage === "undefined") return false
+  try {
+    const expiresRaw = localStorage.getItem(TOKEN_EXPIRES_AT_KEY)
+    if (expiresRaw) {
+      const expiresMs = Date.parse(expiresRaw)
+      if (!Number.isNaN(expiresMs) && Date.now() >= expiresMs - leewaySeconds * 1000) {
+        return true
+      }
+    }
+  } catch {
+    // Bỏ qua lỗi đọc storage
+  }
+  return isJwtExpired(getAccessToken(), leewaySeconds)
+}
+
+export function setAuthTokens(tokens: {
+  accessToken: string
+  refreshToken?: string | null
+  expiresAt?: string | null
+}) {
+  if (typeof localStorage === "undefined") return
+  try {
+    if (tokens.accessToken) {
+      localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken)
+    }
+    if (tokens.refreshToken) {
+      localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken)
+    }
+    if (tokens.expiresAt) {
+      localStorage.setItem(TOKEN_EXPIRES_AT_KEY, tokens.expiresAt)
+    }
+  } catch {
+    // Bỏ qua nếu trình duyệt khoá bộ nhớ cục bộ
+  }
+}
+
+export function signIn(name: string, role: Role = "user", extra?: SessionExtra) {
+  if (typeof localStorage === "undefined") return
+  const payload: Session = {
+    ...(extra ?? {}),
+    name,
+    role,
+  }
+  localStorage.setItem(KEY, JSON.stringify(payload))
+  invalidate()
+  emit()
+}
+
+export function updateSession(patch: Partial<Session>) {
+  if (typeof localStorage === "undefined") return
+  const current = getSession()
+  if (!current) return
+  const next: Session = {
+    ...current,
+    ...patch,
+    name: patch.name ?? current.name,
+    role: patch.role ?? current.role,
+  }
+  localStorage.setItem(KEY, JSON.stringify(next))
+  invalidate()
+  emit()
+}
+
+/** Xoá sạch toàn bộ phiên và khoá JWT trong localStorage (không gọi lại API logout). */
+export function clearAuthStorage() {
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem(KEY)
+    localStorage.removeItem(ACCESS_TOKEN_KEY)
+    localStorage.removeItem(REFRESH_TOKEN_KEY)
+    localStorage.removeItem(TOKEN_EXPIRES_AT_KEY)
+    localStorage.removeItem("ecolink:m12_entitlements")
+    for (const k of ROLE_JWT_KEYS) {
+      localStorage.removeItem(k)
+    }
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("ecolink:auth-cleared"))
+  }
   invalidate()
   emit()
 }
 
 export function signOut() {
-  localStorage.removeItem(KEY)
-  invalidate()
-  emit()
+  const prevRefresh = getRefreshToken()
+  const prevAccess = getAccessToken()
+  clearAuthStorage()
+
+  // Chỉ thu hồi Refresh Token trên máy chủ khi đang chạy trong trình duyệt thật
+  if (typeof window !== "undefined" && logoutHook && (prevRefresh || prevAccess)) {
+    try {
+      logoutHook(prevRefresh, prevAccess)
+    } catch {
+      // Không chặn luồng đăng xuất UI nếu mất kết nối
+    }
+  }
 }
 
 function subscribe(onChange: () => void) {
@@ -90,10 +280,14 @@ function subscribe(onChange: () => void) {
     invalidate()
     onChange()
   }
-  window.addEventListener("storage", onStorage)
+  if (typeof window !== "undefined") {
+    window.addEventListener("storage", onStorage)
+  }
   return () => {
     listeners.delete(onChange)
-    window.removeEventListener("storage", onStorage)
+    if (typeof window !== "undefined") {
+      window.removeEventListener("storage", onStorage)
+    }
   }
 }
 

@@ -4,16 +4,18 @@
 
 ```bash
 npm install
-npm run dev     # http://localhost:5173
+cp .env.example .env.local   # điền VITE_CARTO_API_KEY (miễn phí tại carto.com/basemaps/apikey)
+npm run dev                  # http://localhost:5173 (tự proxy /api và /hubs sang http://localhost:5000)
 ```
 
 | Script | Việc |
 | --- | --- |
-| `npm run dev` | dev server + HMR |
+| `npm run dev` | dev server + HMR + proxy sang `.NET WebApi` |
 | `npm run build` | typecheck rồi build production vào `dist/` |
 | `npm run preview` | serve `dist/` |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run check` | render 10 component/page lên HTML, fail nếu trang trắng hoặc mất nội dung |
+| `npm run check` | render 61 component/page lên HTML, fail nếu trang trắng hoặc mất nội dung |
+| `npm run check:routes` | render toàn bộ cây route phân quyền & kiểm tra ổn định snapshot |
 
 ## Cấu trúc
 
@@ -28,26 +30,40 @@ src/
     MobileNav.tsx         tab bar dưới màn hình (< lg)
     Footer.tsx
     AuthForm.tsx          dùng chung cho /login và /register
+    LeafletRecyclerMap.tsx Bản đồ tương tác CARTO Voyager + vòng bán kính & ghim cơ sở
+    LocationPinPickerMap.tsx Bản đồ mini ghim kho bãi, điểm hẹn bàn giao & đối chiếu hồ sơ KYB
   pages/                  1 file = 1 route
-  data/                   toàn bộ nội dung tĩnh nằm ở đây
-  lib/session.ts          đăng nhập giả lập bằng localStorage
+  data/                   nội dung tĩnh & dữ liệu dự phòng khi chạy offline
+  lib/
+    api.ts                HTTP client chuẩn hóa ApiResponse<T>, tự dò cổng & xoay vòng Refresh Token (401)
+    authApi.ts            API client Module Authentication & RBAC (/api/v1/auth/*, Google OAuth, Khôi phục MK)
+    chatApi.ts            API client & SignalR WebSockets Module Negotiation Chatbox (U-08, R-05)
+    wasteScanApi.ts       API client Module AI Waste Classification & Rule Engine
+    aiCurationApi.ts      API client Module AI Misclassification Feedback & Dataset Curation (U-04, S-01..S-03)
+    recyclerDiscoveryApi.ts API client Module Location-Based Recycler Discovery (U-05)
+    recyclerWorkflowApi.ts Liên thông 4 mắt xích vai trò (đăng ký, duyệt KYB, bật/tắt vựa, đặt lịch)
+    geocodingApi.ts       Tìm kiếm địa danh 2 tầng & làm mờ toạ độ ~500m (BR-MTH-05)
+    vietnamMapSovereignty.ts Lớp phủ chuẩn hoá danh xưng Biển Đông, Hoàng Sa & Trường Sa (Việt Nam)
+    session.ts            Quản lý phiên đăng nhập JWT, Refresh Token & RBAC ổn định tham chiếu React
   check.tsx               smoke test, không dùng framework test
 ```
 
-## Route
+## Route chính
 
 | Đường dẫn | Trang |
 | --- | --- |
 | `/` | Tổng quan (hero, bài báo, chỉ số) |
-| `/scanner` | Nhận diện AI (kết quả mẫu) |
-| `/map` | Điểm thu gom (bản đồ + khung chat) |
-| `/partners` | Đối tác tái chế (tìm kiếm + lọc) |
-| `/login`, `/register` | Đăng nhập / đăng ký |
+| `/scanner` | Nhận diện AI đa mô hình + Rule Engine + báo cáo nhãn sai (`/api/v1/waste-scan/*`) |
+| `/guidance`, `/waste` | Tra cứu quy tắc xử lý rác từ Rule Engine & báo cáo nhãn sai |
+| `/map` | Bản đồ tương tác CARTO Voyager tìm cơ sở thu mua, tra cứu địa danh 2 tầng & làm mờ vị trí `~500m` (`/api/v1/recyclers/*`, `/api/v1/geocoding/search`) |
+| `/partners` | Đối tác tái chế & cơ sở thu mua trực tuyến |
+| `/chat` | Chatbox thương lượng đơn giá, khối lượng & khung giờ thu gom thời gian thực (`U-08`, `R-05`, SignalR WebSocket) |
+| `/login`, `/register`, `/reset-password` | Đăng nhập, đăng ký, Google OAuth & khôi phục mật khẩu (`/api/v1/auth/*`) |
 | `*` | 404 |
 
 ## Sửa nội dung
 
-Text và ảnh nằm trong `src/data/*.ts`, không nằm trong JSX. Đổi copy, đổi giá,
+Text và ảnh mặc định nằm trong `src/data/*.ts`, không nằm trong JSX. Đổi copy, đổi giá mẫu,
 thêm bài viết, thêm đối tác → sửa file data, không đụng component.
 
 ```ts
@@ -57,16 +73,11 @@ export const PARTNERS: Partner[] = [{ name: "...", logo: "/assets/...", ... }]
 
 Đổi màu / font / class dùng lại → `src/index.css` (khối `@theme`).
 
-## Còn thiếu (có chủ đích)
+## Lưu ý khi triển khai (Deployment)
 
-- **Đăng nhập là giả lập.** `lib/session.ts` chỉ lưu tên vào `localStorage`, không
-  có API, không có token. Nối backend thật khi cần.
-- **Trang /scanner dùng ảnh và kết quả tĩnh.** Chưa gọi model nhận diện, chưa
-  upload ảnh. Muốn thật thì thay `src/data/scanner.ts` bằng fetch.
-- **Bản đồ là ảnh nền tĩnh.** Pin đặt bằng % theo layout Figma, không có
-  geolocation hay map thật. Thay bằng Leaflet/MapLibre khi cần.
 - **Deploy cần SPA fallback.** Vite dev đã có sẵn; khi deploy static phải trỏ
   mọi path về `index.html`, nếu không refresh `/scanner` sẽ 404.
+- **Google OAuth 2.0:** Khi triển khai chính thức, cấu hình `VITE_GOOGLE_CLIENT_ID` trong `.env.local` và `GoogleAuth:ClientId` ở Backend; ở chế độ chạy đồ án cục bộ không cần tạo project Google Cloud vẫn có thể kiểm thử trực tiếp luồng `POST /api/v1/auth/google` xuống PostgreSQL.
 
 ## Nhật ký làm việc & Minh chứng đồ án
 
@@ -77,4 +88,13 @@ export const PARTNERS: Partner[] = [{ name: "...", logo: "/assets/...", ... }]
   - [Phiên 2026-09-28](docs/2026-09-28.md): Tinh chỉnh Navbar, căn lề, chuẩn hóa bảng màu thương hiệu theo WCAG, sửa 56 màn hình.
   - [Phiên 2026-10-31](docs/2026-10-31.md): Chuẩn hóa quy chế ghi nhật ký làm việc và minh chứng quá trình code.
   - [Phiên 2026-11-02: Tối ưu đăng xuất](docs/2026-11-02.md): Chuyển đổi đăng xuất sang Confirmation Dialog nội bộ, đồng bộ điều hướng về trang chủ.
-
+  - [Phiên 2026-11-03: Kết nối AI Classification & Recycler Discovery](docs/2026-11-03.md): Tích hợp API nhận diện rác đa mô hình, Rule Engine, báo cáo nhãn sai và bản đồ tìm cơ sở thu mua theo GPS (`U-05`).
+  - [Phiên 2026-11-04: Cloudflare Tunnel & AI Multi-Object Bounding Box](docs/2026-11-04.md): Mở `allowedHosts` trên Vite 8, tích hợp Cloudflare Quick Tunnel và nâng cấp nhận diện rác đa vật thể đóng khung tương tác (Đề xuất 1 + 2 + 3).
+  - [Phiên 2026-11-05: Bản đồ CARTO Voyager, Liên thông 4 Vai trò & PostGIS `ST_DWithin`](docs/2026-11-05.md): Tích hợp `Leaflet 1.9.4` + `CARTO Voyager`, Backend Geocoding Proxy, bảo mật vị trí `~500m` (`BR-MTH-05`), liên thông không gian 4 vai trò (`U-17`, `R-02`, `S-04`, `U-07`) và truy vấn chỉ mục PostGIS `ST_DWithin`.
+  - [Phiên 2026-11-07: In-App Real-Time Negotiation Chatbox (SignalR)](docs/2026-11-07.md): Tích hợp `@microsoft/signalr`, API client `chatApi.ts`, nâng cấp `Chat.tsx` với thẻ đề xuất `Proposal Card` đa trạng thái, tải ảnh phế liệu Cloudflare R2, chỉ báo gõ phím và liên thông 2 chiều giữa Người dân và Chủ vựa (`U-08`, `R-05`).
+  - [Phiên 2026-11-08: Kiểm định chất lượng 4 lớp & Đồng bộ gói phụ thuộc](docs/2026-11-08.md): Đồng bộ `node_modules` và xác minh toàn bộ TypeScript, SSR smoke test, định tuyến phân quyền và Vite production build.
+  - [Phiên 2026-11-09: Nâng cấp Cây Ảo 70 khung hình WebP & Đồng bộ Điểm tiêu dùng](docs/2026-11-09.md): Nâng cấp animation 6 giai đoạn sinh trưởng trên `EcoFactsPage.tsx` và liên thông ví điểm tiêu dùng với trang Đổi thưởng.
+  - [Phiên 2026-11-15: Tích hợp Module Quản trị, Nhân sự, Chấm công & Kiểm toán (`FE-17`, `FE-18`)](docs/2026-11-15.md): Xây dựng `governanceApi.ts` và kết nối 19 REST APIs cho Cổng Admin & Staff (`A-01..A-04`, `S-06`, `S-07`, `S-11`), xuất báo cáo CSV/XLSX ẩn danh hóa PII, tra cứu nhật ký `audit_logs` bất biến và rà soát hợp nhất nhánh `giang` → `thang`.
+  - [Phiên 2026-11-16: Gói Dịch vụ Nội bộ & Thanh toán VietQR (`FE-14` / `M-12`)](docs/2026-11-16.md): Tích hợp 15 REST APIs (`STT 115–129`) cho 3 bậc gói (`BASIC` 0đ, `PREMIUM` 59k/30d, `PRO` 1tr/365d KYB), `SponsoredAdBanner`, `VietQrCheckoutModal`, nâng cấp Tích xanh/Ghim bản đồ `PRO`, cấu hình biểu phí Admin `A-10` và sổ cái đối soát `A-11`.
+  - [Phiên 2026-11-17: Phản hồi Lỗi AI & Quản trị Bộ dữ liệu Huấn luyện (`FE-15` / `M-13`)](docs/2026-11-17.md): Tích hợp 10 Core REST APIs (`STT 130–139`, nâng cấp `STT 021, 024`) cho báo sai AI (`U-04`), duyệt & gán nhãn hàng đợi YOLO (`S-01`, `S-02`), đóng gói dataset Sticky Stratified Split `70/20/10` chống rò rỉ `SHA-256` & tải `.zip` `YOLO`/`ImageFolder` (`S-03`).
+  - [Phiên 2026-11-18: Tinh giản UX `/scanner` & Đồng thuận Đa mô hình Tự động](docs/2026-11-18.md): Ẩn bộ chọn mô hình AI và thanh `%` khỏi trang quét rác công dân để trả về 1 kết quả chuẩn xác nhất; nâng cấp `model_manager.py` sang bỏ phiếu đồng thuận tự động (`EfficientNet-B0` + `MobileNetV3`) và chuẩn hóa phân phối xác suất tổng `1.0`.

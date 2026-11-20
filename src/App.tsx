@@ -7,6 +7,7 @@ import RequireRole from "@/components/RequireRole"
 
 import Home from "@/pages/Home"
 import Blog from "@/pages/Blog"
+import BlogDetail from "@/pages/BlogDetail"
 import Rewards from "@/pages/Rewards"
 import LeaderboardPage from "@/pages/Leaderboard"
 import Scanner from "@/pages/Scanner"
@@ -89,6 +90,7 @@ export function AppRoutes() {
           {/* ---- công khai: G-01, và các trang khách xem được ---- */}
           <Route index element={<Home />} />
           <Route path="blog" element={<Blog />} />
+          <Route path="blog/:slug" element={<BlogDetail />} />
           <Route path="rewards" element={<Rewards />} />
           <Route path="leaderboard" element={<LeaderboardPage />} />
           <Route path="scanner" element={<Scanner />} />

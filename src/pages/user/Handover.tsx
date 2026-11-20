@@ -1,49 +1,175 @@
-import { useState } from "react"
-import { Link } from "react-router-dom"
+import { useEffect, useState } from "react"
+import { Link, useSearchParams } from "react-router-dom"
+import LocationPinPickerMap from "@/components/LocationPinPickerMap"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
+import SearchFilterBar from "@/components/SearchFilterBar"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   MY_HANDOVERS,
   STATUS_LABEL,
   TIME_SLOTS,
   TONE,
   calc,
+  formatIsoDateToVi,
+  getAppointmentDateBounds,
+  getDefaultAppointmentDateAndSlot,
+  isTimeSlotInPastForDate,
+  parseViOrIsoDateToIsoInput,
+  validateAppointmentSelection,
+  type Handover as HandoverItem,
 } from "@/data/handover"
-import { VND, WASTES, estimate } from "@/data/waste"
+import { VND, WASTES } from "@/data/waste"
+import { hasLiveBackendAuth } from "@/lib/session"
+import {
+  LOCATION_PRESETS,
+  searchNearbyRecyclers,
+  type CollectionPartnerDto,
+} from "@/lib/recyclerDiscoveryApi"
+import {
+  createHandoverOrder,
+  fetchHandoverOrdersResult,
+  formatOrderDisplayCode,
+  updateHandoverOrderStatus,
+  updateHandoverOrderTimeSlot,
+} from "@/lib/recyclerWorkflowApi"
 
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
 
-/** U-07 Tạo yêu cầu · U-08 Sửa / Huỷ yêu cầu.
- *
- *  Hai UC trên cùng một màn hình vì cùng một danh sách: bấm "Tạo yêu cầu" ra
- *  form, bấm "Sửa" sửa chính form đó. Tách 2 trang thì phải truyền lại dữ
- *  liệu yêu cầu qua URL, vô ích. */
-export default function Handover() {
-  const [open, setOpen] = useState(false)
-  const [list, setList] = useState(MY_HANDOVERS)
-  const [editId, setEditId] = useState<string | null>(null)
-  const [flash, setFlash] = useState("")
+const WASTE_TO_CAT: Record<string, string> = {
+  pet: "plastic",
+  hdpe: "plastic",
+  carton: "cardboard",
+  "office-paper": "paper",
+  paper: "paper",
+  aluminum: "metal",
+  steel: "metal",
+  glass: "glass",
+}
 
-  /** U-08 dời giờ: chỉ khi chưa ai nhận. Sau khi Recycler accept, khung giờ đã
-   *  thành cam kết của hai bên — đổi lặng lẽ thì người thu gom tới nhầm giờ
-   *  và người dân không biết mình đã đổi. */
-  const reslot = (id: string, slot: string) => {
-    setList((ls) => ls.map((h) => (h.id === id ? { ...h, slot } : h)))
-    setEditId(null)
-    setFlash(`${id}: đã đổi khung giờ sang ${slot}. Người thu gom sẽ thấy giờ mới.`)
+type HandoverView = HandoverItem & {
+  displayCode: string
+  rawStatus?: string
+  unitPricePerKg?: number
+  pickupLat?: number
+  pickupLng?: number
+  fromBackend?: boolean
+}
+
+const priceForOrder = (h: HandoverView) => (wasteId: string) =>
+  h.unitPricePerKg && h.unitPricePerKg > 0 && wasteId === h.lines[0]?.wasteId
+    ? h.unitPricePerKg
+    : priceOf(wasteId)
+
+const DEFAULT_OFFLINE_HANDOVERS: HandoverView[] = MY_HANDOVERS.map((m) => ({
+  ...m,
+  displayCode: formatOrderDisplayCode(m.id),
+  fromBackend: false,
+}))
+
+/** U-07 Tạo yêu cầu (kèm chấm điểm hẹn đầu ngõ `BR-MTH-05`) · U-08 Sửa / Huỷ yêu cầu.
+ *
+ *  Nhận trực tiếp tham số `?partnerId=...&partnerName=...&waste=...` từ trang Bản đồ (U-05)
+ *  để mở sẵn biểu mẫu đặt lịch với đúng cơ sở thu mua và loại phế liệu đã chọn.
+ *  Người dân chủ động chọn điểm gặp mặt thuận tiện (đầu ngõ, sảnh chung cư, góc phố)
+ *  thay vì hệ thống tự thu thập địa chỉ nhà riêng khi dạo bản đồ. */
+export default function Handover() {
+  const [searchParams] = useSearchParams()
+  const prefilledPartnerId = searchParams.get("partnerId") ?? ""
+  const prefilledPartner = searchParams.get("partnerName") ?? ""
+  const prefilledWaste = searchParams.get("waste") ?? ""
+
+  const [open, setOpen] = useState(() => Boolean(prefilledPartner || prefilledWaste))
+  const [list, setList] = useState<HandoverView[]>(() =>
+    hasLiveBackendAuth() ? [] : DEFAULT_OFFLINE_HANDOVERS,
+  )
+  const [loading, setLoading] = useState<boolean>(() => hasLiveBackendAuth())
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editDateIso, setEditDateIso] = useState<string>(() => getDefaultAppointmentDateAndSlot().dateIso)
+  const [flash, setFlash] = useState("")
+  const [search, setSearch] = useState("")
+  const debouncedSearch = useDebouncedValue(search, 250)
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(5)
+  const appointmentBounds = getAppointmentDateBounds()
+
+  useEffect(() => {
+    let active = true
+    void fetchHandoverOrdersResult("user")
+      .then((res) => {
+        if (!active) return
+        const mapped: HandoverView[] = res.orders.map((s) => ({
+          id: s.id,
+          displayCode: s.displayCode || formatOrderDisplayCode(s.id),
+          recycler: s.recycler,
+          address: s.address,
+          date: s.date,
+          slot: s.slot,
+          lines: s.lines,
+          status: s.status,
+          rawStatus: s.rawStatus,
+          unitPricePerKg: s.agreedPricePerKg ?? s.initialPricePerKg,
+          reason: s.reason,
+          pickupLat: s.pickupLat,
+          pickupLng: s.pickupLng,
+          fromBackend: s.fromBackend,
+        }))
+
+        if (res.fromBackend) {
+          // Khi kết nối PostgreSQL thành công: hiển thị đúng các đơn thật của tài khoản hiện tại
+          setList(mapped)
+        } else if (mapped.length > 0) {
+          const existingIds = new Set(DEFAULT_OFFLINE_HANDOVERS.map((m) => m.id))
+          const fresh = mapped.filter((s) => !existingIds.has(s.id))
+          setList([...fresh, ...DEFAULT_OFFLINE_HANDOVERS])
+        } else {
+          setList(DEFAULT_OFFLINE_HANDOVERS)
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const reslot = async (h: HandoverView, nextDateIso: string, slot: string) => {
+    const errMsg = validateAppointmentSelection(nextDateIso, slot)
+    if (errMsg) {
+      setFlash(errMsg)
+      return
+    }
+    const nextDateVi = formatIsoDateToVi(nextDateIso)
+    try {
+      const res = await updateHandoverOrderTimeSlot(h.id, slot, nextDateIso)
+      setList((ls) =>
+        ls.map((item) => (item.id === h.id ? { ...item, date: nextDateVi, slot } : item)),
+      )
+      setEditId(null)
+      setFlash(
+        `${h.displayCode}: đã đổi lịch hẹn sang ${nextDateVi} · ${slot}${res.syncedWithBackend ? " (đã cập nhật CSDL)" : ""}. Người thu gom sẽ thấy lịch mới.`,
+      )
+    } catch (err) {
+      setFlash(err instanceof Error ? err.message : "Không thể cập nhật lịch hẹn.")
+    }
   }
 
-  /** U-08 huỷ: hỏi lý do trước khi huỷ. Không có lý do thì người thu gom không
-   *  biết có nên ghé lần nữa hay không — mất luôn một mối quan hệ. */
-  const cancel = (h: (typeof MY_HANDOVERS)[number]) => {
-    const reason = window.prompt(`Huỷ yêu cầu ${h.id}. Lý do (người thu gom sẽ thấy):`)
+  const cancel = async (h: HandoverView) => {
+    const reason = window.prompt(`Huỷ yêu cầu ${h.displayCode}. Lý do (người thu gom sẽ thấy):`)
     if (!reason?.trim()) return
+    const cleanReason = reason.trim()
     setList((ls) =>
       ls.map((x) =>
-        x.id === h.id ? { ...x, status: "cancelled", reason: reason.trim() } : x,
+        x.id === h.id ? { ...x, status: "cancelled", reason: cleanReason } : x,
       ),
     )
-    setFlash(`${h.id}: đã huỷ. Người thu gom sẽ không tới.`)
+    const res = await updateHandoverOrderStatus(h.id, "user", "Cancelled", cleanReason)
+    setFlash(
+      `${h.displayCode}: đã huỷ${res.syncedWithBackend ? " trên hệ thống" : ""}. Người thu gom sẽ không tới.`,
+    )
   }
 
   return (
@@ -51,7 +177,7 @@ export default function Handover() {
       <PageHead
         eyebrow="BÀN GIAO"
         title="Yêu cầu thu gom rác"
-        body="Đặt lịch thu gom tại nhà, chọn khung giờ người thu gom có mặt. Bạn có thể sửa giờ hoặc huỷ khi đối tác chưa nhận."
+        body="Đặt lịch thu gom, chấm điểm hẹn đầu ngõ hoặc sảnh chung cư và chọn khung giờ thuận tiện. Bạn có thể sửa giờ hoặc huỷ khi đối tác chưa nhận."
         action={
           <button
             type="button"
@@ -71,32 +197,93 @@ export default function Handover() {
 
       {open && (
         <CreateForm
+          initialPartnerId={prefilledPartnerId}
+          initialPartner={prefilledPartner}
+          initialWasteId={prefilledWaste}
           onDone={(draft) => {
-            setList((ls) => [newRow(draft), ...ls])
+            setList((ls) => [newRow(draft), ...ls.filter((x) => x.id !== draft.id)])
             setOpen(false)
             setFlash(
-              "Đã gửi yêu cầu. Người thu gom sẽ xác nhận khung giờ trong hôm nay.",
+              draft.recyclerName
+                ? `Đã gửi yêu cầu ${draft.displayCode} tới ${draft.recyclerName}${draft.syncedWithBackend ? " (đã lưu trên hệ thống)" : ""}. Đối tác sẽ xác nhận lịch hẹn (${draft.dateVi} · ${draft.slot}).`
+                : `Đã gửi yêu cầu ${draft.displayCode} (${draft.dateVi} · ${draft.slot}). Người thu gom sẽ xác nhận lịch hẹn.`,
             )
           }}
         />
       )}
 
-      {list.length === 0 ? (
-        <p className="card px-5 py-8 text-center text-sm text-muted">
-          Bạn chưa có yêu cầu nào. Bấm "Tạo yêu cầu mới" để đặt lịch thu gom.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-4">
-          {list.map((h) => (
+      {(() => {
+        const kw = debouncedSearch.trim().toLowerCase()
+        const filteredList = list.filter((h) => {
+          if (statusFilter !== "all" && h.status !== statusFilter) return false
+          if (!kw) return true
+          const wastes = h.lines.map((l) => nameOf(l.wasteId)).join(" ")
+          return `${h.displayCode} ${h.recycler} ${h.address} ${wastes}`.toLowerCase().includes(kw)
+        })
+        const pagedList = paginateItems(filteredList, page, pageSize)
+
+        return (
+          <>
+            <SearchFilterBar
+              value={search}
+              onChange={(v) => {
+                setSearch(v)
+                setPage(1)
+              }}
+              label="Tìm kiếm yêu cầu thu gom"
+              placeholder="Tìm theo mã đơn, tên cơ sở, địa chỉ hoặc loại rác..."
+              totalCount={filteredList.length}
+              countLabel="yêu cầu"
+            >
+              <select
+                aria-label="Lọc trạng thái đơn thu gom"
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value)
+                  setPage(1)
+                }}
+                className="input h-10 text-xs"
+              >
+                <option value="all">Tất cả trạng thái</option>
+                <option value="pending">Chờ nhận</option>
+                <option value="accepted">Đã nhận lịch</option>
+                <option value="collected">Chờ xác nhận biên nhận</option>
+                <option value="done">Hoàn tất</option>
+                <option value="cancelled">Đã huỷ</option>
+              </select>
+            </SearchFilterBar>
+
+            {loading ? (
+              <p className="card px-5 py-8 text-center text-sm text-muted">
+                Đang tải danh sách yêu cầu thu gom...
+              </p>
+            ) : list.length === 0 ? (
+              <p className="card px-5 py-8 text-center text-sm text-muted">
+                Bạn chưa có yêu cầu nào trên hệ thống. Bấm &quot;Tạo yêu cầu mới&quot; để đặt lịch thu gom.
+              </p>
+            ) : filteredList.length === 0 ? (
+              <p className="card px-5 py-8 text-center text-sm text-muted">
+                Không có yêu cầu thu gom nào khớp bộ lọc hiện tại.
+              </p>
+            ) : (
+              <>
+                <ul className="flex flex-col gap-4">
+                  {pagedList.map((h) => {
+            const rowPrice = priceForOrder(h)
+            return (
             <li key={h.id} className="card overflow-hidden">
               <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line-soft px-5 py-4">
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-2">
                     <span className="font-bold text-ink">{h.recycler}</span>
-                    <Status tone={TONE[h.status]}>{STATUS_LABEL[h.status]}</Status>
+                    <Status tone={h.rawStatus?.toLowerCase() === "negotiating" ? "wait" : TONE[h.status]}>
+                      {h.rawStatus?.toLowerCase() === "negotiating"
+                        ? "Đang thương lượng"
+                        : STATUS_LABEL[h.status]}
+                    </Status>
                   </p>
                   <p className="mt-1 text-[13px] text-muted">
-                    {h.id} · {h.date} · {h.slot}
+                    {h.displayCode} · {h.date} · {h.slot}
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-2">
@@ -104,27 +291,54 @@ export default function Handover() {
                     <>
                       <button
                         type="button"
-                        onClick={() => setEditId(editId === h.id ? null : h.id)}
+                        onClick={() => {
+                          if (editId === h.id) {
+                            setEditId(null)
+                          } else {
+                            const parsedDate = parseViOrIsoDateToIsoInput(h.date)
+                            const defaultDate = getDefaultAppointmentDateAndSlot().dateIso
+                            const initialDate =
+                              parsedDate &&
+                              parsedDate >= appointmentBounds.minDate &&
+                              parsedDate <= appointmentBounds.maxDate
+                                ? parsedDate
+                                : defaultDate
+                            setEditDateIso(initialDate)
+                            setEditId(h.id)
+                          }
+                        }}
                         className="btn-outline h-9 px-3 text-[13px]"
                       >
-                        {editId === h.id ? "Đóng" : "Đổi giờ"}
+                        {editId === h.id ? "Đóng" : "Đổi lịch hẹn"}
                       </button>
                       <button
                         type="button"
-                        onClick={() => cancel(h)}
+                        onClick={() => void cancel(h)}
                         className="btn-ghost h-9 px-3 text-[13px]"
                       >
                         Huỷ yêu cầu
                       </button>
+                      <Link
+                        to={`/chat?orderId=${encodeURIComponent(h.id)}&partnerName=${encodeURIComponent(h.recycler)}&partnerAddress=${encodeURIComponent(h.address)}`}
+                        className="btn-outline h-9 px-3 text-[13px] font-medium text-brand"
+                      >
+                        Thương lượng giá &amp; giờ
+                      </Link>
                     </>
                   )}
                   {h.status === "accepted" && (
-                    <Link to="/chat" className="btn-outline h-9 px-3 text-[13px]">
-                      Nhắn đối tác
+                    <Link
+                      to={`/chat?orderId=${encodeURIComponent(h.id)}&partnerName=${encodeURIComponent(h.recycler)}&partnerAddress=${encodeURIComponent(h.address)}`}
+                      className="btn-outline h-9 px-3 text-[13px]"
+                    >
+                      Nhắn đối tác (Hỏi đường)
                     </Link>
                   )}
                   {h.status === "collected" && (
-                    <Link to="/user/receipt" className="btn-primary h-9 px-3 text-[13px]">
+                    <Link
+                      to={`/user/receipt?orderId=${encodeURIComponent(h.id)}`}
+                      className="btn-primary h-9 px-3 text-[13px]"
+                    >
                       Xác nhận biên nhận
                     </Link>
                   )}
@@ -143,7 +357,7 @@ export default function Handover() {
                       <Td className="font-semibold text-ink">{nameOf(l.wasteId)}</Td>
                       <Td className="tabular-nums">{l.kg.toLocaleString("vi-VN")} kg</Td>
                       <Td className="tabular-nums">
-                        {VND(l.kg * priceOf(l.wasteId))}
+                        {VND(l.kg * rowPrice(l.wasteId))}
                       </Td>
                     </tr>
                   ))}
@@ -158,30 +372,64 @@ export default function Handover() {
                       kg
                     </Td>
                     <Td className="tabular-nums font-bold text-brand">
-                      {VND(calc(h, priceOf).gross)}
+                      {VND(calc(h, rowPrice).gross)}
                     </Td>
                   </tr>
                 </Table>
-                <p className="mt-3 text-[13px] leading-5 text-muted">{h.address}</p>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[13px] leading-5 text-muted">
+                  <span>Điểm hẹn: {h.address}</span>
+                  {typeof h.pickupLat === "number" && typeof h.pickupLng === "number" && (
+                    <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs tabular-nums text-brand-deep">
+                      Ghim hẹn GPS: {h.pickupLat.toFixed(4)}, {h.pickupLng.toFixed(4)}
+                    </span>
+                  )}
+                </div>
 
-                {/* Danh sách khung giờ mở ngay dưới yêu cầu đang sửa: bấm là đổi,
-                    không cần mở form riêng cho một lựa chọn có 5 giá trị. */}
                 {editId === h.id && (
-                  <div className="mt-3 rounded-lg border border-brand/30 bg-brand/6 p-4">
-                    <p className="text-[13px] font-semibold text-ink">
-                      Chọn khung giờ thu gom khác
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {TIME_SLOTS.filter((s) => s !== h.slot).map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => reslot(h.id, s)}
-                          className="rounded-full border border-brand bg-white px-3.5 py-2 text-[13px] font-medium text-brand transition-colors hover:bg-brand/10"
-                        >
-                          {s}
-                        </button>
-                      ))}
+                  <div className="mt-3 rounded-lg border border-brand/30 bg-brand/6 p-4 flex flex-col gap-3">
+                    <div className="flex flex-wrap items-end gap-4">
+                      <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink">
+                        Chọn ngày hẹn thu gom
+                        <input
+                          type="date"
+                          className="input h-10 bg-white text-sm"
+                          min={appointmentBounds.minDate}
+                          max={appointmentBounds.maxDate}
+                          value={editDateIso}
+                          onChange={(e) => setEditDateIso(e.target.value)}
+                        />
+                      </label>
+                      <p className="text-xs text-muted pb-2">
+                        Hỗ trợ từ hôm nay ({formatIsoDateToVi(appointmentBounds.minDate)}) đến +30 ngày tới
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[13px] font-semibold text-ink">
+                        Chọn khung giờ thu gom
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {TIME_SLOTS.map((s) => {
+                          const past = isTimeSlotInPastForDate(editDateIso, s)
+                          const isSameSchedule =
+                            s === h.slot && formatIsoDateToVi(editDateIso) === h.date
+                          return (
+                            <button
+                              key={s}
+                              type="button"
+                              disabled={past || isSameSchedule}
+                              onClick={() => void reslot(h, editDateIso, s)}
+                              className={`rounded-full border px-3.5 py-2 text-[13px] font-medium transition-colors ${
+                                past || isSameSchedule
+                                  ? "border-line bg-surface-2 text-muted cursor-not-allowed opacity-60"
+                                  : "border-brand bg-white text-brand hover:bg-brand/10"
+                              }`}
+                            >
+                              {s}
+                              {past ? " (đã qua)" : isSameSchedule ? " (hiện tại)" : ""}
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -193,66 +441,233 @@ export default function Handover() {
                 )}
               </div>
             </li>
-          ))}
+            )
+          })}
         </ul>
+        <PaginationBar
+          page={page}
+          pageSize={pageSize}
+          totalCount={filteredList.length}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          pageSizeOptions={[5, 10, 20]}
+          itemLabel="yêu cầu"
+        />
+        </>
       )}
+          </>
+        )
+      })()}
     </div>
   )
 }
 
-/** Sinh yêu cầu mới từ form. Mã sinh tại chỗ chứ không lấy từ server — ở đây
- *  chỉ để danh sách có dòng mới hiện ra ngay, không phải mã thật. */
-let seq = 200
+type Draft = {
+  id: string
+  displayCode: string
+  orderCode: string
+  syncedWithBackend: boolean
+  rows: { wasteId: string; kg: number }[]
+  unitPricePerKg?: number
+  dateVi: string
+  slot: string
+  address: string
+  pickupLat: number
+  pickupLng: number
+  recyclerName?: string
+}
 
-type Draft = { rows: { wasteId: string; kg: number }[]; slot: string; address: string }
-
-function newRow(d: Draft) {
-  seq += 1
+function newRow(d: Draft): HandoverView {
   return {
-    id: `BH-2609-0${seq}`,
-    recycler: "Chưa có",
+    id: d.id,
+    displayCode: d.displayCode,
+    recycler: d.recyclerName || "Vựa phế liệu EcoGreen",
     address: d.address,
-    date: "30/09/2026",
+    date: d.dateVi,
     slot: d.slot,
     lines: d.rows.map((r) => ({ wasteId: r.wasteId, kg: r.kg })),
-    status: "pending" as const,
+    unitPricePerKg: d.unitPricePerKg,
+    status: "pending",
+    pickupLat: d.pickupLat,
+    pickupLng: d.pickupLng,
+    fromBackend: d.syncedWithBackend,
   }
 }
 
-/** Form U-07. Bắt buộc có: chọn ít nhất một loại rác thu gom được và khối
- *  lượng > 0, có địa chỉ — đây là ranh giới tin cậy, không kiểm thì tạo ra
- *  yêu cầu rỗng mà vẫn báo thành công. */
-function CreateForm({ onDone }: { onDone: (d: Draft) => void }) {
-  const [rows, setRows] = useState([{ wasteId: "pet", kg: 5 }])
-  const [slot, setSlot] = useState<string>(TIME_SLOTS[1])
-  const [address, setAddress] = useState("Ngõ 24 Lý Tự Trọng, P. Bến Nghé, Quận 1")
+function CreateForm({
+  initialPartnerId,
+  initialPartner,
+  initialWasteId,
+  onDone,
+}: {
+  initialPartnerId?: string
+  initialPartner?: string
+  initialWasteId?: string
+  onDone: (d: Draft) => void
+}) {
+  const validInitialWaste = WASTES.some((w) => w.recyclable && w.id === initialWasteId)
+    ? (initialWasteId as string)
+    : "pet"
+
+  const [rows, setRows] = useState([{ wasteId: validInitialWaste, kg: 5 }])
+  const [appointmentDate, setAppointmentDate] = useState<string>(
+    () => getDefaultAppointmentDateAndSlot().dateIso,
+  )
+  const [slot, setSlot] = useState<string>(
+    () => getDefaultAppointmentDateAndSlot().slot,
+  )
+  const formDateBounds = getAppointmentDateBounds()
+  const [address, setAddress] = useState(
+    "Cổng phụ Khu CNC Hòa Lạc (gần ĐH FPT), Xã Tân Xã, Thạch Thất, Hà Nội",
+  )
+  const [pickupLat, setPickupLat] = useState<number>(LOCATION_PRESETS[0].lat)
+  const [pickupLng, setPickupLng] = useState<number>(LOCATION_PRESETS[0].lng)
+  const [partners, setPartners] = useState<CollectionPartnerDto[]>([])
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string>(
+    initialPartnerId || "22222222-2222-2222-2222-222222222222",
+  )
+  const [selectedPartnerName, setSelectedPartnerName] = useState<string>(
+    initialPartner || "Vựa phế liệu EcoGreen",
+  )
+  const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState("")
+
+  useEffect(() => {
+    let active = true
+    void searchNearbyRecyclers({
+      lat: pickupLat,
+      lng: pickupLng,
+      radiusKm: 50,
+    })
+      .then((res) => {
+        if (!active) return
+        const items = res.data?.items ?? []
+        if (items.length > 0) {
+          setPartners(items)
+          if (!initialPartnerId) {
+            setSelectedPartnerId(items[0].id)
+            setSelectedPartnerName(items[0].facilityName)
+          } else {
+            const matched = items.find((p) => p.id === initialPartnerId)
+            if (matched) {
+              setSelectedPartnerName(matched.facilityName)
+            }
+          }
+        }
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [initialPartnerId, pickupLat, pickupLng])
+
+  const selectedPartnerObj = partners.find((p) => p.id === selectedPartnerId)
+  const partnerPriceOf = (wasteId: string) => {
+    const catCode = WASTE_TO_CAT[wasteId] ?? wasteId
+    const mat = selectedPartnerObj?.materials?.find(
+      (m) => m.categoryCode.toLowerCase() === catCode.toLowerCase() && m.pricePerKg > 0,
+    )
+    return mat?.pricePerKg ?? priceOf(wasteId)
+  }
 
   const set = (i: number, patch: Partial<{ wasteId: string; kg: number }>) =>
     setRows((r) => r.map((row, n) => (n === i ? { ...row, ...patch } : row)))
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     const bad = rows.find((r) => r.kg <= 0)
     if (bad) {
       setErr("Khối lượng phải lớn hơn 0 kg.")
       return
     }
+    const scheduleErr = validateAppointmentSelection(appointmentDate, slot)
+    if (scheduleErr) {
+      setErr(scheduleErr)
+      return
+    }
     if (!address.trim()) {
-      setErr("Cần địa chỉ để người thu gom tìm tới nhà bạn.")
+      setErr("Cần ghi mô tả điểm hẹn (ví dụ: đầu ngõ, sảnh toà nhà) để người thu gom tìm tới.")
       return
     }
     setErr("")
-    // ponytail: chưa có backend, chỉ thêm vào danh sách ở trên. Nối API thì
-    // thay đúng dòng này.
-    onDone({ rows, slot, address })
+    setSubmitting(true)
+    try {
+      const primaryUnitPrice = rows[0] ? partnerPriceOf(rows[0].wasteId) : 5500
+      const result = await createHandoverOrder({
+        partnerId: selectedPartnerId || initialPartnerId || undefined,
+        partnerName: selectedPartnerName || initialPartner || undefined,
+        rows: rows.map((r) => ({
+          wasteId: r.wasteId,
+          kg: r.kg,
+          unitPrice: partnerPriceOf(r.wasteId),
+        })),
+        appointmentDateIso: appointmentDate,
+        slot,
+        pickupAddress: address,
+        pickupLat,
+        pickupLng,
+      })
+
+      onDone({
+        id: result.id,
+        displayCode: result.displayCode,
+        orderCode: result.orderCode,
+        syncedWithBackend: result.syncedWithBackend,
+        rows,
+        unitPricePerKg: primaryUnitPrice,
+        dateVi: formatIsoDateToVi(appointmentDate),
+        slot,
+        address,
+        pickupLat,
+        pickupLng,
+        recyclerName: result.partnerName || selectedPartnerName || initialPartner || undefined,
+      })
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Không thể tạo yêu cầu bàn giao.")
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const { gross } = estimate(rows)
+  const gross = rows.reduce((sum, r) => sum + r.kg * partnerPriceOf(r.wasteId), 0)
 
   return (
-    <form onSubmit={submit} noValidate className="card flex flex-col gap-5 p-5">
-      <h2 className="text-base font-bold text-ink">Thông tin rác cần thu gom</h2>
+    <form onSubmit={(e) => void submit(e)} noValidate className="card flex flex-col gap-5 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-bold text-ink">Thông tin rác & điểm hẹn bàn giao</h2>
+        <span className="rounded-full border border-brand/25 bg-brand/8 px-3 py-1 text-xs font-semibold text-brand-deep">
+          Đối tác nhận đơn: {selectedPartnerName}
+        </span>
+      </div>
+
+      <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+        Cơ sở thu mua tiếp nhận đơn
+        <select
+          className="input"
+          value={selectedPartnerId}
+          onChange={(e) => {
+            const nextId = e.target.value
+            setSelectedPartnerId(nextId)
+            const matched = partners.find((p) => p.id === nextId)
+            if (matched) {
+              setSelectedPartnerName(matched.facilityName)
+            } else if (nextId === "22222222-2222-2222-2222-222222222222") {
+              setSelectedPartnerName("Vựa phế liệu EcoGreen")
+            }
+          }}
+        >
+          {partners.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.facilityName} · {p.address}
+            </option>
+          ))}
+          {!partners.some((p) => p.id === "22222222-2222-2222-2222-222222222222") && (
+            <option value="22222222-2222-2222-2222-222222222222">
+              Vựa phế liệu EcoGreen (Cơ sở mặc định)
+            </option>
+          )}
+        </select>
+      </label>
 
       <ul className="flex flex-col gap-3">
         {rows.map((r, i) => (
@@ -266,7 +681,7 @@ function CreateForm({ onDone }: { onDone: (d: Draft) => void }) {
               >
                 {WASTES.filter((w) => w.recyclable).map((w) => (
                   <option key={w.id} value={w.id}>
-                    {w.name} · {VND(w.price)}/kg
+                    {w.name} · {VND(partnerPriceOf(w.id))}/kg
                   </option>
                 ))}
               </select>
@@ -305,30 +720,93 @@ function CreateForm({ onDone }: { onDone: (d: Draft) => void }) {
 
       <div className="grid gap-5 sm:grid-cols-2">
         <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-          Khung giờ muốn thu gom
-          <select className="input" value={slot} onChange={(e) => setSlot(e.target.value)}>
-            {TIME_SLOTS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          Ngày hẹn thu gom
+          <input
+            type="date"
+            className="input"
+            min={formDateBounds.minDate}
+            max={formDateBounds.maxDate}
+            value={appointmentDate}
+            onChange={(e) => {
+              const nextDate = e.target.value
+              setAppointmentDate(nextDate)
+              setErr("")
+              if (nextDate && isTimeSlotInPastForDate(nextDate, slot)) {
+                const firstValid = TIME_SLOTS.find((s) => !isTimeSlotInPastForDate(nextDate, s))
+                if (firstValid) setSlot(firstValid)
+              }
+            }}
+            required
+          />
+          <span className="text-[11px] font-normal text-muted">
+            Chọn từ hôm nay ({formatIsoDateToVi(formDateBounds.minDate)}) đến tối đa 30 ngày tới
+          </span>
         </label>
         <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-          Địa chỉ
-          <input
+          Khung giờ muốn thu gom
+          <select
             className="input"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-          />
+            value={slot}
+            onChange={(e) => {
+              setSlot(e.target.value)
+              setErr("")
+            }}
+          >
+            {TIME_SLOTS.map((s) => {
+              const past = isTimeSlotInPastForDate(appointmentDate, s)
+              return (
+                <option key={s} value={s} disabled={past}>
+                  {s}
+                  {past ? " (đã qua)" : ""}
+                </option>
+              )
+            })}
+          </select>
         </label>
+      </div>
+
+      <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+        Mô tả điểm hẹn (đầu ngõ, sảnh chung cư, cột mốc dễ tìm)
+        <input
+          className="input"
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+        />
+      </label>
+
+      <div className="flex flex-col gap-2">
+        <span className="text-[13px] font-semibold text-ink">
+          Ghim điểm hẹn trên bản đồ (chỉ chia sẻ cho cơ sở nhận đơn — BR-MTH-05)
+        </span>
+        <span className="text-[12px] text-muted">
+          Bạn có thể ghim tại đầu ngõ, sảnh toà nhà hoặc bật làm mờ ~500m nếu muốn hẹn thêm qua khung chat.
+        </span>
+        <LocationPinPickerMap
+          lat={pickupLat}
+          lng={pickupLng}
+          allowPrivacyFuzz
+          defaultPrivacyFuzz={false}
+          pinTitle="Điểm hẹn bàn giao"
+          heightClass="h-[230px]"
+          onChange={(nextLat, nextLng, addressHint) => {
+            setPickupLat(nextLat)
+            setPickupLng(nextLng)
+            if (addressHint && !address.trim()) {
+              setAddress(addressHint)
+            }
+          }}
+        />
       </div>
 
       {err && <p className="text-[13px] text-warn">{err}</p>}
 
       <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
-        <button type="submit" className="btn-primary h-11 px-6">
-          Gửi yêu cầu
+        <button
+          type="submit"
+          disabled={submitting}
+          className="btn-primary h-11 px-6"
+        >
+          {submitting ? "Đang tạo đơn..." : "Gửi yêu cầu"}
         </button>
         <p className="text-[13px] text-muted">
           Tiền tạm tính <b className="tabular-nums text-ink">{VND(gross)}</b> ·

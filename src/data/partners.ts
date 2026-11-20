@@ -8,9 +8,9 @@ export const MATERIAL_TYPES = [
 
 export const REGIONS = [
   "Tất cả khu vực",
+  "Hà Nội & vùng lân cận",
   "TP. Hồ Chí Minh",
   "Bình Dương & Đồng Nai",
-  "Hà Nội & vùng lân cận",
   "Đà Nẵng & miền Trung",
 ]
 

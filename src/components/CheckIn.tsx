@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   CHECKIN_DAYS,
   CHECKIN_REWARDS,
@@ -12,18 +12,14 @@ import {
   type CheckIn,
 } from "@/data/checkin"
 import { fmt } from "@/data/rewards"
+import {
+  fetchCheckinStatus,
+  performDailyCheckin,
+  type CheckinStatusDto,
+} from "@/lib/gamificationApi"
+import { getSession, hasLiveBackendAuth } from "@/lib/session"
 
 const KEY = "ecolink.checkin"
-
-/** Đơn vị điểm của phần điểm danh: xu EcoLink.
- *
- *  Dùng bản `.webp` chứ không dùng `.png`: file gốc 1254px nặng 897KB, mà icon
- *  này hiển thị 12–16px — thừa ~80 lần. Bản webp 128px nặng 2.4KB, giảm 99,7%
- *  và vẫn giữ alpha (đã kiểm bằng cách ép nền xanh sau ảnh).
- *    ffmpeg -i ecolink-coin.png -vf "scale=128:128:flags=lanczos" \
- *           -c:v libwebp -lossless 0 -quality 82 -an ecolink-coin.webp
- *  File gốc PNG giữ nguyên trong `public/assets/AI/` để dựng lại, y hệt bộ
- *  ảnh robot AI. */
 const COIN = "/assets/AI/ecolink-coin.webp"
 
 function Coin({ className }: { className: string }) {
@@ -41,25 +37,81 @@ function Coin({ className }: { className: string }) {
   )
 }
 
-/** Điểm danh hằng ngày. Chuỗi 7 ngày, ngày thứ 7 trả gấp rưỡi cả chuỗi để
- *  có lý do phải quay lại. Bỏ một ngày là chuỗi đứt, về lại mốc 20.
- *
- *  Điểm cộng vào số dư của cha: bấm là thấy con số tăng ngay cạnh nút, nếu
- *  không thì nút bấm không có phản hồi gì. */
+/** Điểm danh hằng ngày (U-13). Hỗ trợ cả chế độ ngoại tuyến (localStorage) lẫn API thật. */
 export default function CheckIn({
   balance,
   onEarn,
+  onSyncBalance,
 }: {
   balance: number
   onEarn: (n: number) => void
+  onSyncBalance?: (walletBalance: number) => void
 }) {
-  const [v, setV] = useState<CheckIn>(() => readCheckIn(KEY))
-  const [flash, setFlash] = useState(0)
-  const today = dayKey()
-  const done = doneToday(v, today)
-  const next = nextReward(v, today)
+  const session = getSession()
+  const useLiveApi =
+    hasLiveBackendAuth() &&
+    (session?.role === "user" || session?.role === "recycler")
 
-  const press = () => {
+  const [v, setV] = useState<CheckIn>(() => readCheckIn(KEY))
+  const [liveStatus, setLiveStatus] = useState<CheckinStatusDto | null>(null)
+  const [loadingLive, setLoadingLive] = useState(useLiveApi)
+  const [busy, setBusy] = useState(false)
+  const [flash, setFlash] = useState(0)
+  const [capNotice, setCapNotice] = useState("")
+
+  useEffect(() => {
+    if (!useLiveApi) return
+    let active = true
+    setLoadingLive(true)
+    fetchCheckinStatus()
+      .then((res) => {
+        if (!active || !res.data) return
+        setLiveStatus(res.data)
+        onSyncBalance?.(res.data.walletBalance)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoadingLive(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [useLiveApi])
+
+  const today = dayKey()
+  const done = useLiveApi ? (liveStatus?.checkedInToday ?? false) : doneToday(v, today)
+  const next = useLiveApi
+    ? (liveStatus?.todayRewardPreview ?? 0)
+    : nextReward(v, today)
+
+  const currentStreak = useLiveApi ? (liveStatus?.currentStreak ?? 0) : v.day
+
+  const press = async () => {
+    if (done || busy) return
+    if (useLiveApi) {
+      setBusy(true)
+      setCapNotice("")
+      try {
+        const res = await performDailyCheckin()
+        if (res.data) {
+          setFlash(res.data.pointsAwarded)
+          if (res.data.limitedByDailyCap) {
+            setCapNotice("Đã chạm giới hạn điểm thưởng phi giao dịch trong ngày.")
+          }
+          onSyncBalance?.(res.data.walletBalance)
+          const updated = await fetchCheckinStatus()
+          if (updated.data) setLiveStatus(updated.data)
+        }
+      } catch (err) {
+        setCapNotice(
+          err instanceof Error ? err.message : "Không thể điểm danh lúc này.",
+        )
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+
     const r = checkIn(v, today)
     if (r.gained === 0) return
     setV(r.next)
@@ -75,59 +127,102 @@ export default function CheckIn({
           Điểm danh hằng ngày
         </h2>
         <p className="text-[13px] text-muted">
-          {done ? "Đã điểm danh hôm nay" : `Còn ${fmt(next)} điểm hôm nay`}
+          {loadingLive
+            ? "Đang đồng bộ..."
+            : done
+              ? "Đã điểm danh hôm nay"
+              : `Còn ${fmt(next)} điểm hôm nay`}
         </p>
       </div>
 
-      <ol className="mt-4 grid grid-cols-7 gap-1.5">
-        {CHECKIN_REWARDS.map((r, i) => {
-          // i < v.day là những ngày đã điểm danh trong chuỗi hiện tại
-          const passed = i < v.day
-          const isNext = !done && i === v.day
-          const isLast = i === CHECKIN_DAYS - 1
-          return (
-            <li key={r} className="flex flex-col items-center gap-1">
-              {/* Ô vuông, xu ở trên số ở dưới chứ KHÔNG đặt cạnh nhau: ở 320px mỗi ô
-                chỉ ~28px rộng, "+500" + xu nằm ngang là 44px là tràn sang ô
-                bên cạnh. Xếp dọc thì bề rộng cần = số rộng nhất, đúng bằng
-                dòng nhãn "Ngày 7" đã vừa sẵn ở đó. Ô vuông rộng từ 28px (320px)
-                tới ~104px (desktop) nên xu và số cùng phóng to theo breakpoint —
-                dùng chung một cỡ thì chỗ này nhỏ như hạt, chỗ kia chật. */}
-              <span
-                className={`flex aspect-square w-full flex-col items-center justify-center gap-0.5 rounded-lg font-bold tabular-nums ${
-                  isLast
-                    ? "bg-brand text-white"
-                    : passed
-                      ? "bg-brand/12 text-brand"
-                      : isNext
-                        ? "bg-surface-2 text-ink"
+      {useLiveApi && liveStatus?.calendar?.length ? (
+        <ol className="mt-4 grid grid-cols-7 gap-1.5">
+          {liveStatus.calendar.slice(-7).map((item, i) => {
+            const passed = item.checkedIn
+            const isTodayCell = i === liveStatus.calendar.slice(-7).length - 1
+            return (
+              <li key={item.date} className="flex flex-col items-center gap-1">
+                <span
+                  className={`flex aspect-square w-full flex-col items-center justify-center gap-0.5 rounded-lg font-bold tabular-nums ${
+                    passed
+                      ? "bg-brand text-white"
+                      : isTodayCell && !done
+                        ? "bg-brand/12 text-brand"
                         : "bg-surface-2/60 text-muted"
-                }`}
-              >
-                {passed ? (
-                  "✓"
-                ) : (
-                  <>
-                    <Coin className="size-3.5 sm:size-7" />
-                    <span className="text-[10px] sm:text-base">+{fmt(r)}</span>
-                  </>
-                )}
-              </span>
-              <span className="text-[9px] whitespace-nowrap text-muted sm:text-[10px]">
-                Ngày {i + 1}
-              </span>
-            </li>
-          )
-        })}
-      </ol>
+                  }`}
+                >
+                  {passed ? (
+                    <>
+                      <span>✓</span>
+                      <span className="text-[10px]">+{item.pointsAwarded}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Coin className="size-3.5 sm:size-6" />
+                      <span className="text-[10px] sm:text-xs">
+                        {isTodayCell ? `+${fmt(next)}` : "—"}
+                      </span>
+                    </>
+                  )}
+                </span>
+                <span className="text-[9px] whitespace-nowrap text-muted sm:text-[10px]">
+                  {item.date.slice(5)}
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+      ) : (
+        <ol className="mt-4 grid grid-cols-7 gap-1.5">
+          {CHECKIN_REWARDS.map((r, i) => {
+            const passed = i < (currentStreak % CHECKIN_DAYS || (done && currentStreak > 0 ? CHECKIN_DAYS : 0))
+            const isNext = !done && i === (currentStreak % CHECKIN_DAYS)
+            const isLast = i === CHECKIN_DAYS - 1
+            return (
+              <li key={r} className="flex flex-col items-center gap-1">
+                <span
+                  className={`flex aspect-square w-full flex-col items-center justify-center gap-0.5 rounded-lg font-bold tabular-nums ${
+                    isLast
+                      ? "bg-brand text-white"
+                      : passed
+                        ? "bg-brand/12 text-brand"
+                        : isNext
+                          ? "bg-surface-2 text-ink"
+                          : "bg-surface-2/60 text-muted"
+                  }`}
+                >
+                  {passed ? (
+                    "✓"
+                  ) : (
+                    <>
+                      <Coin className="size-3.5 sm:size-7" />
+                      <span className="text-[10px] sm:text-base">+{fmt(r)}</span>
+                    </>
+                  )}
+                </span>
+                <span className="text-[9px] whitespace-nowrap text-muted sm:text-[10px]">
+                  Ngày {i + 1}
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+      )}
 
       <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3">
-        <button type="button" onClick={press} disabled={done} className="btn btn-primary h-11 px-5">
-          {done ? "Đã điểm danh" : `Nhận ${fmt(next)}`}
-          {!done && <Coin className="size-4" />}
+        <button
+          type="button"
+          onClick={() => void press()}
+          disabled={done || busy || loadingLive}
+          className="btn btn-primary h-11 px-5"
+        >
+          {busy ? "Đang nhận..." : done ? "Đã điểm danh" : `Nhận ${fmt(next)}`}
+          {!done && !busy && <Coin className="size-4" />}
         </button>
         <p className="text-[13px] leading-5 text-muted" role="status">
-          {flash > 0 ? (
+          {capNotice ? (
+            <span className="font-medium text-brand-deep">{capNotice}</span>
+          ) : flash > 0 ? (
             <span className="inline-flex flex-wrap items-center gap-1 font-semibold text-brand">
               <span>
                 +{fmt(flash)} điểm · số dư {fmt(balance)}
@@ -135,7 +230,11 @@ export default function CheckIn({
               <Coin className="size-4" />
             </span>
           ) : done ? (
-            `Chuỗi ${v.day}/7 ngày${streakAlive(v, today) ? "" : " · chuỗi đã đứt"}`
+            useLiveApi
+              ? `Chuỗi ${liveStatus?.currentStreak ?? 1} ngày liên tiếp · Trần còn lại hôm nay: ${fmt(liveStatus?.dailyCapRemaining ?? 0)} điểm`
+              : `Chuỗi ${v.day}/7 ngày${streakAlive(v, today) ? "" : " · chuỗi đã đứt"}`
+          ) : useLiveApi && liveStatus?.streakWillReset ? (
+            "Bạn đã bỏ lỡ hôm qua — điểm danh hôm nay sẽ bắt đầu lại chuỗi mới."
           ) : (
             "Bỏ một ngày là chuỗi tính lại từ đầu."
           )}

@@ -1,27 +1,26 @@
 import { useState } from "react"
 import { PageHead, Field } from "@/components/admin/ui"
 import { ROLE_LABEL, useSession } from "@/lib/session"
+import { changeCurrentUserPassword, formatAuthError } from "@/lib/authApi"
 
-/** Đổi mật khẩu cho STAFF và ADMIN.
+/** Đổi mật khẩu cho STAFF và ADMIN — nối trực tiếp tới `POST /api/v1/auth/change-password`.
  *
- *  Tách khỏi `/account/password` của người dân vì chính sách khác: tài khoản
- *  nội bộ đổi mật khẩu là hành động bảo mật, không phải thao tác tiện lợi —
- *  nên bắt mật khẩu mới dài hơn và phải có số. Người dân đổi vì quên, nhân
- *  viên đổi vì nghi ngờ lộ; hai việc đó không nên dùng chung một ngưỡng.
- *
- *  Bắt buộc mật khẩu hiện tại đúng mới cho đổi: đây là ranh giới tin cậy —
- *  không có nó thì ai đó ngồi máy đã mở khoá cũng đổi được mật khẩu của bạn. */
+ *  Giữ nguyên ngưỡng bảo mật cao hơn của tài khoản nội bộ (tối thiểu 12 ký tự + có chữ số),
+ *  đồng thời xác minh mật khẩu hiện tại bằng BCrypt và thu hồi mọi phiên trên thiết bị khác. */
 export default function AccountPassword() {
   const session = useSession()
   const role = session?.role === "admin" ? "admin" : "staff"
   const [current, setCurrent] = useState("")
   const [next, setNext] = useState("")
   const [again, setAgain] = useState("")
+  const [submitting, setSubmitting] = useState(false)
   const [flash, setFlash] = useState("")
   const [err, setErr] = useState("")
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submitting) return
+
     if (current.length < 1) {
       setErr("Nhập mật khẩu hiện tại.")
       return
@@ -42,13 +41,25 @@ export default function AccountPassword() {
       setErr("Mật khẩu mới phải khác mật khẩu hiện tại.")
       return
     }
+
     setErr("")
-    // ponytail: chưa có backend. Nối API thì thay đúng dòng này — và đăng xuất
-    // hết mọi phiên khác, nếu không thì đổi mật khẩu mà kẻ cũ vẫn vào được.
-    setFlash("Đã đổi mật khẩu. Các phiên khác đã đăng xuất.")
-    setCurrent("")
-    setNext("")
-    setAgain("")
+    setFlash("")
+    setSubmitting(true)
+    try {
+      const res = await changeCurrentUserPassword({
+        currentPassword: current,
+        newPassword: next,
+        confirmPassword: again,
+      })
+      setFlash(res.message)
+      setCurrent("")
+      setNext("")
+      setAgain("")
+    } catch (error) {
+      setErr(formatAuthError(error))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -66,7 +77,7 @@ export default function AccountPassword() {
       >
         <Field label="Mật khẩu hiện tại">
           <input
-            className={`input ${err.startsWith("Nhập") ? "border-warn" : ""}`}
+            className={`input ${err.startsWith("Nhập") || err.includes("hiện tại") ? "border-warn" : ""}`}
             type="password"
             value={current}
             onChange={(e) => {
@@ -107,11 +118,19 @@ export default function AccountPassword() {
           />
         </Field>
 
-        {err && <p className="text-[13px] text-warn">{err}</p>}
+        {err && (
+          <p role="alert" className="text-[13px] text-warn">
+            {err}
+          </p>
+        )}
 
         <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
-          <button type="submit" className="btn-primary h-11 px-6">
-            Đổi mật khẩu
+          <button
+            type="submit"
+            disabled={submitting}
+            className="btn-primary h-11 px-6 disabled:opacity-60"
+          >
+            {submitting ? "Đang cập nhật..." : "Đổi mật khẩu"}
           </button>
           {flash && (
             <p role="status" className="text-[13px] font-semibold text-brand">

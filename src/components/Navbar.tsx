@@ -316,6 +316,8 @@ function AccountMenu() {
 }
 
 export default function Navbar() {
+  const session = useSession()
+
   return (
     <header className="fixed inset-x-0 top-0 z-50 h-[70px] border-b border-sage/25 bg-white/95 shadow-[0_4px_22px_rgba(15,31,21,0.06)] backdrop-blur-xl md:h-[76px]">
       {/* `page` = the same shell every screen uses, so the logo lines up with the content below */}
@@ -349,14 +351,17 @@ export default function Navbar() {
         <div className="ml-auto flex items-center gap-3">
           <span className="hidden h-10 items-center gap-1.5 text-xs whitespace-nowrap text-body md:flex">
             <i className="size-1.5 rounded-full bg-brand-soft shadow-[0_0_0_3px_rgba(0,112,61,0.12)]" />
-            TP. Hồ Chí Minh
+            Hà Nội
           </span>
-          <Link
-            to="/map"
-            className="hidden h-10 items-center rounded-full bg-brand px-4 text-sm font-semibold whitespace-nowrap text-white shadow-[0_5px_14px_rgba(0,112,61,0.22)] transition-colors hover:bg-brand-deep sm:inline-flex"
-          >
-            Tìm người thu gom
-          </Link>
+          {!session && (
+            <button
+              type="button"
+              onClick={() => openAuthPopup("login")}
+              className="hidden h-10 items-center rounded-full bg-brand px-4 text-sm font-semibold whitespace-nowrap text-white shadow-[0_5px_14px_rgba(0,112,61,0.22)] transition-colors hover:bg-brand-deep sm:inline-flex"
+            >
+              Đăng nhập
+            </button>
+          )}
           <AccountMenu />
         </div>
       </div>

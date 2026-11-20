@@ -11,6 +11,34 @@
  *  cộng/trừ điểm. Backend có thật thì đọc từ đây. */
 export const RANK_POINTS = 23_400
 export const SPEND_POINTS = 12_400
+export const SPEND_POINTS_KEY = "ecolink:spend-points"
+
+export function getSpendPoints(): number {
+  if (typeof window === "undefined") return SPEND_POINTS
+  try {
+    const raw = localStorage.getItem(SPEND_POINTS_KEY)
+    if (raw !== null) {
+      const parsed = parseInt(raw, 10)
+      if (!isNaN(parsed)) return parsed
+    }
+  } catch {}
+  return SPEND_POINTS
+}
+
+export function setSpendPoints(points: number): void {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.setItem(SPEND_POINTS_KEY, String(points))
+    window.dispatchEvent(new CustomEvent("ecolink:points-change", { detail: points }))
+  } catch {}
+}
+
+export function addSpendPoints(delta: number): number {
+  const current = getSpendPoints()
+  const next = Math.max(0, current + delta)
+  setSpendPoints(next)
+  return next
+}
 
 /** ngưỡng lên hạng, tính trên RANK_POINTS */
 export const TIERS = [
@@ -162,12 +190,12 @@ export const GRAND_PRIZES: GrandPrize[] = [
  *
  *  Bạn cố tình đứng giữa bảng chứ không phải đầu: đầu bảng thì không có ai
  *  để vượt, mà mục đích của bảng xếp hạng là tạo cái đích để với tới. */
-export type Rank = { name: string; area: string; points: number; you?: boolean }
+export type Rank = { name: string; area: string; points: number; avatar?: string; you?: boolean }
 
 export const LEADERBOARD: Rank[] = [
-  { name: "Trần Minh Khoa", area: "Bình Thạnh", points: 48_200 },
-  { name: "Lê Thị Ngọc Hân", area: "Quận 7", points: 39_800 },
-  { name: "Phạm Quốc Việt", area: "Thủ Đức", points: 31_500 },
+  { name: "Trần Thanh Tâm", area: "Bình Thạnh", points: 48_200, avatar: "https://randomuser.me/api/portraits/women/68.jpg" },
+  { name: "Lê Thị Ngọc Hân", area: "Quận 7", points: 39_800, avatar: "https://randomuser.me/api/portraits/women/65.jpg" },
+  { name: "Phạm Thu Hằng", area: "Thủ Đức", points: 31_500, avatar: "https://randomuser.me/api/portraits/women/44.jpg" },
   { name: "Huỳnh Thị Mai Anh", area: "Tân Bình", points: 27_900 },
   { name: "Nguyễn Đức", area: "Quận 3", points: RANK_POINTS, you: true },
   { name: "Đặng Thu Hà", area: "Gò Vấp", points: 19_300 },

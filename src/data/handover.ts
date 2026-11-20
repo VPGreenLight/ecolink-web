@@ -10,6 +10,166 @@ export const TIME_SLOTS = [
   "17:30 - 19:00",
 ] as const
 
+export const MAX_APPOINTMENT_DAYS = 30
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0")
+}
+
+export function toLocalDateInputValue(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+export function addDaysToLocalDateInput(dateIso: string, days: number): string {
+  const [y, m, d] = dateIso.split("-").map(Number)
+  if (!y || !m || !d) return toLocalDateInputValue()
+  const base = new Date(y, m - 1, d)
+  base.setDate(base.getDate() + days)
+  return toLocalDateInputValue(base)
+}
+
+export function getAppointmentDateBounds(now: Date = new Date()): {
+  minDate: string
+  maxDate: string
+} {
+  const minDate = toLocalDateInputValue(now)
+  const maxDate = addDaysToLocalDateInput(minDate, MAX_APPOINTMENT_DAYS)
+  return { minDate, maxDate }
+}
+
+export function formatIsoDateToVi(dateIso: string): string {
+  const m = dateIso.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return dateIso
+  return `${m[3]}/${m[2]}/${m[1]}`
+}
+
+export function parseViOrIsoDateToIsoInput(raw?: string | null): string | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+  const isoMatch = trimmed.match(/(\d{4})-(\d{2})-(\d{2})/)
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`
+
+  const vnMatch = trimmed.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (vnMatch) {
+    return `${vnMatch[3]}-${pad2(Number(vnMatch[2]))}-${pad2(Number(vnMatch[1]))}`
+  }
+
+  const parsed = new Date(trimmed)
+  if (!Number.isNaN(parsed.getTime())) {
+    return toLocalDateInputValue(parsed)
+  }
+  return null
+}
+
+export function getTimeSlotStartMinutes(slot: string): number | null {
+  const match = slot.match(/(\d{1,2}):(\d{2})/)
+  if (!match) return null
+  const hh = Number(match[1])
+  const mm = Number(match[2])
+  if (Number.isNaN(hh) || Number.isNaN(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+    return null
+  }
+  return hh * 60 + mm
+}
+
+export function isTimeSlotInPastForDate(
+  dateIso: string,
+  slot: string,
+  now: Date = new Date(),
+): boolean {
+  const todayIso = toLocalDateInputValue(now)
+  if (!dateIso || dateIso < todayIso) return true
+  if (dateIso > todayIso) return false
+
+  const startMin = getTimeSlotStartMinutes(slot)
+  if (startMin === null) return false
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  return startMin <= nowMin
+}
+
+export function getDefaultAppointmentDateAndSlot(now: Date = new Date()): {
+  dateIso: string
+  slot: string
+} {
+  const todayIso = toLocalDateInputValue(now)
+  const preferredOrder = [TIME_SLOTS[1], ...TIME_SLOTS.filter((s) => s !== TIME_SLOTS[1])]
+  const validToday = preferredOrder.find((s) => !isTimeSlotInPastForDate(todayIso, s, now))
+  if (validToday) {
+    return { dateIso: todayIso, slot: validToday }
+  }
+  return {
+    dateIso: addDaysToLocalDateInput(todayIso, 1),
+    slot: TIME_SLOTS[1],
+  }
+}
+
+export function validateAppointmentSelection(
+  dateIso: string,
+  slot: string,
+  now: Date = new Date(),
+): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) {
+    return "Vui lòng chọn ngày hẹn hợp lệ."
+  }
+  const { minDate, maxDate } = getAppointmentDateBounds(now)
+  if (dateIso < minDate) {
+    return "Không thể chọn ngày hẹn trong quá khứ."
+  }
+  if (dateIso > maxDate) {
+    return `Chỉ được chọn ngày hẹn từ hôm nay đến tối đa ${MAX_APPOINTMENT_DAYS} ngày tới.`
+  }
+  if (!slot.trim()) {
+    return "Vui lòng chọn khung giờ thu gom."
+  }
+  if (isTimeSlotInPastForDate(dateIso, slot, now)) {
+    return "Khung giờ này hôm nay đã qua. Vui lòng chọn khung giờ sau hoặc chọn ngày khác."
+  }
+  return null
+}
+
+export function extractPureTimeSlot(rawSlot?: string | null): string {
+  const fallback = TIME_SLOTS[1]
+  if (!rawSlot) return fallback
+  const trimmed = rawSlot.trim()
+  const matchedKnown = TIME_SLOTS.find((s) => trimmed.includes(s))
+  if (matchedKnown) return matchedKnown
+  const stripped = trimmed
+    .replace(/^\d{4}-\d{2}-\d{2}\s*/, "")
+    .replace(/^\d{1,2}\/\d{1,2}\/\d{4}\s*/, "")
+    .replace(/^[·•\-|\s]+/, "")
+    .replace(/^\((.+)\)$/, "$1")
+    .trim()
+  return stripped || fallback
+}
+
+export function formatCombinedAppointmentSlot(dateIso: string, slot: string): string {
+  const pureSlot = extractPureTimeSlot(slot)
+  return `${formatIsoDateToVi(dateIso)} (${pureSlot})`
+}
+
+export function splitCombinedAppointmentSlot(
+  rawSlot?: string | null,
+  fallbackDateRaw?: string | null,
+): { dateIso: string; dateVi: string; timeSlot: string } {
+  const parsedDateFromSlot = parseViOrIsoDateToIsoInput(rawSlot)
+  const parsedFallback = parseViOrIsoDateToIsoInput(fallbackDateRaw)
+  const dateIso = parsedDateFromSlot || parsedFallback || toLocalDateInputValue()
+  return {
+    dateIso,
+    dateVi: formatIsoDateToVi(dateIso),
+    timeSlot: extractPureTimeSlot(rawSlot),
+  }
+}
+
+export function buildScheduledAtIso(dateIso: string, slot: string): string {
+  const [y, m, d] = dateIso.split("-").map(Number)
+  const startMin = getTimeSlotStartMinutes(slot) ?? 10 * 60
+  const hh = Math.floor(startMin / 60)
+  const mm = startMin % 60
+  if (!y || !m || !d) return new Date(Date.now() + 2 * 3600 * 1000).toISOString()
+  return new Date(y, m - 1, d, hh, mm, 0, 0).toISOString()
+}
+
 export type HandoverStatus =
   | "pending"     // User đã tạo, chờ Recycler
   | "accepted"    // Recycler nhận, đã chốt khung giờ
@@ -35,6 +195,8 @@ export type HandoverLine = { wasteId: string; kg: number }
  *  của Recycler (R-03, R-04) — chỉ khác góc nhìn, không khác dữ liệu. */
 export type Handover = {
   id: string
+  /** Mã hiển thị thân thiện trên UI (VD: BH-A3F18C) */
+  displayCode?: string
   recycler: string
   address: string
   date: string

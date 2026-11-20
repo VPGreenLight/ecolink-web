@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom"
 import { PORTAL_NAV } from "@/data/portal"
 import { ROLE_LABEL, signOut, useSession } from "@/lib/session"
+import { openAuthPopup } from "@/lib/popupAuth"
 import Assistant from "@/components/admin/Assistant"
 import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
 
@@ -178,7 +179,6 @@ function AccountMenu({
   label: string
   items: readonly (readonly [string, string])[]
 }) {
-  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -253,7 +253,8 @@ function AccountMenu({
               type="button"
               onClick={() => {
                 setOpen(false)
-                navigate("/login")
+                signOut()
+                openAuthPopup("login")
               }}
               className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 hover:text-red-800"
             >

@@ -1,30 +1,119 @@
 import { useState } from "react"
+import { Link, useSearchParams } from "react-router-dom"
 import { PageHead } from "@/components/Portal"
+import {
+  confirmPasswordReset,
+  formatAuthError,
+  requestPasswordResetEmail,
+} from "@/lib/authApi"
 
-/** U-18 và R-07 dùng chung trang này: hai vai trò khác nhau nhưng cơ chế
- *  giống hệt nhau — cùng một bước nhập email, cùng một bước nhập mã OTP. Tách
- *  2 trang thì 2 chỗ phải sửa cùng lúc mỗi lần đổi quy trình, và người dùng
- *  phải tự đoán trang nào dành cho mình.
+/** U-18 và R-07 dùng chung trang này: kết nối trực tiếp tới
+ *  `POST /api/v1/auth/forgot-password` (BR-AUTH-06, BR-AUTH-09) và
+ *  `POST /api/v1/auth/reset-password` (MSG-AUTH-06).
  *
- *  Trạng thái 3 bước giữ trong state của trang chứ không đoán lại từ URL:
- *  người dùng bấm lại trình duyệt thì trang quay về bước đầu, và đó mới đúng
- *  vì đặt lại mật khẩu là một thao tác một lần, không phải một nơi để quay
- *  lại sau. */
+ *  Hỗ trợ cả 2 cách vào Bước 2:
+ *   1. Bấm trực tiếp nút "Đặt Lại Mật Khẩu" trong email Gmail (`?token=...&email=...`).
+ *   2. Nhập email ở Bước 1 rồi dán mã xác nhận bảo mật từ email vào Bước 2. */
 type Step = "email" | "code" | "done"
 
 export default function ResetPassword() {
-  const [step, setStep] = useState<Step>("email")
-  const [email, setEmail] = useState("")
-  const [code, setCode] = useState("")
+  const [searchParams] = useSearchParams()
+  const urlEmail = searchParams.get("email")?.trim() ?? ""
+  const urlToken = searchParams.get("token")?.trim() ?? ""
+
+  const [step, setStep] = useState<Step>(() => (urlToken ? "code" : "email"))
+  const [email, setEmail] = useState(urlEmail)
+  const [code, setCode] = useState(urlToken)
   const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [submitting, setSubmitting] = useState(false)
   const [flash, setFlash] = useState("")
+  const [info, setInfo] = useState(() =>
+    urlToken
+      ? "Đã nhận mã xác thực từ liên kết email. Vui lòng nhập mật khẩu mới bên dưới."
+      : "",
+  )
+
+  const handleRequestEmail = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (submitting) return
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
+      setFlash("Email chưa đúng định dạng.")
+      return
+    }
+
+    setFlash("")
+    setInfo("")
+    setSubmitting(true)
+    try {
+      const res = await requestPasswordResetEmail(email)
+      setInfo(res.message)
+      setStep("code")
+    } catch (err) {
+      setFlash(formatAuthError(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleConfirmReset = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (submitting) return
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
+      setFlash("Vui lòng kiểm tra lại địa chỉ email đã đăng ký.")
+      return
+    }
+    if (code.trim().length < 6) {
+      setFlash("Vui lòng nhập mã xác nhận bảo mật nhận được qua email.")
+      return
+    }
+    if (password.length < 8) {
+      setFlash("Mật khẩu mới cần ít nhất 8 ký tự.")
+      return
+    }
+    if (password !== confirmPassword) {
+      setFlash("Mật khẩu xác nhận không khớp với mật khẩu mới.")
+      return
+    }
+
+    setFlash("")
+    setSubmitting(true)
+    try {
+      await confirmPasswordReset({
+        email,
+        token: code,
+        newPassword: password,
+        confirmPassword,
+      })
+      setStep("done")
+    } catch (err) {
+      setFlash(formatAuthError(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleResend = async () => {
+    if (submitting || !email.trim()) return
+    setFlash("")
+    setSubmitting(true)
+    try {
+      const res = await requestPasswordResetEmail(email)
+      setInfo(`Đã gửi lại yêu cầu (giới hạn tối đa 1 lần/phút). ${res.message}`)
+    } catch (err) {
+      setFlash(formatAuthError(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <div className="page flex flex-col gap-6">
       <PageHead
-        eyebrow="KHÓA TÀI KHOẢN"
+        eyebrow="KHÔI PHỤC TÀI KHOẢN"
         title="Đặt lại mật khẩu"
-        body="Nhận mã xác thực qua email đã đăng ký, đặt mật khẩu mới rồi đăng nhập lại. Người dân và cơ sở thu mua dùng chung quy trình này."
+        body="Nhận liên kết và mã xác nhận bảo mật qua email đã đăng ký, đặt mật khẩu mới rồi đăng nhập lại. Người dân và cơ sở thu mua dùng chung quy trình này."
       />
 
       <ol className="flex flex-wrap items-center gap-3">
@@ -57,17 +146,7 @@ export default function ResetPassword() {
 
       {step === "email" && (
         <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
-              setFlash("Email chưa đúng định dạng.")
-              return
-            }
-            setFlash("")
-            // ponytail: chưa có dịch vụ gửi email, chuyển thẳng sang bước nhập
-            // mã. Nối API thì thay dòng này bằng lệnh gửi OTP.
-            setStep("code")
-          }}
+          onSubmit={handleRequestEmail}
           noValidate
           className="card flex max-w-[520px] flex-col gap-5 p-5 md:p-6"
         >
@@ -78,52 +157,68 @@ export default function ResetPassword() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="ban@email.vn"
+              placeholder="ban@ecolink.vn"
               autoComplete="email"
             />
           </label>
-          {flash && <p className="text-[13px] text-warn">{flash}</p>}
-          <button type="submit" className="btn-primary h-11 px-6">
-            Gửi mã xác thực
-          </button>
+          {flash && (
+            <p role="alert" className="text-[13px] text-warn">
+              {flash}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="btn-primary h-11 px-6 disabled:opacity-60"
+            >
+              {submitting ? "Đang gửi..." : "Gửi mã xác thực"}
+            </button>
+            <Link to="/login" className="btn-ghost h-11 px-5">
+              Quay lại đăng nhập
+            </Link>
+          </div>
           <p className="text-[13px] leading-5 text-muted">
-            Mã có hiệu lực 10 phút. Nếu không thấy trong hộp thư, kiểm tra thư mục
-            quảng cáo hoặc thư rác.
+            Mã xác nhận có hiệu lực 15 phút và chỉ sử dụng một lần duy nhất (BR-AUTH-06). Nếu
+            không thấy trong hộp thư đến, vui lòng kiểm tra thư mục Quảng cáo hoặc Thư rác.
           </p>
         </form>
       )}
 
       {step === "code" && (
         <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!/^\d{6}$/.test(code)) {
-              setFlash("Mã xác thực gồm 6 chữ số.")
-              return
-            }
-            if (password.length < 8) {
-              setFlash("Mật khẩu mới cần ít nhất 8 ký tự.")
-              return
-            }
-            setFlash("")
-            setStep("done")
-          }}
+          onSubmit={handleConfirmReset}
           noValidate
           className="card flex max-w-[520px] flex-col gap-5 p-5 md:p-6"
         >
-          <p className="text-sm text-body">
-            Mã đã gửi tới <b className="text-ink">{email}</b>.
-          </p>
+          {info && (
+            <p
+              role="status"
+              className="rounded-xl border border-brand/25 bg-brand/6 px-3.5 py-2.5 text-xs leading-5 text-ink"
+            >
+              {info}
+            </p>
+          )}
 
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Mã xác thực
+            Email tài khoản
             <input
-              className="input tabular-nums"
-              inputMode="numeric"
-              maxLength={6}
+              className="input"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="ban@ecolink.vn"
+              autoComplete="email"
+            />
+          </label>
+
+          <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+            Mã xác nhận bảo mật (Token từ Email)
+            <input
+              className="input font-mono text-xs"
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-              placeholder="6 chữ số"
+              onChange={(e) => setCode(e.target.value.trim())}
+              placeholder="Dán mã xác nhận trong email vào đây"
             />
           </label>
 
@@ -139,19 +234,37 @@ export default function ResetPassword() {
             />
           </label>
 
-          {flash && <p className="text-[13px] text-warn">{flash}</p>}
+          <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+            Nhập lại mật khẩu mới
+            <input
+              className="input"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Nhập lại đúng mật khẩu mới"
+              autoComplete="new-password"
+            />
+          </label>
 
-          <div className="flex flex-wrap items-center gap-4">
-            <button type="submit" className="btn-primary h-11 px-6">
-              Đặt mật khẩu mới
+          {flash && (
+            <p role="alert" className="text-[13px] text-warn">
+              {flash}
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="btn-primary h-11 px-6 disabled:opacity-60"
+            >
+              {submitting ? "Đang cập nhật..." : "Đặt mật khẩu mới"}
             </button>
             <button
               type="button"
-              onClick={() => {
-                setFlash("Đã gửi lại mã. Kiểm tra hộp thư trong vài phút nữa.")
-                setCode("")
-              }}
-              className="btn-ghost h-11 px-5"
+              disabled={submitting}
+              onClick={handleResend}
+              className="btn-ghost h-11 px-5 disabled:opacity-60"
             >
               Gửi lại mã
             </button>
@@ -162,7 +275,16 @@ export default function ResetPassword() {
       {step === "done" && (
         <div className="card flex max-w-[520px] flex-col gap-4 p-5 md:p-6">
           <span className="grid size-12 place-items-center rounded-full bg-brand text-white">
-            <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              className="size-6"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
               <path d="m5 13 4 4L19 7" />
             </svg>
           </span>
@@ -170,12 +292,12 @@ export default function ResetPassword() {
             Đã đặt lại mật khẩu
           </h2>
           <p className="text-sm leading-6 text-body">
-            Đăng nhập lại bằng mật khẩu mới. Nếu có đăng nhập ở thiết bị khác mà
-            không phải bạn, báo ngay để chúng tôi khoá phiên đó.
+            Toàn bộ phiên đăng nhập cũ trên các thiết bị khác đã được tự động thu hồi để bảo vệ
+            tài khoản. Vui lòng đăng nhập lại bằng mật khẩu mới.
           </p>
-          <a href="/login" className="btn-primary h-11 w-fit px-6">
+          <Link to="/login" className="btn-primary h-11 w-fit px-6">
             Đi tới đăng nhập
-          </a>
+          </Link>
         </div>
       )}
     </div>

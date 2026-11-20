@@ -1,13 +1,73 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { Link } from "react-router-dom"
+import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { CTA, MATERIAL_TYPES, PARTNERS, REGIONS, type Partner } from "@/data/partners"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import {
+  formatDistance,
+  formatVnd,
+  LOCATION_PRESETS,
+  searchNearbyRecyclers,
+  type CollectionPartnerDto,
+} from "@/lib/recyclerDiscoveryApi"
+import {
+  fetchRecyclerReviews,
+  type RecyclerReviewsSummaryDto,
+} from "@/lib/reviewComplaintApi"
 
 export default function Partners() {
   const [query, setQuery] = useState("")
+  const debouncedQuery = useDebouncedValue(query, 250)
   const [material, setMaterial] = useState(MATERIAL_TYPES[0])
   const [region, setRegion] = useState(REGIONS[0])
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(6)
+  const [livePage, setLivePage] = useState(1)
+  const [livePageSize] = useState(4)
+  const [liveRecyclers, setLiveRecyclers] = useState<CollectionPartnerDto[]>([])
+  const [reviewSummaries, setReviewSummaries] = useState<Record<string, RecyclerReviewsSummaryDto>>({})
+  const [openReviewId, setOpenReviewId] = useState<string | null>(null)
+
+  const togglePartnerReviews = (recyclerId: string) => {
+    if (openReviewId === recyclerId) {
+      setOpenReviewId(null)
+      return
+    }
+    setOpenReviewId(recyclerId)
+    if (!reviewSummaries[recyclerId]) {
+      void fetchRecyclerReviews(recyclerId, { pageSize: 5 })
+        .then((res) => {
+          if (res.success && res.data) {
+            setReviewSummaries((prev) => ({ ...prev, [recyclerId]: res.data }))
+          }
+        })
+        .catch(() => {})
+    }
+  }
+
+  useEffect(() => {
+    const controller = new AbortController()
+    searchNearbyRecyclers(
+      {
+        lat: LOCATION_PRESETS[0].lat,
+        lng: LOCATION_PRESETS[0].lng,
+        radiusKm: 25,
+      },
+      controller.signal,
+    )
+      .then((res) => {
+        if (!controller.signal.aborted && res.data.items.length > 0) {
+          setLiveRecyclers(res.data.items)
+        }
+      })
+      .catch(() => {
+        // Giữ danh sách đối tác công nghiệp tĩnh khi chạy offline
+      })
+    return () => controller.abort()
+  }, [])
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = debouncedQuery.trim().toLowerCase()
     return PARTNERS.filter((p) => {
       const matchQuery =
         !q ||
@@ -15,16 +75,25 @@ export default function Partners() {
         p.certification.toLowerCase().includes(q) ||
         p.materials.some((m) => m.toLowerCase().includes(q))
       const matchMaterial =
-        material === MATERIAL_TYPES[0] || p.materials.join(" ").includes(material.replace(/ &.*/, ""))
+        material === MATERIAL_TYPES[0] ||
+        p.materials.join(" ").includes(material.replace(/ &.*/, ""))
       const matchRegion = region === REGIONS[0] || p.region.includes(region)
       return matchQuery && matchMaterial && matchRegion
     })
-  }, [query, material, region])
+  }, [debouncedQuery, material, region])
+
+  const pagedPartners = paginateItems(filtered, page, pageSize)
+  const pagedLiveRecyclers = paginateItems(liveRecyclers, livePage, livePageSize)
+
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedQuery, material, region])
 
   const reset = () => {
     setQuery("")
     setMaterial(MATERIAL_TYPES[0])
     setRegion(REGIONS[0])
+    setPage(1)
   }
 
   return (
@@ -40,14 +109,114 @@ export default function Partners() {
             Đối tác tái chế quy mô lớn
           </h1>
           <p className="mt-3 max-w-2xl text-lg leading-[29.25px] text-body">
-            Kết nối trực tiếp các đơn vị phát thải lớn với hệ thống nhà máy tái
-            chế quy chuẩn, tối ưu hóa chi phí và đảm bảo hồ sơ pháp lý môi
-            trường.
+            Kết nối trực tiếp các đơn vị phát thải lớn và hộ gia đình với mạng lưới
+            cơ sở thu mua đã xác minh cùng nhà máy tái chế quy chuẩn.
           </p>
         </div>
       </section>
 
       <div className="page flex flex-col gap-6 py-10">
+        {/* Cơ sở thu gom địa phương đang mở cửa trực tuyến từ API U-05 */}
+        {liveRecyclers.length > 0 && (
+          <section className="flex flex-col gap-4 rounded-2xl border border-brand/25 bg-surface p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className="eyebrow">TRỰC TUYẾN TRÊN BẢN ĐỒ</span>
+                <h2 className="mt-1 text-xl font-bold text-ink">
+                  Cơ sở thu mua đã xác minh đang mở cửa ({liveRecyclers.length})
+                </h2>
+              </div>
+              <Link to="/map" className="btn-outline h-10 px-4 text-xs">
+                Mở bản đồ GPS quanh bạn
+                <ArrowIcon />
+              </Link>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {pagedLiveRecyclers.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex flex-col justify-between gap-3 rounded-xl border border-line bg-white p-4"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-base font-bold text-ink">{r.facilityName}</h3>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800">
+                          ★ {(r.averageRating ?? 0).toFixed(1)} ({r.totalReviews ?? 0})
+                        </span>
+                        <span className="rounded-full bg-surface-3 px-2.5 py-0.5 text-xs font-semibold text-brand-deep">
+                          {formatDistance(r.distanceKm)}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-xs text-muted">{r.address}</p>
+                    <ul className="mt-2.5 flex flex-wrap gap-1.5">
+                      {r.materials.slice(0, 4).map((m) => (
+                        <li
+                          key={m.categoryCode}
+                          className="rounded bg-surface-2 px-2 py-1 text-xs text-ink"
+                        >
+                          {m.categoryName.replace(/\s*\(.*\)/, "")}:{" "}
+                          <b className="text-brand-deep">{formatVnd(m.pricePerKg)}/kg</b>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line-soft pt-3 text-xs">
+                    <span className="text-muted">Giờ mở cửa: {r.operatingHours}</span>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => togglePartnerReviews(r.id)}
+                        className="font-semibold text-body hover:underline"
+                      >
+                        {openReviewId === r.id ? "Ẩn đánh giá" : "Xem đánh giá"}
+                      </button>
+                      <Link
+                        to={`/map`}
+                        className="font-semibold text-brand-deep hover:underline"
+                      >
+                        Xem trên bản đồ →
+                      </Link>
+                    </div>
+                  </div>
+
+                  {openReviewId === r.id && reviewSummaries[r.id] && (
+                    <div className="rounded-lg border border-line-soft bg-surface p-3 text-xs">
+                      <p className="font-semibold text-ink">
+                        Phản hồi gần đây ({reviewSummaries[r.id].totalReviews} lượt)
+                      </p>
+                      {reviewSummaries[r.id].reviews.items.length === 0 ? (
+                        <p className="mt-1 text-muted">Chưa có nhận xét nào.</p>
+                      ) : (
+                        <ul className="mt-1.5 flex flex-col gap-1.5">
+                          {reviewSummaries[r.id].reviews.items.slice(0, 3).map((rv) => (
+                            <li key={rv.reviewId} className="rounded bg-white p-2">
+                              <span className="font-semibold text-brand-deep">
+                                {"★".repeat(rv.ratingStars)}
+                              </span>{" "}
+                              <span className="text-muted">· {rv.reviewerDisplayName}</span>
+                              {rv.comment && <p className="mt-0.5 text-body">{rv.comment}</p>}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <PaginationBar
+              page={livePage}
+              pageSize={livePageSize}
+              totalCount={liveRecyclers.length}
+              onPageChange={setLivePage}
+              itemLabel="cơ sở trực tuyến"
+            />
+          </section>
+        )}
+
         {/* Filter bar */}
         <div className="flex flex-col gap-3 rounded-xl border border-sage/30 bg-white p-5 shadow-[0_2px_6px_rgba(0,0,0,0.02)] lg:flex-row lg:items-center">
           <input
@@ -56,7 +225,7 @@ export default function Partners() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Tìm theo tên nhà máy, chứng chỉ..."
             aria-label="Tìm đối tác"
-            className="h-11 min-w-0 flex-1 rounded-lg border border-sage-line bg-surface-2 py-3 pr-4 pl-[41px] text-sm text-ink placeholder:text-muted focus:outline-none"
+            className="h-11 min-w-0 flex-1 rounded-lg border border-sage-line bg-surface-2 py-3 pr-4 pl-4 text-sm text-ink placeholder:text-muted focus:outline-none"
           />
 
           <Select
@@ -94,11 +263,22 @@ export default function Partners() {
 
         {/* Cards */}
         {filtered.length > 0 ? (
-          <div className="grid gap-6 md:grid-cols-2">
-            {filtered.map((p) => (
-              <PartnerCard key={p.name} partner={p} />
-            ))}
-          </div>
+          <>
+            <div className="grid gap-6 md:grid-cols-2">
+              {pagedPartners.map((p) => (
+                <PartnerCard key={p.name} partner={p} />
+              ))}
+            </div>
+            <PaginationBar
+              page={page}
+              pageSize={pageSize}
+              totalCount={filtered.length}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              pageSizeOptions={[6, 12, 24]}
+              itemLabel="đối tác"
+            />
+          </>
         ) : (
           <p className="card p-10 text-center text-sm text-muted">
             Không tìm thấy đơn vị phù hợp. Thử bỏ bớt bộ lọc hoặc{" "}
@@ -126,10 +306,10 @@ export default function Partners() {
               {CTA.body}
             </p>
           </div>
-          <a href="#" className="btn-primary h-11 shrink-0 rounded-lg px-5">
+          <Link to="/join-recycler" className="btn-primary h-11 shrink-0 rounded-lg px-5">
             {CTA.action}
             <ArrowIcon />
-          </a>
+          </Link>
         </section>
       </div>
     </div>
@@ -221,13 +401,13 @@ function PartnerCard({ partner }: { partner: Partner }) {
           <i className="size-1.5 rounded-full bg-brand" />
           {partner.perk}
         </span>
-        <a
-          href="#"
+        <Link
+          to="/map"
           className="btn h-9 shrink-0 border border-brand/30 bg-white px-4 text-xs text-brand-deep"
         >
           Liên hệ thu gom
           <ArrowIcon />
-        </a>
+        </Link>
       </div>
     </article>
   )

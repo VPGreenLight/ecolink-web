@@ -50,7 +50,7 @@ const BY_ROLE: Record<Role, [string, string][]> = {
     ["/staff/dataset", "Tập dữ liệu kiểm chứng"],
     ["/staff/applications", "Thẩm định hồ sơ cơ sở thu mua"],
     ["/staff/complaints", "Khiếu nại giao dịch"],
-    ["/staff/accounts", "Danh sách User và Buyer"],
+    ["/staff/accounts", "Danh sách User và Recycler"],
     ["/staff/blog", "Soạn bài Blog"],
     ["/staff/ecofacts", "Quản lý Eco Fact"],
     ["/staff/gifts", "Quà tặng và voucher"],
