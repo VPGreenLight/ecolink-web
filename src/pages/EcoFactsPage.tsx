@@ -12,7 +12,9 @@ import {
   type EcoFactItemDto,
   type VirtualTreeDto,
 } from "@/lib/gamificationApi"
-import { getSession, hasLiveBackendAuth } from "@/lib/session"
+import { isSsrSmokeTest } from "@/lib/hydration"
+import { openAuthPopup } from "@/lib/popupAuth"
+import { hasLiveBackendAuth, useSession } from "@/lib/session"
 import {
   Droplet,
   Droplets,
@@ -124,9 +126,10 @@ function loadInitialState(liveUser: boolean): TreeState {
 }
 
 export default function EcoFactsPage() {
-  const session = getSession()
+  const session = useSession()
+  const isGuest = !session && !isSsrSmokeTest()
   const liveTreeUser = hasLiveBackendAuth() && session?.role === "user"
-  const [tree, setTree] = useState<TreeState>(() => loadInitialState(liveTreeUser))
+  const [tree, setTree] = useState<TreeState>(() => loadInitialState(liveTreeUser || isGuest))
   const [backendTree, setBackendTree] = useState<VirtualTreeDto | null>(null)
   const [unlockedFacts, setUnlockedFacts] = useState<EcoFactItemDto[]>([])
   const [factSearch, setFactSearch] = useState("")
@@ -180,6 +183,10 @@ export default function EcoFactsPage() {
   }, [liveTreeUser])
 
   const handleOfficialUpgrade = async () => {
+    if (isGuest) {
+      openAuthPopup("login")
+      return
+    }
     if (!liveTreeUser || upgradingOfficial) return
     setUpgradingOfficial(true)
     setOfficialMsg("")
@@ -217,11 +224,11 @@ export default function EcoFactsPage() {
 
   // Lưu trạng thái cục bộ chỉ cho chế độ xem thử nghiệm (khi chưa đăng nhập tài khoản thật)
   useEffect(() => {
-    if (liveTreeUser) return
+    if (liveTreeUser || isGuest) return
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(tree))
     } catch {}
-  }, [tree, liveTreeUser])
+  }, [tree, liveTreeUser, isGuest])
 
   // Đồng bộ số dư điểm tiêu dùng khi có thay đổi từ trang Đổi Thưởng hoặc các tab khác
   useEffect(() => {
@@ -237,7 +244,7 @@ export default function EcoFactsPage() {
 
   // Chu kỳ sinh học: chỉ giảm độ ẩm theo thời gian ở chế độ mô phỏng offline
   useEffect(() => {
-    if (liveTreeUser) return
+    if (liveTreeUser || isGuest) return
     const timer = setInterval(() => {
       setTree((prev) => {
         if (prev.isDead) return prev
@@ -312,6 +319,10 @@ export default function EcoFactsPage() {
 
   // Trồng lại cây mới khi cây bị khô héo
   const handleReplant = () => {
+    if (isGuest) {
+      openAuthPopup("login")
+      return
+    }
     setCurrentFrame(1)
     setTree((prev) => ({
       ...prev,
@@ -342,6 +353,10 @@ export default function EcoFactsPage() {
 
   // Hành động 1: Tưới nước
   const handleWater = async () => {
+    if (isGuest) {
+      openAuthPopup("login")
+      return
+    }
     if (isWatering) return
     if (liveTreeUser) {
       if (backendTree && backendTree.dailyWaterCount >= backendTree.dailyLimit) {
@@ -423,6 +438,10 @@ export default function EcoFactsPage() {
 
   // Hành động 2: Bón phân hữu cơ
   const handleFertilize = async () => {
+    if (isGuest) {
+      openAuthPopup("login")
+      return
+    }
     if (isFertilizing || tree.isDead) return
     if (liveTreeUser) {
       if (backendTree && backendTree.dailyWaterCount >= backendTree.dailyLimit) {
@@ -494,6 +513,10 @@ export default function EcoFactsPage() {
   // Hành động 3: Thu hoạch quả ngọt
   // Khi người dùng ấn hái quả: cây trở về frame 46
   const handleHarvest = () => {
+    if (isGuest) {
+      openAuthPopup("login")
+      return
+    }
     if (!tree.harvestReady || tree.fruitsCount <= 0) return
 
     const harvestReward = 25
@@ -745,13 +768,28 @@ export default function EcoFactsPage() {
                   Hành động chăm sóc
                 </span>
                 <span className="text-[11px] font-semibold text-muted">
-                  {liveTreeUser && backendTree
-                    ? `Lượt hôm nay: ${backendTree.dailyWaterCount}/${backendTree.dailyLimit}`
-                    : tree.isDead
-                      ? "Cây đang khô héo"
-                      : "Nhấn để bổ sung"}
+                  {isGuest
+                    ? "Chế độ xem trước cho Khách"
+                    : liveTreeUser && backendTree
+                      ? `Lượt hôm nay: ${backendTree.dailyWaterCount}/${backendTree.dailyLimit}`
+                      : tree.isDead
+                        ? "Cây đang khô héo"
+                        : "Nhấn để bổ sung"}
                 </span>
               </div>
+
+              {isGuest && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand/25 bg-brand/6 px-3.5 py-2.5 text-xs text-ink">
+                  <span>Đăng nhập tài khoản để chăm sóc cây, nhận Coin và mở Eco Fact.</span>
+                  <button
+                    type="button"
+                    onClick={() => openAuthPopup("login")}
+                    className="font-bold text-brand-deep underline underline-offset-4 hover:text-brand"
+                  >
+                    Đăng nhập ngay
+                  </button>
+                </div>
+              )}
 
               {tree.isDead ? (
                 <button

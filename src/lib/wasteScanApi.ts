@@ -82,6 +82,65 @@ export interface SubmitFeedbackRequest {
   note?: string
 }
 
+export interface MyWasteScanHistoryItemDto {
+  scanId: string
+  imageUrl: string
+  predictedLabel: string
+  confidenceScore: number
+  pipelineUsed: string
+  sortingGuide?: WasteSortingGuideDto | null
+  scannedAt: string
+}
+
+export interface PagedScanHistoryResult {
+  items: MyWasteScanHistoryItemDto[]
+  pageNumber: number
+  pageSize: number
+  totalRecords: number
+  totalPages: number
+  hasPreviousPage: boolean
+  hasNextPage: boolean
+}
+
+export interface WasteCategoryItemDto {
+  id: string
+  code: string
+  name: string
+  description?: string | null
+  standardBinColor: string
+  iconUrl?: string | null
+  isRecyclable: boolean
+  status: "Active" | "Inactive" | string
+  hasSortingRule: boolean
+  ruleStatus?: string | null
+  createdAt?: string
+  updatedAt?: string | null
+}
+
+export interface SortingRuleDetailDto {
+  ruleId: string
+  wasteCategoryId: string
+  categoryCode: string
+  categoryName: string
+  categoryStatus: string
+  standardBinColor: string
+  title: string
+  preparationSteps: string
+  sortingInstruction: string
+  handlingAction: string
+  hazardWarning?: string | null
+  applicableRegion: string
+  status: "DRAFT" | "ACTIVE" | string
+  createdAt: string
+  updatedAt?: string | null
+}
+
+export interface PublishSortingRuleResultDto {
+  rule: SortingRuleDetailDto
+  aiServiceSynced: boolean
+  aiSyncMessage?: string | null
+}
+
 export const DEFAULT_AI_MODELS: AiModelOption[] = [
   {
     id: "yolov8_detect",
@@ -343,4 +402,119 @@ export async function submitAiFeedback(
       res.message ||
       "Cảm ơn bạn đã phản hồi! Dữ liệu đã được chuyển tới Nhân viên vận hành để kiểm chứng.",
   }
+}
+
+/** [STT 026] Người dùng xem lại lịch sử các lần quét ảnh rác AI của cá nhân (GET /api/v1/waste-scan/history). */
+export async function fetchMyScanHistory(params?: {
+  categoryCode?: string
+  fromDate?: string
+  toDate?: string
+  pageNumber?: number
+  pageSize?: number
+}): Promise<ApiResponse<PagedScanHistoryResult>> {
+  const qs = new URLSearchParams()
+  if (params?.categoryCode) qs.set("categoryCode", params.categoryCode)
+  if (params?.fromDate) qs.set("fromDate", params.fromDate)
+  if (params?.toDate) qs.set("toDate", params.toDate)
+  qs.set("pageNumber", String(params?.pageNumber ?? 1))
+  qs.set("pageSize", String(params?.pageSize ?? 20))
+  return apiRequest<PagedScanHistoryResult>(`/api/v1/waste-scan/history?${qs.toString()}`, {
+    method: "GET",
+  })
+}
+
+/** [STT 025] Lấy danh mục loại phế liệu chuẩn hệ thống (GET /api/v1/waste-categories). */
+export async function fetchWasteCategories(params?: {
+  includeInactive?: boolean
+  includeNonRecyclable?: boolean
+}): Promise<WasteCategoryItemDto[]> {
+  const qs = new URLSearchParams()
+  if (params?.includeInactive) qs.set("includeInactive", "true")
+  if (params?.includeNonRecyclable) qs.set("includeNonRecyclable", "true")
+  const suffix = qs.toString() ? `?${qs.toString()}` : ""
+  const res = await apiRequest<WasteCategoryItemDto[]>(`/api/v1/waste-categories${suffix}`, {
+    method: "GET",
+  })
+  return Array.isArray(res.data) ? res.data : []
+}
+
+/** [STT 027] Admin thêm mới danh mục rác chuẩn (POST /api/v1/waste-categories). */
+export async function createWasteCategory(payload: {
+  code: string
+  name: string
+  description?: string | null
+  standardBinColor: string
+  iconUrl?: string | null
+  isRecyclable: boolean
+}): Promise<ApiResponse<WasteCategoryItemDto>> {
+  return apiRequest<WasteCategoryItemDto>("/api/v1/waste-categories", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+/** [STT 028] Admin cập nhật thông tin danh mục rác chuẩn (PUT /api/v1/waste-categories/{categoryId}). */
+export async function updateWasteCategory(
+  categoryId: string,
+  payload: {
+    name: string
+    description?: string | null
+    standardBinColor: string
+    iconUrl?: string | null
+    isRecyclable: boolean
+  },
+): Promise<ApiResponse<WasteCategoryItemDto>> {
+  return apiRequest<WasteCategoryItemDto>(`/api/v1/waste-categories/${categoryId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  })
+}
+
+/** [STT 029] Admin bật/tắt trạng thái mềm Active/Inactive danh mục rác (PATCH /api/v1/waste-categories/{categoryId}/status). */
+export async function toggleWasteCategoryStatus(
+  categoryId: string,
+  status: "Active" | "Inactive",
+): Promise<ApiResponse<WasteCategoryItemDto>> {
+  return apiRequest<WasteCategoryItemDto>(`/api/v1/waste-categories/${categoryId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  })
+}
+
+/** [STT 023 - Admin] Tải toàn bộ quy tắc phân loại chi tiết kèm ruleId & bản DRAFT. */
+export async function fetchDetailedSortingRules(
+  includeDraft: boolean = true,
+): Promise<SortingRuleDetailDto[]> {
+  const res = await apiRequest<SortingRuleDetailDto[]>(
+    `/api/v1/waste-scan/rules?detailed=true&includeDraft=${includeDraft ? "true" : "false"}`,
+    { method: "GET" },
+  )
+  return Array.isArray(res.data) ? res.data : []
+}
+
+/** [STT 030] Admin cấu hình quy tắc phân loại nháp cho danh mục (PUT /api/v1/waste-scan/rules/{categoryId}). */
+export async function upsertSortingRule(
+  categoryId: string,
+  payload: {
+    title: string
+    preparationSteps: string
+    sortingInstruction: string
+    handlingAction: string
+    hazardWarning?: string | null
+    applicableRegion?: string
+  },
+): Promise<ApiResponse<SortingRuleDetailDto>> {
+  return apiRequest<SortingRuleDetailDto>(`/api/v1/waste-scan/rules/${categoryId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  })
+}
+
+/** [STT 031] Admin phát hành quy tắc & đồng bộ AI Service (PATCH /api/v1/waste-scan/rules/{ruleId}/publish). */
+export async function publishSortingRule(
+  ruleId: string,
+): Promise<ApiResponse<PublishSortingRuleResultDto>> {
+  return apiRequest<PublishSortingRuleResultDto>(`/api/v1/waste-scan/rules/${ruleId}/publish`, {
+    method: "PATCH",
+  })
 }

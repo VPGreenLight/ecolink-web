@@ -17,7 +17,9 @@ import {
   performDailyCheckin,
   type CheckinStatusDto,
 } from "@/lib/gamificationApi"
-import { getSession, hasLiveBackendAuth } from "@/lib/session"
+import { isSsrSmokeTest } from "@/lib/hydration"
+import { openAuthPopup } from "@/lib/popupAuth"
+import { useSession, hasLiveBackendAuth } from "@/lib/session"
 
 const KEY = "ecolink.checkin"
 const COIN = "/assets/AI/ecolink-coin.webp"
@@ -47,7 +49,8 @@ export default function CheckIn({
   onEarn: (n: number) => void
   onSyncBalance?: (walletBalance: number) => void
 }) {
-  const session = getSession()
+  const session = useSession()
+  const isGuest = !session && !isSsrSmokeTest()
   const useLiveApi =
     hasLiveBackendAuth() &&
     (session?.role === "user" || session?.role === "recycler")
@@ -87,6 +90,10 @@ export default function CheckIn({
   const currentStreak = useLiveApi ? (liveStatus?.currentStreak ?? 0) : v.day
 
   const press = async () => {
+    if (isGuest) {
+      openAuthPopup("login")
+      return
+    }
     if (done || busy) return
     if (useLiveApi) {
       setBusy(true)
@@ -213,14 +220,22 @@ export default function CheckIn({
         <button
           type="button"
           onClick={() => void press()}
-          disabled={done || busy || loadingLive}
+          disabled={!isGuest && (done || busy || loadingLive)}
           className="btn btn-primary h-11 px-5"
         >
-          {busy ? "Đang nhận..." : done ? "Đã điểm danh" : `Nhận ${fmt(next)}`}
-          {!done && !busy && <Coin className="size-4" />}
+          {isGuest
+            ? "Đăng nhập để điểm danh"
+            : busy
+              ? "Đang nhận..."
+              : done
+                ? "Đã điểm danh"
+                : `Nhận ${fmt(next)}`}
+          {!isGuest && !done && !busy && <Coin className="size-4" />}
         </button>
         <p className="text-[13px] leading-5 text-muted" role="status">
-          {capNotice ? (
+          {isGuest ? (
+            "Đăng nhập tài khoản để tích điểm điểm danh hằng ngày."
+          ) : capNotice ? (
             <span className="font-medium text-brand-deep">{capNotice}</span>
           ) : flash > 0 ? (
             <span className="inline-flex flex-wrap items-center gap-1 font-semibold text-brand">

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { PageHead, Field } from "@/components/Portal"
+import { CardListSkeleton, Field, PageHead } from "@/components/Portal"
 import { WASTE_GROUPS, WASTES } from "@/data/waste"
+import { initApiLoading } from "@/lib/hydration"
 import {
   AI_CLASS_OPTIONS,
   fetchSortingRules,
@@ -11,6 +12,9 @@ import {
   type WasteSortingGuideDto,
 } from "@/lib/wasteScanApi"
 import { isDiscoverableCategory } from "@/lib/recyclerDiscoveryApi"
+import { isSsrSmokeTest } from "@/lib/hydration"
+import { openAuthPopup } from "@/lib/popupAuth"
+import { getSession } from "@/lib/session"
 
 /** U-02 Tra cứu hướng dẫn phân loại rác & U-04 Báo cáo AI nhận diện sai.
  *
@@ -21,6 +25,7 @@ export default function Guidance() {
   const [group, setGroup] = useState<string>(WASTE_GROUPS[1])
   const [liveRules, setLiveRules] = useState<WasteSortingGuideDto[]>([])
   const [syncedFromApi, setSyncedFromApi] = useState(false)
+  const [loading, setLoading] = useState(() => initApiLoading(true))
 
   useEffect(() => {
     const controller = new AbortController()
@@ -33,6 +38,9 @@ export default function Guidance() {
       })
       .catch(() => {
         // Giữ danh mục mặc định nếu Backend chưa bật
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
   }, [])
@@ -76,7 +84,9 @@ export default function Guidance() {
         ))}
       </div>
 
-      {matchedLiveRules.length > 0 ? (
+      {loading && liveRules.length === 0 ? (
+        <CardListSkeleton count={3} />
+      ) : matchedLiveRules.length > 0 ? (
         <ol className="flex flex-col gap-3">
           {matchedLiveRules.map((rule, i) => {
             const steps = parsePreparationSteps(rule.preparationSteps)
@@ -178,6 +188,10 @@ function U04Report() {
   const [errMessage, setErrMessage] = useState("")
 
   const handleReport = async () => {
+    if (!getSession() && !isSsrSmokeTest()) {
+      openAuthPopup("login")
+      return
+    }
     if (!correct || sending) return
     setSending(true)
     setErrMessage("")
@@ -213,7 +227,7 @@ function U04Report() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Field label="Nhãn AI đã dự đoán nhầm">
+        <Field label="Nhãn AI đã dự đoán nhầm" required>
           <select
             className="input"
             value={predicted}
@@ -230,7 +244,7 @@ function U04Report() {
           </select>
         </Field>
 
-        <Field label="Loại rác đúng thực tế">
+        <Field label="Loại rác đúng thực tế" required>
           <select
             className="input"
             value={correct}

@@ -3,13 +3,13 @@ import { Link } from "react-router-dom"
 import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { ARTICLES, FEATURED, METRICS } from "@/data/insights"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
 import {
   estimateReadTime,
   fetchPublishedBlogs,
   formatViDate,
   type BlogPostSummaryDto,
 } from "@/lib/blogApi"
-import { hasLiveBackendAuth } from "@/lib/session"
 
 /** Chỉ con số thành tích mới mang màu. Trước đây 350M+ và 9% tô cam cảnh
  *  báo ở cỡ 48px, biến chúng thành hai mảng nổi bật nhất trang. */
@@ -19,9 +19,9 @@ const VALUE_TONE = {
 } as const
 
 export default function Blog() {
-  const [liveMode] = useState(() => hasLiveBackendAuth())
+  const [liveMode] = useState(() => !isSsrSmokeTest())
   const [posts, setPosts] = useState<BlogPostSummaryDto[] | null>(null)
-  const [loading, setLoading] = useState(liveMode)
+  const [loading, setLoading] = useState(() => initApiLoading(true))
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 300)
   const [activeTag, setActiveTag] = useState("")

@@ -13,13 +13,17 @@
  */
 
 import {
+  COOKIE_REFRESH_SENTINEL,
   clearAuthStorage,
   getAccessToken,
   getRefreshToken,
   getSession,
+  hasSessionCookieFlag,
+  isRealJwt,
   isStoredAccessTokenExpired,
   mapBackendRole,
   setAuthTokens,
+  signIn,
   updateSession,
 } from "@/lib/session"
 
@@ -82,6 +86,10 @@ const FALLBACK_HOSTS = ["", "http://localhost:5000", "http://localhost:5017"] as
 let resolvedHost: string | null = configuredBase !== undefined ? configuredBase : null
 
 let refreshInFlight: Promise<string | null> | null = null
+let sessionVerifyInFlight: Promise<boolean> | null = null
+let lastSessionVerifiedAt = 0
+
+const SESSION_VERIFY_COOLDOWN_MS = 15_000
 
 const NO_AUTO_REFRESH_PATHS = [
   "/api/v1/auth/login",
@@ -101,16 +109,7 @@ function shouldAttemptRefresh(path: string): boolean {
 
 function readEffectiveAccessToken(): string | null {
   const direct = getAccessToken()
-  if (direct) return direct
-  if (typeof localStorage === "undefined") return null
-  try {
-    const rawUser = localStorage.getItem("ecolink:user")
-    if (!rawUser) return null
-    const parsed = JSON.parse(rawUser) as { token?: string; accessToken?: string }
-    return parsed?.token ?? parsed?.accessToken ?? null
-  } catch {
-    return null
-  }
+  return isRealJwt(direct) ? direct : null
 }
 
 export function getResolvedApiHost(): string {
@@ -119,15 +118,24 @@ export function getResolvedApiHost(): string {
 
 export async function fetchWithAutoHost(path: string, init: RequestInit): Promise<Response> {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`
+  const mergedHeaders = new Headers(init.headers)
+  if (!mergedHeaders.has("X-EcoLink-Auth-Mode")) {
+    mergedHeaders.set("X-EcoLink-Auth-Mode", "cookie")
+  }
+  const requestInit: RequestInit = {
+    credentials: init.credentials ?? "include",
+    ...init,
+    headers: mergedHeaders,
+  }
 
   if (resolvedHost !== null) {
-    return fetch(`${resolvedHost}${normalizedPath}`, init)
+    return fetch(`${resolvedHost}${normalizedPath}`, requestInit)
   }
 
   let lastErr: unknown = null
   for (const host of FALLBACK_HOSTS) {
     try {
-      const res = await fetch(`${host}${normalizedPath}`, init)
+      const res = await fetch(`${host}${normalizedPath}`, requestInit)
       // Nếu Vite proxy trả 502/504 hoặc static server trả HTML cho /api, thử cổng kế tiếp
       const ct = res.headers.get("content-type") ?? ""
       const isProxyDown = res.status === 502 || res.status === 504
@@ -162,15 +170,19 @@ export async function rotateRefreshTokenSingleFlight(): Promise<string | null> {
   const storedRefresh = getRefreshToken()
   if (!storedRefresh) return null
 
+  const refreshPayload =
+    storedRefresh !== COOKIE_REFRESH_SENTINEL ? { refreshToken: storedRefresh } : {}
+
   refreshInFlight = (async () => {
     try {
       const res = await fetchWithAutoHost("/api/v1/auth/refresh-token", {
         method: "POST",
+        credentials: "include",
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ refreshToken: storedRefresh }),
+        body: JSON.stringify(refreshPayload),
       })
 
       if (!res.ok) {
@@ -193,20 +205,10 @@ export async function rotateRefreshTokenSingleFlight(): Promise<string | null> {
 
       setAuthTokens({
         accessToken: dto.accessToken,
-        refreshToken: dto.refreshToken ?? storedRefresh,
+        refreshToken:
+          dto.refreshToken ?? (storedRefresh !== COOKIE_REFRESH_SENTINEL ? storedRefresh : null),
         expiresAt: dto.expiresAt ?? null,
       })
-
-      const syncedRole = dto.user
-        ? mapBackendRole(dto.user.role)
-        : (getSession()?.role ?? null)
-      if (syncedRole && typeof localStorage !== "undefined") {
-        try {
-          localStorage.setItem(`ecolink:jwt:${syncedRole}`, dto.accessToken)
-        } catch {
-          // Bỏ qua nếu trình duyệt khoá storage
-        }
-      }
 
       if (dto.user) {
         updateSession({
@@ -226,6 +228,7 @@ export async function rotateRefreshTokenSingleFlight(): Promise<string | null> {
         })
       }
 
+      lastSessionVerifiedAt = Date.now()
       return dto.accessToken
     } catch {
       return null
@@ -237,35 +240,133 @@ export async function rotateRefreshTokenSingleFlight(): Promise<string | null> {
   return refreshInFlight
 }
 
+async function verifySessionWithBackend(): Promise<boolean> {
+  if (sessionVerifyInFlight) return sessionVerifyInFlight
+
+  sessionVerifyInFlight = (async () => {
+    try {
+      const token = readEffectiveAccessToken()
+      const headers: Record<string, string> = { Accept: "application/json" }
+      if (token) {
+        headers.Authorization = `Bearer ${token}`
+      }
+
+      const res = await fetchWithAutoHost("/api/v1/auth/me", {
+        method: "GET",
+        credentials: "include",
+        headers,
+      })
+
+      if (res.ok) {
+        const raw = (await res.json()) as
+          | ApiResponse<RefreshAuthDto["user"]>
+          | RefreshAuthDto["user"]
+        const user =
+          raw && typeof raw === "object" && "data" in raw && raw.data
+            ? raw.data
+            : (raw as RefreshAuthDto["user"])
+
+        if (user?.id) {
+          const resolvedRole = mapBackendRole(user.role)
+          if (user.status && (user.status === "Suspended" || user.status === "Deactivated")) {
+            clearAuthStorage()
+            return false
+          }
+
+          if (getSession()) {
+            updateSession({
+              id: user.id,
+              name: user.fullName || user.username,
+              role: resolvedRole,
+              username: user.username,
+              email: user.email,
+              phoneNumber: user.phoneNumber ?? null,
+              avatarUrl: user.avatarUrl ?? null,
+              status: user.status,
+              isGoogleAuth: user.isGoogleAuth,
+              currentGreenPoints: user.currentGreenPoints,
+              treeLevel: user.treeLevel,
+              totalRecycledKg: user.totalRecycledKg,
+              fromBackend: true,
+            })
+          } else {
+            signIn(user.fullName || user.username, resolvedRole, {
+              id: user.id,
+              username: user.username,
+              email: user.email,
+              phoneNumber: user.phoneNumber ?? null,
+              avatarUrl: user.avatarUrl ?? null,
+              status: user.status,
+              isGoogleAuth: user.isGoogleAuth,
+              currentGreenPoints: user.currentGreenPoints,
+              treeLevel: user.treeLevel,
+              totalRecycledKg: user.totalRecycledKg,
+              fromBackend: true,
+            })
+          }
+          lastSessionVerifiedAt = Date.now()
+          return true
+        }
+      }
+
+      if (res.status === 401 || res.status === 403) {
+        const renewed = await rotateRefreshTokenSingleFlight()
+        if (renewed) {
+          lastSessionVerifiedAt = Date.now()
+          return true
+        }
+        clearAuthStorage()
+        return false
+      }
+
+      return true
+    } catch {
+      // Lỗi mạng (Backend đang tắt) -> giữ nguyên trạng thái UI hiện có
+      return true
+    } finally {
+      sessionVerifyInFlight = null
+    }
+  })()
+
+  return sessionVerifyInFlight
+}
+
 /**
- * Kiểm tra đồng bộ phiên đăng nhập Backend khi khởi động / điều hướng ứng dụng:
- * - Nếu Access Token đã hết hạn nhưng còn Refresh Token hợp lệ -> xoay vòng âm thầm.
- * - Nếu Access Token hết hạn/thiếu mà không còn Refresh Token -> xóa phiên để gỡ Avatar cũ.
- * - Phiên ngoại tuyến (`fromBackend !== true`) vẫn được giữ nguyên.
+ * Kiểm tra & đối chiếu phiên đăng nhập với Backend thông qua HttpOnly Cookie:
+ * - Tự động gọi GET /api/v1/auth/me để lấy đúng vai trò & trạng thái tài khoản từ Backend.
+ * - Nếu Access Token hết hạn (401), xoay vòng âm thầm qua Refresh Token Cookie.
+ * - Phiên ngoại tuyến (`fromBackend !== true` và không có Cookie phiên) vẫn được giữ nguyên.
  */
-export async function ensureActiveAuthSession(): Promise<void> {
+export async function ensureActiveAuthSession(forceVerify = false): Promise<void> {
   if (typeof window === "undefined") return
   const session = getSession()
-  if (!session?.fromBackend) return
+  const hasCookie = hasSessionCookieFlag()
+  if (!session?.fromBackend && !hasCookie) return
 
-  const token = getAccessToken()
-  if (token && !isStoredAccessTokenExpired(10)) return
-
-  if (getRefreshToken()) {
+  const token = readEffectiveAccessToken()
+  if (token && isStoredAccessTokenExpired(10)) {
     await rotateRefreshTokenSingleFlight()
     return
   }
 
-  clearAuthStorage()
+  const shouldVerifyWithBackend =
+    forceVerify ||
+    !token ||
+    !session ||
+    Date.now() - lastSessionVerifiedAt > SESSION_VERIFY_COOLDOWN_MS
+
+  if (shouldVerifyWithBackend) {
+    await verifySessionWithBackend()
+  }
 }
 
 /**
  * Xóa phiên người dùng hiện tại khi Backend trả 401 mà không thể làm mới Access Token.
- * Bảo toàn chế độ ngoại tuyến (`fromBackend !== true` và không có JWT thật).
+ * Bảo toàn chế độ ngoại tuyến (`fromBackend !== true` và không có JWT/Cookie thật).
  */
 export function clearSessionOnUnauthorized(): void {
   if (typeof window === "undefined") return
-  if (getSession()?.fromBackend || getAccessToken()) {
+  if (getSession()?.fromBackend || hasSessionCookieFlag() || isRealJwt(getAccessToken())) {
     clearAuthStorage()
   }
 }
@@ -288,10 +389,11 @@ export async function apiRequest<T>(
   }
 
   const rawCallerAuth = headers.get("Authorization")
+  const rawAccessToken = getAccessToken()
   const token = readEffectiveAccessToken()
   const providedBearer = rawCallerAuth?.replace(/^Bearer\s+/i, "").trim() || null
   const usesActiveSessionAuth =
-    !rawCallerAuth || (Boolean(token) && providedBearer === token)
+    !rawCallerAuth || (Boolean(token) && providedBearer === token) || Boolean(rawAccessToken)
   if (token && !rawCallerAuth) {
     headers.set("Authorization", `Bearer ${token}`)
   }

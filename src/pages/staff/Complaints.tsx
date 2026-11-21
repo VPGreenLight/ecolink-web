@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react"
 import PaginationBar, { extractPagedMeta, paginateItems } from "@/components/PaginationBar"
-import { PageHead, Status, Table, Td } from "@/components/Portal"
+import { PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { COMPLAINTS, type Complaint } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { ApiError } from "@/lib/api"
+import { initApiLoading, initApiState, isSsrSmokeTest } from "@/lib/hydration"
 import {
   COMPLAINT_CATEGORY_LABELS,
   COMPLAINT_OUTCOME_LABELS,
@@ -29,13 +30,15 @@ const OUTCOME_OPTIONS: ComplaintResolutionOutcomeCode[] = [
 
 /** S-05 Xử lý khiếu nại giao dịch (Hồ sơ Trọng tài 360°) & Kiểm duyệt Đánh giá bị báo cáo (U-10, BR-RVW-03). */
 export default function Complaints() {
-  // Chế độ offline dự phòng cho SSR & kiểm thử tĩnh
-  const [offlineList, setOfflineList] = useState<Complaint[]>(COMPLAINTS)
+  // Chế độ offline dự phòng chỉ dùng cho SSR smoke-test hoặc khi mất kết nối
+  const [offlineList, setOfflineList] = useState<Complaint[]>(() =>
+    initApiState([], COMPLAINTS),
+  )
   const [offlineReply, setOfflineReply] = useState<Record<string, string>>({})
 
   // Dữ liệu thật từ PostgreSQL 16 (STT 108, 112-114)
-  const [usingLiveApi, setUsingLiveApi] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [usingLiveApi, setUsingLiveApi] = useState(() => !isSsrSmokeTest())
+  const [loading, setLoading] = useState(() => initApiLoading(true))
   const [tab, setTab] = useState<"complaints" | "reviews">("complaints")
   const [statusFilter, setStatusFilter] = useState<string>("")
   const [categoryFilter, setCategoryFilter] = useState<string>("")
@@ -110,7 +113,10 @@ export default function Complaints() {
   }
 
   useEffect(() => {
-    if (!getAccessToken()) return
+    if (!getAccessToken()) {
+      setLoading(false)
+      return
+    }
     void loadLiveQueue(complaintPage, complaintPageSize, debouncedSearch)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, categoryFilter, complaintPage, complaintPageSize, debouncedSearch])
@@ -423,24 +429,36 @@ export default function Complaints() {
                   {dossier.complaint.status === "Open" || dossier.complaint.status === "Investigating" ? (
                     <form onSubmit={(e) => void handleResolveLive(e)} className="flex flex-col gap-3 border-t border-line-soft pt-4">
                       <h3 className="text-sm font-bold text-ink">Ban hành Phán quyết Trọng tài (BR-DSP-04)</h3>
-                      <select
-                        value={outcome}
-                        onChange={(e) => setOutcome(e.target.value as ComplaintResolutionOutcomeCode)}
-                        className="input h-10"
-                      >
-                        {OUTCOME_OPTIONS.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt} — {COMPLAINT_OUTCOME_LABELS[opt]}
-                          </option>
-                        ))}
-                      </select>
-                      <textarea
-                        className="input h-auto resize-y py-2.5 text-sm"
-                        rows={3}
-                        value={resolutionNote}
-                        onChange={(e) => setResolutionNote(e.target.value)}
-                        placeholder="Nhập biên bản giải trình phán quyết tối thiểu 10 ký tự..."
-                      />
+                      <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+                        <span>
+                          Quyết định phán quyết
+                          <RequiredMark />
+                        </span>
+                        <select
+                          value={outcome}
+                          onChange={(e) => setOutcome(e.target.value as ComplaintResolutionOutcomeCode)}
+                          className="input h-10"
+                        >
+                          {OUTCOME_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt} — {COMPLAINT_OUTCOME_LABELS[opt]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+                        <span>
+                          Biên bản giải trình phán quyết (tối thiểu 10 ký tự)
+                          <RequiredMark />
+                        </span>
+                        <textarea
+                          className="input h-auto resize-y py-2.5 text-sm font-normal"
+                          rows={3}
+                          value={resolutionNote}
+                          onChange={(e) => setResolutionNote(e.target.value)}
+                          placeholder="Nhập biên bản giải trình phán quyết tối thiểu 10 ký tự..."
+                        />
+                      </label>
                       <label className="flex items-center gap-2 text-xs font-medium text-ink">
                         <input
                           type="checkbox"
@@ -481,7 +499,9 @@ export default function Complaints() {
                 </section>
               )}
 
-              {liveComplaints.length === 0 ? (
+              {loading && liveComplaints.length === 0 ? (
+                <TableSkeleton rows={4} />
+              ) : liveComplaints.length === 0 ? (
                 <p className="card px-5 py-8 text-center text-sm text-muted">
                   Chưa có phiếu khiếu nại nào khớp bộ lọc hiện tại.
                 </p>

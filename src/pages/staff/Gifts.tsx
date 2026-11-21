@@ -4,6 +4,7 @@ import SearchFilterBar from "@/components/SearchFilterBar"
 import PaginationBar from "@/components/PaginationBar"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { GIFTS, type Gift } from "@/data/ops"
+import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
 import {
   createStaffGift,
   fetchStaffGifts,
@@ -17,7 +18,6 @@ import {
   type GiftItemDto,
   type RedemptionDto,
 } from "@/lib/gamificationApi"
-import { hasLiveBackendAuth } from "@/lib/session"
 
 const PRESET_REWARD_IMAGES = [
   { label: "Voucher 10%", url: "/assets/rewards/coupon10.jpg" },
@@ -33,7 +33,7 @@ const PRESET_REWARD_IMAGES = [
 
 /** S-10 Quản lý kho quà tặng & xử lý đơn đổi quà. */
 export default function Gifts() {
-  const [liveMode] = useState(() => hasLiveBackendAuth())
+  const [liveMode] = useState(() => !isSsrSmokeTest())
   const [offlineList, setOfflineList] = useState<Gift[]>(GIFTS)
   const [liveGifts, setLiveGifts] = useState<GiftItemDto[]>([])
   const [giftsTotal, setGiftsTotal] = useState(0)
@@ -51,7 +51,7 @@ export default function Gifts() {
   const [redPage, setRedPage] = useState(1)
   const [redPageSize, setRedPageSize] = useState(10)
 
-  const [loading, setLoading] = useState(liveMode)
+  const [loading, setLoading] = useState(() => initApiLoading(true))
 
   const [name, setName] = useState("")
   const [giftType, setGiftType] = useState<"Physical" | "Voucher">("Physical")
@@ -171,7 +171,7 @@ export default function Gifts() {
 
       <form onSubmit={(e) => void add(e)} noValidate className="card flex flex-col gap-5 p-5 md:p-6">
         <div className="grid gap-5 sm:grid-cols-[2fr_1fr_1fr]">
-          <Field label="Tên quà">
+          <Field label="Tên quà" required>
             <input
               className="input"
               value={name}
@@ -179,7 +179,7 @@ export default function Gifts() {
               placeholder="Ví dụ: Bộ dụng cụ thu gom gia đình"
             />
           </Field>
-          <Field label="Điểm đổi">
+          <Field label="Điểm đổi" required>
             <input
               className="input tabular-nums"
               type="number"
@@ -189,7 +189,7 @@ export default function Gifts() {
               onChange={(e) => setCost(Number(e.target.value))}
             />
           </Field>
-          <Field label="Tồn kho">
+          <Field label="Tồn kho" required>
             <input
               className="input tabular-nums"
               type="number"
@@ -203,7 +203,7 @@ export default function Gifts() {
         {liveMode && (
           <div className="flex flex-col gap-4">
             <div className="grid gap-5 sm:grid-cols-3">
-              <Field label="Loại quà">
+              <Field label="Loại quà" required>
                 <select
                   className="input"
                   value={giftType}
@@ -223,7 +223,7 @@ export default function Gifts() {
                   placeholder="Điều kiện sử dụng / chi tiết quà"
                 />
               </Field>
-              <Field label="Nguồn ảnh (URL hoặc tải lên R2)">
+              <Field label="Nguồn ảnh (URL hoặc tải lên R2)" required>
                 <div className="flex items-center gap-2">
                   <input
                     className="input min-w-0 flex-1"

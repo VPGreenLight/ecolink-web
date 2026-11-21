@@ -2,8 +2,9 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
 import PaginationBar, { paginateItems } from "@/components/PaginationBar"
-import { PageHead, Status, Table, Td } from "@/components/Portal"
+import { PageHead, RequiredMark, Status, Table, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   INCOMING,
   STATUS_LABEL,
@@ -14,7 +15,6 @@ import {
 } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
-import { hasLiveBackendAuth } from "@/lib/session"
 import {
   fetchHandoverOrdersResult,
   formatOrderDisplayCode,
@@ -59,9 +59,9 @@ const priceForOrder = (h: IncomingView) => (wasteId: string) =>
  *  không sửa lặng lẽ. */
 export default function Requests() {
   const [list, setList] = useState<IncomingView[]>(() =>
-    hasLiveBackendAuth() ? [] : DEFAULT_OFFLINE_INCOMING,
+    initApiState([], DEFAULT_OFFLINE_INCOMING),
   )
-  const [loading, setLoading] = useState<boolean>(() => hasLiveBackendAuth())
+  const [loading, setLoading] = useState<boolean>(() => initApiLoading(true))
   const [busy, setBusy] = useState("")
   const [flash, setFlash] = useState("")
   const [openMapId, setOpenMapId] = useState<string | null>(null)
@@ -499,7 +499,10 @@ export default function Requests() {
           </div>
 
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
-            Nhóm nguyên nhân
+            <span>
+              Nhóm nguyên nhân
+              <RequiredMark />
+            </span>
             <select
               value={cmpCategory}
               onChange={(e) => setCmpCategory(e.target.value as ComplaintCategoryCode)}
@@ -516,7 +519,10 @@ export default function Requests() {
           </label>
 
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
-            Mô tả sự cố (tối thiểu 15 ký tự)
+            <span>
+              Mô tả sự cố (tối thiểu 15 ký tự)
+              <RequiredMark />
+            </span>
             <textarea
               className="input h-auto resize-y py-2.5 text-sm"
               rows={3}

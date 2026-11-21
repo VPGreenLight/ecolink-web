@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import { CardListSkeleton } from "@/components/Portal"
 import { CTA, MATERIAL_TYPES, PARTNERS, REGIONS, type Partner } from "@/data/partners"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
 import {
   formatDistance,
   formatVnd,
@@ -25,6 +27,7 @@ export default function Partners() {
   const [livePage, setLivePage] = useState(1)
   const [livePageSize] = useState(4)
   const [liveRecyclers, setLiveRecyclers] = useState<CollectionPartnerDto[]>([])
+  const [loadingLive, setLoadingLive] = useState(() => initApiLoading(true))
   const [reviewSummaries, setReviewSummaries] = useState<Record<string, RecyclerReviewsSummaryDto>>({})
   const [openReviewId, setOpenReviewId] = useState<string | null>(null)
 
@@ -62,6 +65,9 @@ export default function Partners() {
       })
       .catch(() => {
         // Giữ danh sách đối tác công nghiệp tĩnh khi chạy offline
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingLive(false)
       })
     return () => controller.abort()
   }, [])
@@ -116,8 +122,9 @@ export default function Partners() {
       </section>
 
       <div className="page flex flex-col gap-6 py-10">
-        {/* Cơ sở thu gom địa phương đang mở cửa trực tuyến từ API U-05 */}
-        {liveRecyclers.length > 0 && (
+        {loadingLive && liveRecyclers.length === 0 ? (
+          <CardListSkeleton count={3} />
+        ) : liveRecyclers.length > 0 ? (
           <section className="flex flex-col gap-4 rounded-2xl border border-brand/25 bg-surface p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -215,9 +222,11 @@ export default function Partners() {
               itemLabel="cơ sở trực tuyến"
             />
           </section>
-        )}
+        ) : null}
 
-        {/* Filter bar */}
+        {/* Filter bar (chỉ hiện danh mục nhà máy tĩnh khi chạy SSR test hoặc API chưa có dữ liệu) */}
+        {(isSsrSmokeTest() || (!loadingLive && liveRecyclers.length === 0)) && (
+        <>
         <div className="flex flex-col gap-3 rounded-xl border border-sage/30 bg-white p-5 shadow-[0_2px_6px_rgba(0,0,0,0.02)] lg:flex-row lg:items-center">
           <input
             type="search"
@@ -291,6 +300,8 @@ export default function Partners() {
             </button>
             .
           </p>
+        )}
+        </>
         )}
 
         {/* CTA banner */}

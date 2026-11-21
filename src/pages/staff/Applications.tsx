@@ -2,16 +2,16 @@ import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
 import PaginationBar, { paginateItems } from "@/components/PaginationBar"
-import { PageHead, Status, Table, Td } from "@/components/Portal"
+import { PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   decideStaffApplication,
   fetchStaffApplications,
   getInitialStaffApplications,
   type StaffApplicationView,
 } from "@/lib/recyclerWorkflowApi"
-import { hasLiveBackendAuth } from "@/lib/session"
 
 /** S-04 Thẩm định hồ sơ đối tác thu mua (kèm bản đồ đối chiếu vị trí ghim kho bãi `BR-MTH-01`).
  *
@@ -20,9 +20,9 @@ import { hasLiveBackendAuth } from "@/lib/session"
  *  Khi phê duyệt, hồ sơ được kích hoạt và hiển thị ngay trên bản đồ tìm kiếm `/map`. */
 export default function Applications() {
   const [list, setList] = useState<StaffApplicationView[]>(() =>
-    hasLiveBackendAuth() ? [] : getInitialStaffApplications(),
+    initApiState([], getInitialStaffApplications()),
   )
-  const [loading, setLoading] = useState<boolean>(() => hasLiveBackendAuth())
+  const [loading, setLoading] = useState<boolean>(() => initApiLoading(true))
   const [refreshing, setRefreshing] = useState(false)
   const [inspectingMapId, setInspectingMapId] = useState<string | null>(null)
   const [rejectingId, setRejectingId] = useState<string | null>(null)
@@ -177,9 +177,7 @@ export default function Applications() {
       <section>
         <h2 className="text-base font-bold text-ink">Chờ thẩm định ({pending.length})</h2>
         {loading ? (
-          <p className="card mt-3 px-5 py-8 text-center text-sm text-muted">
-            Đang tải danh sách hồ sơ từ máy chủ...
-          </p>
+          <TableSkeleton rows={4} />
         ) : pending.length === 0 ? (
           <p className="card mt-3 px-5 py-8 text-center text-sm text-muted">
             Không có hồ sơ nào đang chờ khớp bộ lọc.
@@ -280,7 +278,10 @@ export default function Applications() {
                   {isRejecting && (
                     <div className="flex flex-col gap-2.5 rounded-xl border border-warn/35 bg-surface-2 p-4">
                       <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-ink">
-                        Lý do từ chối hồ sơ {a.id} (cơ sở sẽ nhận được thông báo này)
+                        <span>
+                          Lý do từ chối hồ sơ {a.id} (cơ sở sẽ nhận được thông báo này)
+                          <RequiredMark />
+                        </span>
                         <input
                           className="input bg-white"
                           value={rejectReason}

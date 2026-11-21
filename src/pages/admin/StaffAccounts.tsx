@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
 import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import SearchFilterBar from "@/components/SearchFilterBar"
-import { Field, PageHead, Status, Table, Td } from "@/components/admin/ui"
+import { Field, FormRequiredLegend, PageHead, Status, Table, TableSkeleton, Td } from "@/components/admin/ui"
 import { STAFF, type Staff } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   createAdminStaff,
   getAdminStaffList,
@@ -50,7 +51,8 @@ const FALLBACK_STAFF: StaffRow[] = STAFF.map((s) => ({
  */
 export default function StaffAccounts() {
   const session = useSession()
-  const [list, setList] = useState<StaffRow[]>(FALLBACK_STAFF)
+  const [list, setList] = useState<StaffRow[]>(() => initApiState([], FALLBACK_STAFF))
+  const [loading, setLoading] = useState(() => initApiLoading(true))
   const [isLive, setIsLive] = useState(false)
 
   // Form tạo mới
@@ -101,6 +103,9 @@ export default function StaffAccounts() {
       })
       .catch(() => {
         // Fallback sang STAFF mô phỏng khi chưa có kết nối
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
@@ -289,8 +294,9 @@ export default function StaffAccounts() {
       />
 
       <form onSubmit={add} noValidate className="card flex flex-col gap-5 p-5 md:p-6">
+        <FormRequiredLegend />
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Họ và tên">
+          <Field label="Họ và tên" required>
             <input
               className="input"
               value={name}
@@ -298,7 +304,7 @@ export default function StaffAccounts() {
               placeholder="Nguyễn Văn A"
             />
           </Field>
-          <Field label="Email công việc">
+          <Field label="Email công việc" required>
             <input
               className="input"
               type="email"
@@ -307,7 +313,7 @@ export default function StaffAccounts() {
               placeholder="ten@ecolink.vn"
             />
           </Field>
-          <Field label="Phòng ban">
+          <Field label="Phòng ban" required>
             <input
               className="input"
               value={department}
@@ -315,7 +321,7 @@ export default function StaffAccounts() {
               placeholder="Vận hành & Kiểm duyệt"
             />
           </Field>
-          <Field label="Chức vụ">
+          <Field label="Chức vụ" required>
             <input
               className="input"
               value={position}
@@ -372,6 +378,10 @@ export default function StaffAccounts() {
       </SearchFilterBar>
 
       <div>
+        {loading ? (
+          <TableSkeleton rows={5} />
+        ) : (
+        <>
         <Table head={["Mã NV", "Họ tên", "Email", "Phòng ban", "Số quyền", "Trạng thái", ""]}>
           {pagedStaff.length === 0 ? (
             <tr>
@@ -425,6 +435,8 @@ export default function StaffAccounts() {
           onPageSizeChange={setPageSize}
           itemLabel="nhân viên"
         />
+        </>
+        )}
       </div>
 
       <p className="max-w-[70ch] text-sm leading-6 text-muted">
@@ -444,21 +456,21 @@ export default function StaffAccounts() {
             <h2 className="text-lg font-bold text-ink">
               Cập nhật nhân sự · {editTarget.id}
             </h2>
-            <Field label="Họ và tên">
+            <Field label="Họ và tên" required>
               <input
                 className="input"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
               />
             </Field>
-            <Field label="Phòng ban">
+            <Field label="Phòng ban" required>
               <input
                 className="input"
                 value={editDept}
                 onChange={(e) => setEditDept(e.target.value)}
               />
             </Field>
-            <Field label="Chức vụ">
+            <Field label="Chức vụ" required>
               <input
                 className="input"
                 value={editPos}
@@ -513,7 +525,7 @@ export default function StaffAccounts() {
                 ? `Khoá nhân viên ${lockTarget.name}`
                 : `Mở khoá nhân viên ${lockTarget.name}`}
             </h2>
-            <Field label="Lý do kiểm toán (bắt buộc >= 10 ký tự)">
+            <Field label="Lý do kiểm toán (bắt buộc >= 10 ký tự)" required>
               <textarea
                 className="input min-h-[90px] py-2"
                 value={lockReason}

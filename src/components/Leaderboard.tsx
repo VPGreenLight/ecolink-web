@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { fmt, LEADERBOARD, type Rank } from "@/data/rewards"
 import { fetchLeaderboard, type LeaderboardCycleDto } from "@/lib/gamificationApi"
-import { hasLiveBackendAuth } from "@/lib/session"
+import { initApiLoading, initApiState, isSsrSmokeTest } from "@/lib/hydration"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
@@ -53,18 +53,18 @@ function daysRemaining(endsAt?: string | null) {
 
 /** Bảng xếp hạng theo điểm xếp hạng — áp dụng cho cả Người dân và Người thu gom (BR-GAM-07: đổi quà không làm tụt hạng). */
 export default function Leaderboard() {
-  const [liveAuth] = useState(() => hasLiveBackendAuth())
+  const [liveAuth] = useState(() => !isSsrSmokeTest())
   const [roleTab, setRoleTab] = useState<RoleTab>("all")
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
 
-  const [rows, setRows] = useState<BoardRow[]>(() => (liveAuth ? [] : LEADERBOARD))
+  const [rows, setRows] = useState<BoardRow[]>(() => initApiState([], LEADERBOARD))
   const [cycle, setCycle] = useState<LeaderboardCycleDto | null>(null)
   const [recentFinalized, setRecentFinalized] = useState<LeaderboardCycleDto[]>([])
   const [myEntry, setMyEntry] = useState<BoardRow | null>(null)
-  const [loading, setLoading] = useState(liveAuth)
+  const [loading, setLoading] = useState(() => initApiLoading(true))
 
   useEffect(() => {
     let active = true

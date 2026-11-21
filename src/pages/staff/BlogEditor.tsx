@@ -4,6 +4,7 @@ import { PageHead, Field, Status, Table, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { POSTS, type Post } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
 import {
   createStaffBlog,
   deleteStaffBlog,
@@ -17,7 +18,6 @@ import {
   uploadBlogMedia,
   type BlogPostSummaryDto,
 } from "@/lib/blogApi"
-import { hasLiveBackendAuth } from "@/lib/session"
 
 const BLOG_STATUS_META: Record<string, { label: string; tone: "wait" | "ok" | "off" | "todo" }> = {
   Draft: { label: "Bản nháp", tone: "todo" },
@@ -27,10 +27,10 @@ const BLOG_STATUS_META: Record<string, { label: string; tone: "wait" | "ok" | "o
 
 /** S-08 Soạn thảo bài đăng Blog. */
 export default function BlogEditor() {
-  const [liveMode] = useState(() => hasLiveBackendAuth())
+  const [liveMode] = useState(() => !isSsrSmokeTest())
   const [offlineList, setOfflineList] = useState<Post[]>(POSTS)
   const [liveList, setLiveList] = useState<BlogPostSummaryDto[]>([])
-  const [loading, setLoading] = useState(liveMode)
+  const [loading, setLoading] = useState(() => initApiLoading(true))
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [rejectionFeedback, setRejectionFeedback] = useState<string | null>(null)
@@ -249,7 +249,7 @@ export default function BlogEditor() {
           </div>
         )}
 
-        <Field label="Tiêu đề" hint="Từ 10 đến 150 ký tự.">
+        <Field label="Tiêu đề" required hint="Từ 10 đến 150 ký tự.">
           <input
             className="input"
             value={title}
@@ -261,7 +261,7 @@ export default function BlogEditor() {
           />
         </Field>
 
-        <Field label="Tóm tắt" hint="Hai ba câu, hiện ở đầu bài và trong danh sách bài mới.">
+        <Field label="Tóm tắt" required hint="Hai ba câu, hiện ở đầu bài và trong danh sách bài mới.">
           <textarea
             className="input h-auto resize-y py-3 leading-6"
             rows={2}
@@ -276,7 +276,7 @@ export default function BlogEditor() {
 
         {liveMode && (
           <>
-            <Field label="Nội dung bài viết" hint="Bắt buộc khi gửi Admin duyệt (hỗ trợ văn bản hoặc HTML).">
+            <Field label="Nội dung bài viết" required hint="Bắt buộc khi gửi Admin duyệt (hỗ trợ văn bản hoặc HTML).">
               <textarea
                 className="input h-auto resize-y py-3 leading-6"
                 rows={6}
@@ -290,7 +290,7 @@ export default function BlogEditor() {
             </Field>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="URL ảnh bìa (hoặc tải ảnh)" hint="Bắt buộc khi gửi duyệt (.jpg, .png, .webp).">
+              <Field label="URL ảnh bìa (hoặc tải ảnh)" required hint="Bắt buộc khi gửi duyệt (.jpg, .png, .webp).">
                 <div className="flex flex-col gap-2">
                   <input
                     className="input"

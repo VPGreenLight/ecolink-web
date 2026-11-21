@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
 import PaginationBar, { paginateItems } from "@/components/PaginationBar"
-import { PageHead, Status, Table, Td } from "@/components/Portal"
+import { PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { ACCOUNTS, type Account } from "@/data/ops"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   deactivateAccount,
   getStaffAccountDetail,
@@ -66,7 +67,8 @@ const FALLBACK_ROWS: AccountRow[] = ACCOUNTS.map((a) => ({
  * và BR-ADM-04 (chỉ vô hiệu hoá mềm khi chưa có giao dịch hoàn tất để giữ đối soát).
  */
 export default function Accounts() {
-  const [list, setList] = useState<AccountRow[]>(FALLBACK_ROWS)
+  const [list, setList] = useState<AccountRow[]>(() => initApiState([], FALLBACK_ROWS))
+  const [loading, setLoading] = useState(() => initApiLoading(true))
   const [isLive, setIsLive] = useState(false)
   const [role, setRole] = useState<"all" | "user" | "recycler">("all")
   const [q, setQ] = useState("")
@@ -98,6 +100,9 @@ export default function Accounts() {
       })
       .catch(() => {
         // Fallback sang dữ liệu mô phỏng khi chưa đăng nhập hoặc ngoại tuyến
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
@@ -316,6 +321,9 @@ export default function Accounts() {
 
       <div className="grid gap-5 lg:grid-cols-[1.65fr_1fr]">
         <div className="min-w-0">
+          {loading ? (
+            <TableSkeleton rows={5} />
+          ) : (
           <Table
             head={["Mã", "Tên", "Vai trò", "Khu vực", "Giao dịch", "Cảnh cáo", "Trạng thái", ""]}
           >
@@ -371,6 +379,7 @@ export default function Accounts() {
               ))
             )}
           </Table>
+          )}
           <PaginationBar
             page={page}
             pageSize={pageSize}
@@ -507,7 +516,10 @@ export default function Accounts() {
             </div>
 
             <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-ink">
-              Lý do ghi vào Nhật ký kiểm toán (bắt buộc &ge; 10 ký tự)
+              <span>
+                Lý do ghi vào Nhật ký kiểm toán (bắt buộc &ge; 10 ký tự)
+                <RequiredMark />
+              </span>
               <textarea
                 className="input min-h-[96px] py-2"
                 value={reasonText}

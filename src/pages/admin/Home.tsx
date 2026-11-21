@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { ColumnChart, PageHead, Stat, StatRow, Table, Td } from "@/components/admin/ui"
 import { DATASET, STATS, fmtInt, fmtVnd } from "@/data/ops"
 import { getAdminAnalyticsCharts, getAdminKpiSummary } from "@/lib/governanceApi"
+import { initApiState } from "@/lib/hydration"
 
 /**
  * A-01 Dashboard và thống kê điều hành cấp cao.
@@ -14,23 +15,44 @@ import { getAdminAnalyticsCharts, getAdminKpiSummary } from "@/lib/governanceApi
  */
 export default function AdminHome() {
   const [period, setPeriod] = useState<"7d" | "30d" | "90d">("30d")
-  const [summary, setSummary] = useState({
-    users: STATS.users,
-    recyclers: STATS.recyclers,
-    handovers: STATS.handovers30d,
-    volume: STATS.volume30d,
-    gross: STATS.gross30d,
-    fee: STATS.fee30d,
-    aiAccuracy: DATASET.accuracy,
-    pending: {
-      aiCases: STATS.pending.aiCases,
-      applications: STATS.pending.applications,
-      complaints: STATS.pending.complaints,
-      posts: STATS.pending.posts,
-    },
-  })
-  const [trend, setTrend] = useState(STATS.trend)
-  const [aiByGroup, setAiByGroup] = useState(STATS.aiByGroup)
+  const [summary, setSummary] = useState(() =>
+    initApiState(
+      {
+        users: 0,
+        recyclers: 0,
+        handovers: 0,
+        volume: 0,
+        gross: 0,
+        fee: 0,
+        aiAccuracy: 0,
+        pending: {
+          aiCases: 0,
+          applications: 0,
+          complaints: 0,
+          posts: 0,
+        },
+      },
+      {
+        users: STATS.users,
+        recyclers: STATS.recyclers,
+        handovers: STATS.handovers30d,
+        volume: STATS.volume30d,
+        gross: STATS.gross30d,
+        fee: STATS.fee30d,
+        aiAccuracy: DATASET.accuracy,
+        pending: {
+          aiCases: STATS.pending.aiCases,
+          applications: STATS.pending.applications,
+          complaints: STATS.pending.complaints,
+          posts: STATS.pending.posts,
+        },
+      },
+    ),
+  )
+  const [trend, setTrend] = useState(() => initApiState<typeof STATS.trend>([], STATS.trend))
+  const [aiByGroup, setAiByGroup] = useState(() =>
+    initApiState<typeof STATS.aiByGroup>([], STATS.aiByGroup),
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -38,27 +60,24 @@ export default function AdminHome() {
       .then((res) => {
         if (cancelled || !res.data) return
         const d = res.data
-        // Chỉ ghi đè nếu CSDL thực đã phát sinh dữ liệu người dùng/giao dịch
-        if (d.totalCitizens + d.activeRecyclers > 0) {
-          setSummary({
-            users: d.totalCitizens,
-            recyclers: d.activeRecyclers,
-            handovers: d.completedHandovers,
-            volume: Math.round(d.recycledWeightKg),
-            gross: Math.round(d.grossMerchandiseValueVnd),
-            fee: Math.round(d.platformFeeRevenueVnd + d.vietQrServiceRevenueVnd),
-            aiAccuracy: d.aiAccuracyPercent || DATASET.accuracy,
-            pending: {
-              aiCases: d.pending.aiMisclassifiedCases,
-              applications: d.pending.recyclerApplications,
-              complaints: d.pending.openComplaints,
-              posts: d.pending.pendingBlogPosts,
-            },
-          })
-        }
+        setSummary({
+          users: d.totalCitizens,
+          recyclers: d.activeRecyclers,
+          handovers: d.completedHandovers,
+          volume: Math.round(d.recycledWeightKg),
+          gross: Math.round(d.grossMerchandiseValueVnd),
+          fee: Math.round(d.platformFeeRevenueVnd + d.vietQrServiceRevenueVnd),
+          aiAccuracy: d.aiAccuracyPercent ?? 0,
+          pending: {
+            aiCases: d.pending.aiMisclassifiedCases,
+            applications: d.pending.recyclerApplications,
+            complaints: d.pending.openComplaints,
+            posts: d.pending.pendingBlogPosts,
+          },
+        })
       })
       .catch(() => {
-        // Giữ dữ liệu mặc định khi chưa đăng nhập hoặc ngoại tuyến
+        // Giữ nguyên khi ngoại tuyến
       })
 
     return () => {
@@ -71,10 +90,7 @@ export default function AdminHome() {
     getAdminAnalyticsCharts()
       .then((res) => {
         if (cancelled || !res.data) return
-        if (
-          res.data.monthlyTrends?.length > 0 &&
-          res.data.monthlyTrends.some((m) => m.completedHandovers > 0)
-        ) {
+        if (Array.isArray(res.data.monthlyTrends)) {
           setTrend(
             res.data.monthlyTrends.map((m) => ({
               month: m.monthLabel,
@@ -83,10 +99,7 @@ export default function AdminHome() {
             })),
           )
         }
-        if (
-          res.data.aiByGroup?.length > 0 &&
-          res.data.aiByGroup.some((g) => g.totalScans > 0)
-        ) {
+        if (Array.isArray(res.data.aiByGroup)) {
           setAiByGroup(
             res.data.aiByGroup.map((g) => ({
               group: g.groupName,

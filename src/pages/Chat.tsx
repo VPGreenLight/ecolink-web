@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import type * as signalR from "@microsoft/signalr"
-import { PageHead } from "@/components/Portal"
+import { PageHead, RequiredMark } from "@/components/Portal"
 import { ADDRESS } from "@/data/map"
 import {
   TIME_SLOTS,
@@ -315,10 +315,35 @@ export default function Chat() {
     }
   }, [currentOrderId, ordersLoaded])
 
-  // Tự động cuộn xuống cuối khi có tin nhắn mới
+  // Tham chiếu khung cuộn tin nhắn (cuộn nội bộ trong khung, không kéo trôi window)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const lastScrollSigRef = useRef<string>("")
+
+  // Giữ cửa sổ trình duyệt ở đầu trang khi mới điều hướng vào /chat
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [thread?.messages.items, partnerTyping])
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "auto" })
+    }
+  }, [])
+
+  // Tự động cuộn bên trong khung chat khi đổi đơn hoặc có tin nhắn mới
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+    const items = thread?.messages.items ?? []
+    const lastId = items[items.length - 1]?.id ?? ""
+    const nextSig = `${currentOrderId ?? "offline"}|${items.length}|${lastId}|${partnerTyping ? "1" : "0"}`
+    if (lastScrollSigRef.current === nextSig) return
+    const switchedOrder = !lastScrollSigRef.current.startsWith(
+      `${currentOrderId ?? "offline"}|`,
+    )
+    lastScrollSigRef.current = nextSig
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: switchedOrder ? "auto" : "smooth",
+    })
+  }, [currentOrderId, thread?.messages.items, partnerTyping])
 
   // 3. Khởi tạo kết nối thời gian thực SignalR Hub ngay khi mở trang Chat (kể cả khi danh sách đơn đang trống)
   useEffect(() => {
@@ -909,7 +934,10 @@ export default function Chat() {
     if (statusLower === "completed") {
       return isRecycler
         ? { to: "/recycler/requests", label: "Quay lại danh sách đơn" }
-        : { to: "/user/transactions", label: "Xem lịch sử & Đánh giá sao" }
+        : {
+            to: `/user/receipt?orderId=${encodeURIComponent(currentOrderId)}`,
+            label: "Xem biên nhận & Đánh giá sao",
+          }
     }
     return {
       to: createHandoverForPartnerUrl,
@@ -918,7 +946,7 @@ export default function Chat() {
   })()
 
   return (
-    <div className="page flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <PageHead
         eyebrow="THƯƠNG LƯỢNG THỜI GIAN THỰC (U-08 & R-05)"
         title={`Chat thương lượng — ${partnerDisplayName}`}
@@ -1137,7 +1165,10 @@ export default function Chat() {
           ))}
 
         {/* 2. Cuộc hội thoại tin nhắn */}
-        <div className="flex h-[480px] flex-col gap-3 overflow-y-auto p-5 bg-surface-1">
+        <div
+          ref={messagesContainerRef}
+          className="flex h-[480px] flex-col gap-3 overflow-y-auto p-5 bg-surface-1"
+        >
           {loading ? (
             <div className="flex h-full items-center justify-center text-sm text-muted">
               Đang tải lịch sử thương lượng...
@@ -1553,7 +1584,7 @@ export default function Chat() {
             <form onSubmit={handleSendProposal} className="flex flex-col gap-4 text-xs">
               <div>
                 <label className="font-semibold text-ink block mb-1">
-                  Loại phế liệu thu gom:
+                  Loại phế liệu thu gom: <RequiredMark />
                 </label>
                 <select
                   value={proposalCategory}
@@ -1570,7 +1601,7 @@ export default function Chat() {
 
               <div>
                 <label className="font-semibold text-ink block mb-1">
-                  Đơn giá thu mua đề xuất (VNĐ/kg):
+                  Đơn giá thu mua đề xuất (VNĐ/kg): <RequiredMark />
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -1599,7 +1630,7 @@ export default function Chat() {
 
               <div>
                 <label className="font-semibold text-ink block mb-1">
-                  Khối lượng ước tính (kg):
+                  Khối lượng ước tính (kg): <RequiredMark />
                 </label>
                 <input
                   type="number"
@@ -1614,7 +1645,7 @@ export default function Chat() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="font-semibold text-ink block mb-1">
-                    Ngày hẹn thu gom:
+                    Ngày hẹn thu gom: <RequiredMark />
                   </label>
                   <input
                     type="date"
@@ -1640,7 +1671,7 @@ export default function Chat() {
 
                 <div>
                   <label className="font-semibold text-ink block mb-1">
-                    Khung giờ hẹn thu gom mong muốn:
+                    Khung giờ hẹn thu gom mong muốn: <RequiredMark />
                   </label>
                   <select
                     value={proposalSlot}
@@ -1671,7 +1702,7 @@ export default function Chat() {
 
               <div>
                 <label className="font-semibold text-ink block mb-1">
-                  Địa điểm thu gom / Điểm hẹn đầu ngõ:
+                  Địa điểm thu gom / Điểm hẹn đầu ngõ: <RequiredMark />
                 </label>
                 <input
                   type="text"

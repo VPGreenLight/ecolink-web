@@ -5,6 +5,7 @@ import LocationPinPickerMap from "@/components/LocationPinPickerMap"
 import { PageHead, Stat, Status } from "@/components/Portal"
 import SponsoredAdBanner from "@/components/SponsoredAdBanner"
 import VietQrCheckoutModal from "@/components/VietQrCheckoutModal"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import { MY_HANDOVERS, type HandoverStatus } from "@/data/handover"
 import { FLOWS } from "@/data/cashflow"
 import { STATS, fmtVnd } from "@/data/ops"
@@ -37,6 +38,17 @@ type UpcomingRow = {
   status: HandoverStatus
   pickupLat?: number
   pickupLng?: number
+}
+
+function getTierRank(
+  tierOrCode?: string | null,
+  isDefaultFree = false,
+  requiresVerifiedKyb = false,
+): number {
+  const code = (tierOrCode ?? "").trim().toUpperCase()
+  if (requiresVerifiedKyb || code === "PRO") return 2
+  if (isDefaultFree || !code || code === "BASIC") return 0
+  return 1
 }
 
 /** R-02 Bật/tắt trạng thái hoạt động trực tiếp trên bản đồ (`/map`) + R-01 Cập nhật ghim kho bãi.
@@ -83,8 +95,8 @@ export default function RecyclerHome() {
   )
 
   const entitlements = useEntitlements()
-  const [packages, setPackages] = useState<ServicePackageCatalogDto[]>(
-    () => CANONICAL_FALLBACK_PACKAGES,
+  const [packages, setPackages] = useState<ServicePackageCatalogDto[]>(() =>
+    initApiState([], CANONICAL_FALLBACK_PACKAGES),
   )
   const [activeSubs, setActiveSubs] = useState<ActiveSubscriptionDto[]>([])
   const [recentOrders, setRecentOrders] = useState<PayInOrderDto[]>([])
@@ -97,13 +109,13 @@ export default function RecyclerHome() {
   const [draftLat, setDraftLat] = useState(21.0182)
   const [draftLng, setDraftLng] = useState(105.5345)
   const [draftAddress, setDraftAddress] = useState(() =>
-    liveAuth ? "" : "123 Đường Nguyễn Hữu Cảnh, P. 22, Bình Thạnh, TP.HCM",
+    initApiState("", "123 Đường Nguyễn Hữu Cảnh, P. 22, Bình Thạnh, TP.HCM"),
   )
   const [savingPin, setSavingPin] = useState(false)
 
-  const [loadingHandovers, setLoadingHandovers] = useState<boolean>(() => liveAuth)
+  const [loadingHandovers, setLoadingHandovers] = useState<boolean>(() => initApiLoading(true))
   const [handovers, setHandovers] = useState<UpcomingRow[]>(() =>
-    liveAuth ? [] : MY_HANDOVERS.filter((h) => h.status !== "done"),
+    initApiState([], MY_HANDOVERS.filter((h) => h.status !== "done")),
   )
 
   const payin = liveAuth
@@ -228,13 +240,26 @@ export default function RecyclerHome() {
 
   const isKybVerified =
     String(profile.verificationStatus ?? "").toLowerCase() === "verified"
+  const currentTierRank = getTierRank(entitlements.currentTier)
 
   const handleBuyPackage = async (pkg: ServicePackageCatalogDto) => {
+    const pkgRank = getTierRank(pkg.packageCode, pkg.isDefaultFree, pkg.requiresVerifiedKyb)
+    const isPro = pkg.requiresVerifiedKyb || pkg.packageCode.toUpperCase() === "PRO"
+    const isCurrent = !pkg.isIncludedInHigherPlan && currentTierRank === pkgRank && (pkg.isCurrentPlan || !pkg.isDefaultFree)
+
     if (pkg.isDefaultFree) return
-    if ((pkg.requiresVerifiedKyb || pkg.packageCode === "PRO") && (!isKybVerified || !pkg.isEligible)) {
+    if (pkg.isIncludedInHigherPlan || currentTierRank > pkgRank) {
+      setPkgErr(`Tài khoản đang sử dụng gói ${entitlements.currentTier} cao hơn (đã bao gồm quyền lợi này).`)
+      return
+    }
+    if (isPro && isCurrent) {
+      setPkgErr("Gói Tích xanh Pro không hỗ trợ gia hạn cộng dồn trước hạn. Vui lòng xác thực lại sau khi hết kỳ.")
+      return
+    }
+    if (isPro && (!isKybVerified || !pkg.isEligible)) {
       setPkgErr(
         pkg.ineligibleReason ||
-          "Cơ sở thu mua cần hoàn tất xác minh hồ sơ KYB trước khi mua gói Tích xanh & Ghim nổi bật.",
+          "Cơ sở thu mua cần hoàn tất xác minh hồ sơ KYB và đạt đầy đủ tiêu chí uy tín trước khi mua gói Pro.",
       )
       return
     }
@@ -556,13 +581,17 @@ export default function RecyclerHome() {
 
         <div className="grid gap-4 lg:grid-cols-3">
           {packages.map((pkg) => {
-            const isBasic = pkg.isDefaultFree || pkg.packageCode === "BASIC"
-            const isPro = pkg.packageCode === "PRO"
-            const blockedByKyb =
-              isPro && (!isKybVerified || pkg.isEligible === false)
+            const isBasic = pkg.isDefaultFree || pkg.packageCode.toUpperCase() === "BASIC"
+            const isPro = pkg.requiresVerifiedKyb || pkg.packageCode.toUpperCase() === "PRO"
+            const pkgRank = getTierRank(pkg.packageCode, pkg.isDefaultFree, pkg.requiresVerifiedKyb)
+            const isIncludedInHigherPlan =
+              Boolean(pkg.isIncludedInHigherPlan) || currentTierRank > pkgRank
             const isCurrent =
-              pkg.isCurrentPlan ||
-              entitlements.currentTier.toUpperCase() === pkg.packageCode.toUpperCase()
+              !isIncludedInHigherPlan &&
+              (pkg.isCurrentPlan || currentTierRank === pkgRank)
+            const blockedPro =
+              isPro && !isCurrent && (!isKybVerified || pkg.isEligible === false)
+            const proEval = isPro ? pkg.proEligibility : null
 
             return (
               <article
@@ -617,10 +646,68 @@ export default function RecyclerHome() {
                       </li>
                     )}
                   </ul>
+
+                  {isPro && (
+                    <div className="mt-3 rounded-xl border border-amber-200/80 bg-white/85 p-3 text-[11px] leading-4">
+                      <p className="font-bold text-ink">
+                        Điều kiện xét duyệt Pro{proEval?.isReRegistration ? " (Đăng ký lại)" : ""}
+                      </p>
+                      <ul className="mt-1.5 space-y-1 text-body">
+                        <li className="flex items-start gap-1.5">
+                          <span className={proEval ? (proEval.isKybAndProfileValid ? "text-brand font-bold" : "text-warn font-bold") : isKybVerified ? "text-brand font-bold" : "text-warn font-bold"}>
+                            {proEval ? (proEval.isKybAndProfileValid ? "✓" : "✕") : isKybVerified ? "✓" : "✕"}
+                          </span>
+                          <span>
+                            KYB &amp; Hồ sơ:{" "}
+                            {proEval?.requiresProfileReverification
+                              ? "Cần cập nhật lại sau cảnh cáo"
+                              : (proEval?.isKybAndProfileValid ?? isKybVerified)
+                                ? "Đã xác minh (Verified)"
+                                : "Chưa xác minh KYB"}
+                          </span>
+                        </li>
+                        <li className="flex items-start gap-1.5">
+                          <span className={proEval ? (proEval.isWarningLimitOk ? "text-brand font-bold" : "text-warn font-bold") : "text-brand font-bold"}>
+                            {proEval ? (proEval.isWarningLimitOk ? "✓" : "✕") : "✓"}
+                          </span>
+                          <span>
+                            Cảnh cáo: {proEval?.currentWarningCount ?? 0}/{proEval?.maxAllowedWarnings ?? 5} lần (Tối đa 5)
+                          </span>
+                        </li>
+                        <li className="flex items-start gap-1.5">
+                          <span className={proEval ? (proEval.isPositiveFeedbackMet ? "text-brand font-bold" : "text-warn font-bold") : "text-brand font-bold"}>
+                            {proEval ? (proEval.isPositiveFeedbackMet ? "✓" : "✕") : "✓"}
+                          </span>
+                          <span>
+                            Đánh giá:{" "}
+                            {proEval && proEval.totalReviews > 0
+                              ? `${proEval.averageRating.toFixed(1)}/5.0 ★ (${proEval.totalReviews} lượt · >= 4.0)`
+                              : proEval?.isReRegistration
+                                ? "Tái đăng ký cần >= 1 đánh giá >= 4.0 ★"
+                                : "Đạt chuẩn (Duy trì >= 4.0 ★)"}
+                          </span>
+                        </li>
+                        <li className="flex items-start gap-1.5">
+                          <span className={(proEval ? proEval.isNotCurrentlyActivePro : !isCurrent) ? "text-brand font-bold" : "text-amber-700 font-bold"}>
+                            {(proEval ? proEval.isNotCurrentlyActivePro : !isCurrent) ? "✓" : "•"}
+                          </span>
+                          <span>
+                            {(proEval ? proEval.isNotCurrentlyActivePro : !isCurrent)
+                              ? "Sẵn sàng đăng ký chu kỳ mới"
+                              : "Đang trong kỳ hiệu lực (Không cộng dồn)"}
+                          </span>
+                        </li>
+                      </ul>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-4 border-t border-line-soft pt-3">
-                  {isBasic ? (
+                  {isIncludedInHigherPlan ? (
+                    <p className="rounded-lg border border-brand/20 bg-brand/6 px-3 py-2 text-center text-xs font-semibold text-brand-deep">
+                      Đã bao gồm trong gói {entitlements.currentTier} hiện tại
+                    </p>
+                  ) : isBasic ? (
                     <button
                       type="button"
                       disabled
@@ -628,15 +715,23 @@ export default function RecyclerHome() {
                     >
                       Gói mặc định của hệ thống
                     </button>
-                  ) : blockedByKyb ? (
+                  ) : isPro && isCurrent ? (
+                    <div className="rounded-lg border border-amber-300/80 bg-amber-100/60 px-3 py-2 text-center text-[11px] leading-4 font-semibold text-amber-950">
+                      Đang hiệu lực
+                      {pkg.currentActiveExpiresAt
+                        ? ` đến ${new Date(pkg.currentActiveExpiresAt).toLocaleDateString("vi-VN")}`
+                        : ""}
+                      {" · "}Không gia hạn cộng dồn (xét duyệt lại khi hết kỳ)
+                    </div>
+                  ) : blockedPro ? (
                     <button
                       type="button"
                       disabled
-                      title="Cần xác minh KYB trước khi nâng cấp gói Pro"
+                      title={pkg.ineligibleReason || "Chưa đáp ứng đủ điều kiện đăng ký gói Pro"}
                       className="btn-outline inline-flex h-9 w-full cursor-not-allowed items-center justify-center gap-1.5 text-xs opacity-75"
                     >
                       <Lock className="size-3.5" />
-                      Chưa đủ điều kiện KYB
+                      Chưa đủ điều kiện lên Pro
                     </button>
                   ) : (
                     <button
@@ -648,7 +743,7 @@ export default function RecyclerHome() {
                       <QrCode className="size-3.5" />
                       {buyingCode === pkg.packageCode
                         ? "Đang tạo VietQR..."
-                        : isCurrent
+                        : isCurrent && !isPro
                           ? `Gia hạn cộng dồn (+${pkg.durationDays} ngày)`
                           : `Mua gói ${pkg.packageCode} qua VietQR`}
                     </button>

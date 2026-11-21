@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
-import { PageHead, Empty, Field } from "@/components/Portal"
+import { CardListSkeleton, Empty, Field, PageHead } from "@/components/Portal"
 import { WASTE_GROUPS, WASTES, VND, type Waste as WasteItem } from "@/data/waste"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   fetchSortingRules,
   getCategoryMeta,
@@ -25,24 +26,28 @@ const WASTE_TO_API_CATEGORY: Record<string, string> = {
   organic: "trash",
 }
 
+const SEED_ITEMS: ExtendedWasteItem[] = WASTES.map((w) => ({
+  ...w,
+  categoryCode: WASTE_TO_API_CATEGORY[w.id],
+}))
+
 /** U-03 Tìm kiếm & xem chi tiết loại rác — bổ sung đồng bộ từ Rule Engine API
  *  và nối thẳng sang tìm cơ sở thu mua trên bản đồ `/map?category=...`. */
 export default function Waste() {
   const [q, setQ] = useState("")
   const [group, setGroup] = useState<string>(WASTE_GROUPS[0])
   const [only, setOnly] = useState<"all" | "yes">("all")
-  const [items, setItems] = useState<ExtendedWasteItem[]>(() =>
-    WASTES.map((w) => ({
-      ...w,
-      categoryCode: WASTE_TO_API_CATEGORY[w.id],
-    })),
-  )
+  const [items, setItems] = useState<ExtendedWasteItem[]>(() => initApiState([], SEED_ITEMS))
+  const [loading, setLoading] = useState(() => initApiLoading(true))
 
   useEffect(() => {
     const controller = new AbortController()
     fetchSortingRules(controller.signal)
       .then((rules) => {
-        if (rules.length === 0) return
+        if (rules.length === 0) {
+          setItems(SEED_ITEMS)
+          return
+        }
         const byCode = new Map(
           rules.map((r) => [r.categoryCode.toLowerCase(), r] as const),
         )
@@ -64,7 +69,11 @@ export default function Waste() {
         )
       })
       .catch(() => {
-        // Giữ dữ liệu tĩnh khi chạy offline
+        // Fallback nếu Backend chưa bật
+        setItems(SEED_ITEMS)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
   }, [])
@@ -129,7 +138,9 @@ export default function Waste() {
         </label>
       </div>
 
-      {list.length === 0 ? (
+      {loading ? (
+        <CardListSkeleton count={4} />
+      ) : list.length === 0 ? (
         <Empty>
           Không có loại rác nào khớp bộ lọc. Bạn có thể chụp ảnh để AI nhận diện
           giúp.

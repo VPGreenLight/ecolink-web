@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react"
 import { CheckCircle2, Lock, Pencil, Plus, RefreshCw, ShieldAlert, X } from "lucide-react"
-import { Field, PageHead, Stat, Status, Table, Td } from "@/components/admin/ui"
+import { Field, FormRequiredLegend, PageHead, Stat, Status, Table, Td } from "@/components/admin/ui"
 import { fmtInt, fmtVnd } from "@/data/ops"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   CANONICAL_FALLBACK_PACKAGES,
   createAdminServicePackage,
@@ -97,11 +98,11 @@ const ROLE_LABEL: Record<string, string> = {
  *   - `PUT /api/v1/admin/service-packages/{packageId}` (STT 125)
  *   - `PATCH /api/v1/admin/service-packages/{packageId}/status` (STT 126) */
 export default function Fees() {
-  const [packages, setPackages] = useState<AdminServicePackageDto[]>(
-    () => CANONICAL_FALLBACK_PACKAGES,
+  const [packages, setPackages] = useState<AdminServicePackageDto[]>(() =>
+    initApiState([], CANONICAL_FALLBACK_PACKAGES),
   )
   const [roleFilter, setRoleFilter] = useState<string>("")
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(() => initApiLoading(true))
   const [flash, setFlash] = useState("")
   const [errMsg, setErrMsg] = useState("")
 
@@ -523,9 +524,10 @@ export default function Fees() {
             <h2 className="mt-1 text-lg font-bold text-ink">
               {editing.packageId ? `Cập nhật gói ${editing.packageCode}` : "Tạo gói dịch vụ mới"}
             </h2>
+            <FormRequiredLegend className="mt-1" />
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Field label="Mã gói (packageCode)">
+              <Field label="Mã gói (packageCode)" required>
                 <input
                   className="input font-mono uppercase"
                   value={editing.packageCode}
@@ -537,7 +539,7 @@ export default function Fees() {
                 />
               </Field>
 
-              <Field label="Tên hiển thị">
+              <Field label="Tên hiển thị" required>
                 <input
                   className="input"
                   value={editing.packageName}
@@ -546,7 +548,7 @@ export default function Fees() {
                 />
               </Field>
 
-              <Field label="Đối tượng áp dụng">
+              <Field label="Đối tượng áp dụng" required>
                 <select
                   className="input"
                   value={editing.targetRole}
@@ -564,7 +566,7 @@ export default function Fees() {
                 </select>
               </Field>
 
-              <Field label="Hạng quyền lợi (tierName)">
+              <Field label="Hạng quyền lợi (tierName)" required>
                 <select
                   className="input"
                   value={editing.tierName}
@@ -579,6 +581,7 @@ export default function Fees() {
 
               <Field
                 label="Đơn giá (VNĐ)"
+                required
                 hint={editing.isDefaultFree ? "Gói BASIC cố định 0 đ" : "Tối thiểu 2.000 VNĐ cho VietQR PayOS"}
               >
                 <input
@@ -594,6 +597,7 @@ export default function Fees() {
 
               <Field
                 label="Chu kỳ hiệu lực (Ngày)"
+                required
                 hint={editing.isDefaultFree ? "Gói mặc định = 0 ngày" : "Từ 1 đến 730 ngày"}
               >
                 <input
@@ -607,7 +611,7 @@ export default function Fees() {
                 />
               </Field>
 
-              <Field label="Hệ số điểm điểm danh">
+              <Field label="Hệ số điểm điểm danh" required>
                 <input
                   type="number"
                   step="0.1"
@@ -621,7 +625,7 @@ export default function Fees() {
                 />
               </Field>
 
-              <Field label="Điểm cộng ưu tiên bản đồ">
+              <Field label="Điểm cộng ưu tiên bản đồ" required>
                 <input
                   type="number"
                   min="0"

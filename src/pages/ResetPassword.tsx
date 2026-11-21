@@ -1,6 +1,7 @@
 import { useState } from "react"
-import { Link, useSearchParams } from "react-router-dom"
-import { PageHead } from "@/components/Portal"
+import { useSearchParams } from "react-router-dom"
+import { FormRequiredLegend, PageHead, RequiredMark } from "@/components/Portal"
+import { openAuthPopup } from "@/lib/popupAuth"
 import {
   confirmPasswordReset,
   formatAuthError,
@@ -150,8 +151,12 @@ export default function ResetPassword() {
           noValidate
           className="card flex max-w-[520px] flex-col gap-5 p-5 md:p-6"
         >
+          <FormRequiredLegend />
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Email đã đăng ký
+            <span>
+              Email đã đăng ký
+              <RequiredMark />
+            </span>
             <input
               className="input"
               type="email"
@@ -174,9 +179,13 @@ export default function ResetPassword() {
             >
               {submitting ? "Đang gửi..." : "Gửi mã xác thực"}
             </button>
-            <Link to="/login" className="btn-ghost h-11 px-5">
+            <button
+              type="button"
+              onClick={() => openAuthPopup("login")}
+              className="btn-ghost h-11 px-5"
+            >
               Quay lại đăng nhập
-            </Link>
+            </button>
           </div>
           <p className="text-[13px] leading-5 text-muted">
             Mã xác nhận có hiệu lực 15 phút và chỉ sử dụng một lần duy nhất (BR-AUTH-06). Nếu
@@ -191,6 +200,7 @@ export default function ResetPassword() {
           noValidate
           className="card flex max-w-[520px] flex-col gap-5 p-5 md:p-6"
         >
+          <FormRequiredLegend />
           {info && (
             <p
               role="status"
@@ -201,7 +211,10 @@ export default function ResetPassword() {
           )}
 
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Email tài khoản
+            <span>
+              Email tài khoản
+              <RequiredMark />
+            </span>
             <input
               className="input"
               type="email"
@@ -213,7 +226,10 @@ export default function ResetPassword() {
           </label>
 
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Mã xác nhận bảo mật (Token từ Email)
+            <span>
+              Mã xác nhận bảo mật (Token từ Email)
+              <RequiredMark />
+            </span>
             <input
               className="input font-mono text-xs"
               value={code}
@@ -223,7 +239,10 @@ export default function ResetPassword() {
           </label>
 
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Mật khẩu mới
+            <span>
+              Mật khẩu mới
+              <RequiredMark />
+            </span>
             <input
               className="input"
               type="password"
@@ -235,7 +254,10 @@ export default function ResetPassword() {
           </label>
 
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Nhập lại mật khẩu mới
+            <span>
+              Nhập lại mật khẩu mới
+              <RequiredMark />
+            </span>
             <input
               className="input"
               type="password"
@@ -295,9 +317,13 @@ export default function ResetPassword() {
             Toàn bộ phiên đăng nhập cũ trên các thiết bị khác đã được tự động thu hồi để bảo vệ
             tài khoản. Vui lòng đăng nhập lại bằng mật khẩu mới.
           </p>
-          <Link to="/login" className="btn-primary h-11 w-fit px-6">
+          <button
+            type="button"
+            onClick={() => openAuthPopup("login")}
+            className="btn-primary h-11 w-fit px-6"
+          >
             Đi tới đăng nhập
-          </Link>
+          </button>
         </div>
       )}
     </div>

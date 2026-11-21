@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
-import { PageHead, Table, Td } from "@/components/Portal"
+import { PageHead, RequiredMark, Table, TableSkeleton, Td } from "@/components/Portal"
 import { INCOMING, type Handover } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
 import { ApiError } from "@/lib/api"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   createHandoverReceipt,
   fetchHandoverOrdersResult,
@@ -43,7 +44,7 @@ export default function Receipt() {
   const liveAuth = hasLiveBackendAuth()
 
   const defaultHandover = INCOMING.find((x) => x.status === "collected") || INCOMING[0]
-  const [loadingOrder, setLoadingOrder] = useState<boolean>(() => liveAuth)
+  const [loadingOrder, setLoadingOrder] = useState<boolean>(() => initApiLoading(true))
   const [eligibleOrders, setEligibleOrders] = useState<SyncedHandoverOrder[]>([])
   const [orderUnitPrice, setOrderUnitPrice] = useState<number | undefined>(undefined)
   const [h, setH] = useState<Handover | null>(() => {
@@ -63,7 +64,7 @@ export default function Receipt() {
         }
       }
     }
-    return liveAuth ? null : defaultHandover
+    return initApiState(null, defaultHandover)
   })
 
   const [rows, setRows] = useState<ReceiptFormRow[]>(() =>
@@ -347,9 +348,7 @@ export default function Receipt() {
       )}
 
       {loadingOrder ? (
-        <p className="card px-5 py-8 text-center text-sm text-muted">
-          Đang tải thông tin đơn thu gom...
-        </p>
+        <TableSkeleton rows={4} />
       ) : !h ? (
         <div className="card flex flex-col items-center gap-3 px-5 py-10 text-center">
           <p className="text-sm font-semibold text-ink">
@@ -377,7 +376,7 @@ export default function Receipt() {
           </span>
         </div>
 
-        <Table head={["Loại rác", "Người dùng bỏ ra", "Bạn cân được", "Thành tiền"]}>
+        <Table head={["Loại rác", "Người dùng bỏ ra", "Bạn cân được (kg) *", "Thành tiền"]}>
           {rows.map((r, i) => {
             const unitPrice = rowPriceOf(r, i)
             return (
@@ -411,7 +410,10 @@ export default function Receipt() {
         </Table>
 
         <label className="flex cursor-pointer flex-col gap-2 text-[13px] font-semibold text-ink">
-          Ảnh bàn giao &amp; bằng chứng cân {liveAuth ? "(Bắt buộc tối thiểu 1 ảnh)" : ""}
+          <span>
+            Ảnh bàn giao &amp; bằng chứng cân {liveAuth ? "(Bắt buộc tối thiểu 1 ảnh)" : ""}
+            <RequiredMark />
+          </span>
           <span className="rounded-lg border border-dashed border-sage-line bg-surface-2 px-4 py-6 text-center text-[13px] font-normal text-muted">
             {files.length > 0
               ? files.map((f) => f.name).join(" · ")

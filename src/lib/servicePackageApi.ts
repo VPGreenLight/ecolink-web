@@ -43,6 +43,25 @@ export interface ServicePackageFeaturesDto {
   mapPriorityBoost: number
 }
 
+export interface ProEligibilityReportDto {
+  isEligible: boolean
+  isReRegistration: boolean
+  isKybAndProfileValid: boolean
+  verificationStatus: string
+  requiresProfileReverification: boolean
+  isWarningLimitOk: boolean
+  currentWarningCount: number
+  maxAllowedWarnings: number
+  isPositiveFeedbackMet: boolean
+  averageRating: number
+  totalReviews: number
+  minRequiredRating: number
+  minRequiredReviewsForRenewal: number
+  isNotCurrentlyActivePro: boolean
+  activeProExpiresAt?: string | null
+  blockingReasons: string[]
+}
+
 export interface ServicePackageCatalogDto {
   id: string
   packageCode: string
@@ -59,7 +78,10 @@ export interface ServicePackageCatalogDto {
   isEligible: boolean
   ineligibleReason?: string | null
   isCurrentPlan: boolean
+  isIncludedInHigherPlan?: boolean
+  canRenew?: boolean
   currentActiveExpiresAt?: string | null
+  proEligibility?: ProEligibilityReportDto | null
 }
 
 export interface AdminServicePackageDto extends ServicePackageCatalogDto {

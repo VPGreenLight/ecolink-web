@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
-import { PageHead, Stat, Status, Table, Td } from "@/components/Portal"
+import { PageHead, RequiredMark, Stat, Status, Table, Td } from "@/components/Portal"
 import { DATASET, fmtInt } from "@/data/ops"
+import { initApiState } from "@/lib/hydration"
 import { getAccessToken } from "@/lib/session"
 import {
   createAiDatasetVersion,
@@ -41,9 +42,31 @@ function buildFallbackDashboard(): AiDatasetDashboardDto {
   }
 }
 
+function buildEmptyDashboard(): AiDatasetDashboardDto {
+  return {
+    summary: {
+      totalPoolItems: 0,
+      verifiedLabeledCount: 0,
+      unlabeledCount: 0,
+      excludedCount: 0,
+      stickyTrainCount: 0,
+      stickyValidationCount: 0,
+      stickyTestCount: 0,
+      imbalanceRatio: 0,
+      isBalanced: true,
+      weakestCategory: null,
+      empiricalAccuracyPercent: 0,
+    },
+    byCategory: [],
+    versions: [],
+  }
+}
+
 /** S-03 Cập nhật tập dữ liệu kiểm chứng & đóng gói Sticky Stratified Split 70/20/10. */
 export default function Dataset() {
-  const [dashboard, setDashboard] = useState<AiDatasetDashboardDto>(buildFallbackDashboard)
+  const [dashboard, setDashboard] = useState<AiDatasetDashboardDto>(() =>
+    initApiState(buildEmptyDashboard(), buildFallbackDashboard()),
+  )
   const [liveConnected, setLiveConnected] = useState(false)
 
   const [versionCode, setVersionCode] = useState("v1.0.0")
@@ -209,7 +232,10 @@ export default function Dataset() {
 
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
-            Mã phiên bản (SemVer)
+            <span>
+              Mã phiên bản (SemVer)
+              <RequiredMark />
+            </span>
             <input
               className="input font-mono"
               value={versionCode}
@@ -218,7 +244,10 @@ export default function Dataset() {
             />
           </label>
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
-            Tên phiên bản
+            <span>
+              Tên phiên bản
+              <RequiredMark />
+            </span>
             <input
               className="input"
               value={versionName}

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
 import PaginationBar, { paginateItems } from "@/components/PaginationBar"
-import { PageHead, Status } from "@/components/Portal"
+import { PageHead, RequiredMark, Status } from "@/components/Portal"
 import { AI_CASES } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import { AI_CLASS_OPTIONS, getCategoryMeta } from "@/lib/wasteScanApi"
 import { getAccessToken } from "@/lib/session"
 import {
@@ -46,11 +47,18 @@ export default function AiReview() {
   const [tab, setTab] = useState<TabMode>("feedback")
   const [liveConnected, setLiveConnected] = useState(false)
 
-  // S-01 State (Khởi tạo từ dữ liệu tĩnh an toàn cho SSR, tự đồng bộ API thật trong useEffect)
-  const [feedbacks, setFeedbacks] = useState<StaffAiFeedbackSummaryDto[]>(buildFallbackFeedbacks)
-  const [counts, setCounts] = useState({ pending: 3, reviewed: 2, rejected: 0 })
+  // S-01 State (Khởi tạo rỗng + loading trên trình duyệt để tránh nháy dữ liệu giả, giữ seed cho SSR test)
+  const [feedbacks, setFeedbacks] = useState<StaffAiFeedbackSummaryDto[]>(() =>
+    initApiState([], buildFallbackFeedbacks()),
+  )
+  const [counts, setCounts] = useState(() =>
+    initApiState({ pending: 0, reviewed: 0, rejected: 0 }, { pending: 3, reviewed: 2, rejected: 0 }),
+  )
+  const [loadingFeedbacks, setLoadingFeedbacks] = useState(() => initApiLoading(true))
   const [statusFilter, setStatusFilter] = useState<FeedbackFilter>("All")
-  const [selectedFbId, setSelectedFbId] = useState<string>(AI_CASES[0].id)
+  const [selectedFbId, setSelectedFbId] = useState<string>(() =>
+    initApiState("", AI_CASES[0].id),
+  )
   const [verifiedLabel, setVerifiedLabel] = useState<string>("plastic")
   const [reviewNote, setReviewNote] = useState<string>("")
   const [yoloBoxText, setYoloBoxText] = useState<string>("")
@@ -106,7 +114,11 @@ export default function AiReview() {
 
   const loadFeedbackQueue = async (filter: FeedbackFilter = statusFilter) => {
     const token = getAccessToken()
-    if (!token) return
+    if (!token) {
+      setLoadingFeedbacks(false)
+      return
+    }
+    setLoadingFeedbacks(true)
     try {
       const res = await fetchStaffAiFeedbackQueue({
         status: filter === "All" ? undefined : filter,
@@ -129,6 +141,8 @@ export default function AiReview() {
       }
     } catch {
       // Giữ nguyên dữ liệu dự phòng khi chưa đủ quyền hoặc backend offline
+    } finally {
+      setLoadingFeedbacks(false)
     }
   }
 
@@ -364,7 +378,10 @@ export default function AiReview() {
                 </div>
 
                 <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-                  Nhãn chuẩn xác nhận (MasterWasteCategory)
+                  <span>
+                    Nhãn chuẩn xác nhận (MasterWasteCategory)
+                    <RequiredMark />
+                  </span>
                   <select
                     className="input"
                     value={verifiedLabel}
@@ -437,6 +454,10 @@ export default function AiReview() {
                   {flashFb}
                 </p>
               )}
+            </div>
+          ) : loadingFeedbacks ? (
+            <div className="card p-6 text-sm text-muted">
+              Đang tải hàng đợi phản hồi AI...
             </div>
           ) : (
             <div className="card p-6 text-sm text-muted">

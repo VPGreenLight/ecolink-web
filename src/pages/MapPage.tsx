@@ -33,6 +33,9 @@ import {
   reportReview,
   type RecyclerReviewsSummaryDto,
 } from "@/lib/reviewComplaintApi"
+import { isSsrSmokeTest } from "@/lib/hydration"
+import { maskPhoneForGuest, openAuthPopup } from "@/lib/popupAuth"
+import { useSession } from "@/lib/session"
 
 /** Dữ liệu dự phòng chỉ dùng khi máy chủ Backend chưa được bật để người xem giao diện
  *  vẫn kiểm tra được bản đồ tương tác tại Hòa Lạc - Hà Nội & toàn quốc. */
@@ -1127,6 +1130,8 @@ function PartnerDetail({
   handoverUrl: string
   chatUrl: string
 }) {
+  const session = useSession()
+  const isGuest = !session && !isSsrSmokeTest()
   const [reviewsSummary, setReviewsSummary] = useState<RecyclerReviewsSummaryDto | null>(null)
   const [reportBusyId, setReportBusyId] = useState<string | null>(null)
   const [reportFlash, setReportFlash] = useState("")
@@ -1146,6 +1151,10 @@ function PartnerDetail({
   }, [partner.id])
 
   const handleReportReview = async (reviewId: string) => {
+    if (isGuest) {
+      openAuthPopup("login")
+      return
+    }
     const reason = window.prompt("Nhập lý do báo cáo đánh giá vi phạm (tối thiểu 5 ký tự):")
     if (!reason || reason.trim().length < 5) return
     setReportBusyId(reviewId)
@@ -1178,14 +1187,26 @@ function PartnerDetail({
               )}
             </div>
             {partner.contactPhone && (
-              <a
-                href={`tel:${partner.contactPhone}`}
-                title={`Gọi ${partner.contactPhone}`}
-                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2"
-              >
-                <Phone className="size-3.5" strokeWidth={1.5} />
-                {partner.contactPhone}
-              </a>
+              isGuest ? (
+                <button
+                  type="button"
+                  onClick={() => openAuthPopup("login")}
+                  title="Đăng nhập để xem đầy đủ và liên hệ cơ sở thu mua"
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2"
+                >
+                  <Phone className="size-3.5" strokeWidth={1.5} />
+                  {maskPhoneForGuest(partner.contactPhone)} · Đăng nhập
+                </button>
+              ) : (
+                <a
+                  href={`tel:${partner.contactPhone}`}
+                  title={`Gọi ${partner.contactPhone}`}
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2"
+                >
+                  <Phone className="size-3.5" strokeWidth={1.5} />
+                  {partner.contactPhone}
+                </a>
+              )
             )}
           </div>
         )}
@@ -1234,10 +1255,28 @@ function PartnerDetail({
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <Link to={handoverUrl} className="btn-primary h-9 rounded-lg px-3 text-xs">
+          <Link
+            to={handoverUrl}
+            onClick={(e) => {
+              if (isGuest) {
+                e.preventDefault()
+                openAuthPopup("login")
+              }
+            }}
+            className="btn-primary h-9 rounded-lg px-3 text-xs"
+          >
             Đặt lịch bàn giao
           </Link>
-          <Link to={chatUrl} className="btn-outline h-9 rounded-lg px-3 text-xs">
+          <Link
+            to={chatUrl}
+            onClick={(e) => {
+              if (isGuest) {
+                e.preventDefault()
+                openAuthPopup("login")
+              }
+            }}
+            className="btn-outline h-9 rounded-lg px-3 text-xs"
+          >
             Nhắn thương lượng
           </Link>
         </div>
@@ -1307,6 +1346,8 @@ function FallbackPanel({
   onExpandRadius: (r: number) => void
   onClearFilters: () => void
 }) {
+  const session = useSession()
+  const isGuest = !session && !isSsrSmokeTest()
   const expanded =
     fallback?.suggestedExpandedRadiusKm && fallback.suggestedExpandedRadiusKm > radiusKm
       ? fallback.suggestedExpandedRadiusKm
@@ -1379,7 +1420,16 @@ function FallbackPanel({
           <p className="mt-0.5 text-body">
             Bạn vẫn có thể tạo lịch hẹn trước; cơ sở quanh khu vực sẽ nhận thông báo khi mở cửa.
           </p>
-          <Link to="/user/handover" className="btn-outline mt-2.5 h-9 px-3.5 text-xs">
+          <Link
+            to="/user/handover"
+            onClick={(e) => {
+              if (isGuest) {
+                e.preventDefault()
+                openAuthPopup("login")
+              }
+            }}
+            className="btn-outline mt-2.5 h-9 px-3.5 text-xs"
+          >
             Tạo yêu cầu thu gom trước
           </Link>
         </div>

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react"
-import { PageHead, Field, Stat, Status } from "@/components/Portal"
-import { ROLE_LABEL, useSession } from "@/lib/session"
+import { Link } from "react-router-dom"
+import { FormRequiredLegend, PageHead, Field, Stat, Status } from "@/components/Portal"
+import { getAccessToken, ROLE_LABEL, useSession } from "@/lib/session"
+import { useEntitlements } from "@/lib/servicePackageApi"
 import {
   fetchCurrentUserProfile,
   formatAuthError,
@@ -9,6 +11,10 @@ import {
 import { FLOWS } from "@/data/cashflow"
 import { MY_HANDOVERS } from "@/data/handover"
 import { LEADERBOARD, RANK_POINTS, getSpendPoints, fmt, tierProgress } from "@/data/rewards"
+import { initApiState, isSsrSmokeTest } from "@/lib/hydration"
+import { fetchMyNotifications, markAllNotificationsRead } from "@/lib/notificationsApi"
+import { fetchHandoverOrdersResult, fetchUserTransactions } from "@/lib/recyclerWorkflowApi"
+import { fetchLeaderboard } from "@/lib/gamificationApi"
 
 /** SU-01 Xem và cập nhật hồ sơ · SU-03 Thông báo hệ thống.
  *
@@ -16,9 +22,29 @@ import { LEADERBOARD, RANK_POINTS, getSpendPoints, fmt, tierProgress } from "@/d
  *  tổng khối lượng tái chế từ PostgreSQL) và `PUT /api/v1/auth/profile` khi bấm Lưu hồ sơ. */
 export default function Profile() {
   const session = useSession()
+  const entitlements = useEntitlements()
   const [name, setName] = useState(session?.name ?? "")
-  const [phone, setPhone] = useState(session?.phoneNumber ?? "0901 234 567")
-  const [area, setArea] = useState("Khu Công nghệ cao Hòa Lạc, Hà Nội")
+  const [phone, setPhone] = useState(() =>
+    session?.phoneNumber ?? initApiState("", "0901 234 567"),
+  )
+  const [area, setArea] = useState(() =>
+    initApiState("", "Khu Công nghệ cao Hòa Lạc, Hà Nội"),
+  )
+  const [completedDeals, setCompletedDeals] = useState(() =>
+    initApiState(0, MY_HANDOVERS.filter((h) => h.status === "done").length),
+  )
+  const [totalHandovers, setTotalHandovers] = useState(() =>
+    initApiState(0, MY_HANDOVERS.length),
+  )
+  const [payoutCount, setPayoutCount] = useState(() =>
+    initApiState(0, FLOWS.filter((f) => f.kind === "payout").length),
+  )
+  const [rankDisplay, setRankDisplay] = useState<string>(() =>
+    initApiState("—", `#${LEADERBOARD.findIndex((r) => r.you) + 1}`),
+  )
+  const [rankPointsDisplay, setRankPointsDisplay] = useState<string>(() =>
+    initApiState("0", fmt(RANK_POINTS)),
+  )
   const [submitting, setSubmitting] = useState(false)
   const [savedMsg, setSavedMsg] = useState("")
   const [err, setErr] = useState("")
@@ -32,10 +58,32 @@ export default function Profile() {
         setPhone(profile.phoneNumber)
       }
     })
+    if (getAccessToken()) {
+      void Promise.allSettled([
+        fetchHandoverOrdersResult(session?.role === "recycler" ? "recycler" : "user"),
+        fetchUserTransactions(undefined, undefined, 1, 100),
+        fetchLeaderboard({ top: 10 }),
+      ]).then(([ordRes, txRes, lbRes]) => {
+        if (!active) return
+        if (ordRes.status === "fulfilled" && ordRes.value.fromBackend) {
+          const orders = ordRes.value.orders
+          setTotalHandovers(orders.length)
+          setCompletedDeals(orders.filter((o) => o.status === "done").length)
+        }
+        if (txRes.status === "fulfilled" && txRes.value.fromBackend) {
+          setPayoutCount(txRes.value.data.items.length)
+        }
+        if (lbRes.status === "fulfilled" && lbRes.value.data?.myEntry) {
+          const me = lbRes.value.data.myEntry
+          setRankDisplay(`#${me.rank}`)
+          setRankPointsDisplay(fmt(me.totalPoints))
+        }
+      })
+    }
     return () => {
       active = false
     }
-  }, [])
+  }, [session?.role])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -91,7 +139,8 @@ export default function Profile() {
 
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         <form onSubmit={submit} noValidate className="card flex flex-col gap-5 self-start p-5 md:p-6">
-          <Field label="Tên hiển thị" hint="Người thu gom và nhân viên thấy tên này.">
+          <FormRequiredLegend />
+          <Field label="Tên hiển thị" required hint="Người thu gom và nhân viên thấy tên này.">
             <input
               className={`input ${err && name.trim().length < 2 ? "border-warn" : ""}`}
               value={name}
@@ -102,7 +151,7 @@ export default function Profile() {
             />
           </Field>
 
-          <Field label="Số điện thoại" hint="Dùng để báo lịch thu gom và liên hệ khi có khiếu nại.">
+          <Field label="Số điện thoại" required hint="Dùng để báo lịch thu gom và liên hệ khi có khiếu nại.">
             <input
               className={`input tabular-nums ${
                 err && !/^(?:\+84|0)\d{9,10}$/.test(phone.replace(/[\s.\-()]/g, "")) ? "border-warn" : ""
@@ -155,15 +204,16 @@ export default function Profile() {
             <dl className="flex flex-col gap-2 text-sm">
               {[
                 ["Vai trò", session ? ROLE_LABEL[session.role] : "Người dân"],
+                ["Gói dịch vụ", entitlements.isAdFree ? `${entitlements.currentTier} (Đã tắt quảng cáo)` : `${entitlements.currentTier} (Mặc định)`],
                 ...(session?.username ? [["Tên đăng nhập", session.username]] : []),
                 ["Điểm tiêu dùng", displayGreenPoints],
-                ["Điểm xếp hạng", fmt(RANK_POINTS)],
+                ["Điểm xếp hạng", rankPointsDisplay],
                 ["Hạng cây ảo", displayTreeTier],
                 ...(session?.fromBackend && typeof session.totalRecycledKg === "number"
                   ? [["Tổng phế liệu tái chế", `${session.totalRecycledKg} kg`]]
                   : []),
-                ["Giao dịch đã hoàn tất", String(MY_HANDOVERS.filter((h) => h.status === "done").length)],
-                ["Khoản đã nhận", String(FLOWS.filter((f) => f.kind === "payout").length)],
+                ["Giao dịch đã hoàn tất", String(completedDeals)],
+                ["Khoản đã nhận", String(payoutCount)],
               ].map(([k, v]) => (
                 <div
                   key={k}
@@ -175,9 +225,28 @@ export default function Profile() {
               ))}
             </dl>
             <div className="grid grid-cols-2 gap-3 pt-1">
-              <Stat label="Xếp hạng" value={`#${LEADERBOARD.findIndex((r) => r.you) + 1}`} />
-              <Stat label="Yêu cầu bàn giao" value={String(MY_HANDOVERS.length)} />
+              <Stat label="Xếp hạng" value={rankDisplay} />
+              <Stat label="Yêu cầu bàn giao" value={String(totalHandovers)} />
             </div>
+            {(session?.role === "user" || session?.role === "recycler") && (
+              <Link
+                to={
+                  session.role === "recycler"
+                    ? "/recycler#recycler-packages"
+                    : "/user/payout#citizen-packages"
+                }
+                className="mt-1 inline-flex items-center justify-between rounded-xl border border-brand/25 bg-brand/6 px-3.5 py-2.5 text-xs font-semibold text-brand-deep transition-colors hover:bg-brand/12"
+              >
+                <span>
+                  {session.role === "recycler"
+                    ? "Quản lý gói Tích xanh Pro & VietQR"
+                    : entitlements.isAdFree
+                      ? "Quản lý gói Premium tắt quảng cáo"
+                      : "Nâng cấp gói Premium tắt quảng cáo"}
+                </span>
+                <span>→</span>
+              </Link>
+            )}
           </section>
 
           <Notifications />
@@ -211,8 +280,35 @@ const NOTES: Note[] = [
 ]
 
 function Notifications() {
+  const [notes, setNotes] = useState<Note[]>(() => initApiState([], NOTES))
   const [read, setRead] = useState<Record<string, boolean>>({})
-  const unread = NOTES.filter((n) => !read[n.id]).length
+
+  useEffect(() => {
+    if (isSsrSmokeTest() || !getAccessToken()) return
+    let active = true
+    void fetchMyNotifications({ pageNumber: 1, pageSize: 10 })
+      .then((res) => {
+        if (!active || !res.success || !res.data) return
+        const mapped: Note[] = res.data.items.map((n) => ({
+          id: n.id,
+          text: n.message,
+          time: new Date(n.createdAt).toLocaleString("vi-VN"),
+          needsAction: !n.isRead,
+        }))
+        setNotes(mapped)
+        const initialRead: Record<string, boolean> = {}
+        for (const item of res.data.items) {
+          if (item.isRead) initialRead[item.id] = true
+        }
+        setRead(initialRead)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const unread = notes.filter((n) => !read[n.id]).length
 
   return (
     <section className="card flex flex-col gap-4 p-5">
@@ -223,11 +319,11 @@ function Notifications() {
         </span>
       </div>
 
-      {NOTES.length === 0 ? (
+      {notes.length === 0 ? (
         <p className="text-sm text-muted">Chưa có thông báo nào.</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {NOTES.map((n) => (
+          {notes.map((n) => (
             <li
               key={n.id}
               className={`rounded-lg border px-4 py-3 ${
@@ -246,9 +342,10 @@ function Notifications() {
 
       <button
         type="button"
-        onClick={() =>
-          setRead(Object.fromEntries(NOTES.map((n) => [n.id, true])))
-        }
+        onClick={() => {
+          setRead(Object.fromEntries(notes.map((n) => [n.id, true])))
+          if (getAccessToken()) void markAllNotificationsRead().catch(() => {})
+        }}
         disabled={unread === 0}
         className="btn-ghost h-10 w-fit px-4 text-[13px]"
       >

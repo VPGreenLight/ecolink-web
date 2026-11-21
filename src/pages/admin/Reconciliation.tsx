@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react"
 import { Download, FileJson, RefreshCw, ShieldCheck, Wrench, X } from "lucide-react"
 import PaginationBar, { extractPagedMeta, paginateItems } from "@/components/PaginationBar"
-import { Empty, Field, PageHead, Stat, Status, Table, Td } from "@/components/admin/ui"
+import { Empty, Field, FormRequiredLegend, PageHead, Stat, Status, Table, Td } from "@/components/admin/ui"
 import { fmtInt, fmtVnd } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import { maskEmailClient, maskPhoneClient } from "@/lib/governanceApi"
 import {
   exportReconciliationReportBlob,
@@ -250,8 +251,21 @@ const RESOLUTION_ACTION_OPTIONS: {
  *   - `PATCH /api/v1/admin/reconciliations/orders/{orderCode}/resolve` (STT 128)
  *   - `GET /api/v1/admin/reconciliations/export` (STT 129) */
 export default function Reconciliation() {
-  const [summary, setSummary] = useState<ReconciliationSummaryDto>(DEMO_SUMMARY)
-  const [rows, setRows] = useState<ReconciliationLedgerItemDto[]>(DEMO_LEDGER)
+  const [summary, setSummary] = useState<ReconciliationSummaryDto>(() =>
+    initApiState(
+      {
+        totalMatchedRevenueVnd: 0,
+        pendingOrdersCount: 0,
+        openAnomaliesCount: 0,
+        totalDiscrepancyVnd: 0,
+        totalRefundedVnd: 0,
+      },
+      DEMO_SUMMARY,
+    ),
+  )
+  const [rows, setRows] = useState<ReconciliationLedgerItemDto[]>(() =>
+    initApiState([], DEMO_LEDGER),
+  )
   const [statusFilter, setStatusFilter] = useState<string>("")
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 300)
@@ -259,8 +273,8 @@ export default function Reconciliation() {
   const [toDate, setToDate] = useState("")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(15)
-  const [totalCount, setTotalCount] = useState(DEMO_LEDGER.length)
-  const [loading, setLoading] = useState(false)
+  const [totalCount, setTotalCount] = useState(() => initApiState(0, DEMO_LEDGER.length))
+  const [loading, setLoading] = useState(() => initApiLoading(Boolean(getAccessToken())))
   const [exportingFormat, setExportingFormat] = useState<"csv" | "xlsx" | null>(null)
   const [flash, setFlash] = useState("")
   const [errMsg, setErrMsg] = useState("")
@@ -785,7 +799,8 @@ export default function Reconciliation() {
             </p>
 
             <div className="mt-4 flex flex-col gap-4">
-              <Field label="Quyết định xử lý">
+              <FormRequiredLegend />
+              <Field label="Quyết định xử lý" required>
                 <select
                   className="input"
                   value={action}
@@ -803,7 +818,7 @@ export default function Reconciliation() {
               </Field>
 
               {action === "ManualMatchOrder" && (
-                <Field label="Mã đơn hàng ECO... cần khớp thủ công" hint="Ví dụ: ECO2611161002">
+                <Field label="Mã đơn hàng ECO... cần khớp thủ công" required hint="Ví dụ: ECO2611161002">
                   <input
                     className="input font-mono uppercase"
                     value={targetOrderCode}
@@ -824,6 +839,7 @@ export default function Reconciliation() {
 
               <Field
                 label="Biên bản ghi chú đối soát (Bắt buộc >= 10 ký tự)"
+                required
                 hint="Ghi lại đầy đủ căn cứ tài chính để lưu Audit Log bất biến."
               >
                 <textarea

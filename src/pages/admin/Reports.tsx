@@ -5,6 +5,7 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { FLOWS } from "@/data/cashflow"
 import { MY_HANDOVERS } from "@/data/handover"
 import { ACCOUNTS, STATS, fmtInt, fmtVnd } from "@/data/ops"
+import { initApiState } from "@/lib/hydration"
 import {
   exportAdminReportBlob,
   getAdminAuditLogs,
@@ -157,16 +158,25 @@ export default function Reports() {
   const [flash, setFlash] = useState("")
 
   // Số liệu tổng quan đồng bộ từ A-01
-  const [kpi, setKpi] = useState({
-    users: STATS.users,
-    handovers30d: STATS.handovers30d,
-    gross30d: STATS.gross30d,
-    fee30d: STATS.fee30d,
-  })
+  const [kpi, setKpi] = useState(() =>
+    initApiState(
+      { users: 0, handovers30d: 0, gross30d: 0, fee30d: 0 },
+      {
+        users: STATS.users,
+        handovers30d: STATS.handovers30d,
+        gross30d: STATS.gross30d,
+        fee30d: STATS.fee30d,
+      },
+    ),
+  )
 
   // Trạng thái tab Audit Logs
-  const [auditLogs, setAuditLogs] = useState<AuditLogItemDto[]>(FALLBACK_AUDIT_LOGS)
-  const [auditTotal, setAuditTotal] = useState<number>(FALLBACK_AUDIT_LOGS.length)
+  const [auditLogs, setAuditLogs] = useState<AuditLogItemDto[]>(() =>
+    initApiState([], FALLBACK_AUDIT_LOGS),
+  )
+  const [auditTotal, setAuditTotal] = useState<number>(() =>
+    initApiState(0, FALLBACK_AUDIT_LOGS.length),
+  )
   const [actionFilter, setActionFilter] = useState("")
   const [keyword, setKeyword] = useState("")
   const debouncedKeyword = useDebouncedValue(keyword, 300)

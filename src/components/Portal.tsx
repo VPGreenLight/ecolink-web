@@ -322,20 +322,69 @@ export function Empty({ children }: { children: React.ReactNode }) {
   )
 }
 
+export function RequiredMark() {
+  return (
+    <span
+      className="ml-1 font-bold text-red-600"
+      aria-hidden="true"
+      title="Trường bắt buộc"
+    >
+      *
+    </span>
+  )
+}
+
+export function FormRequiredLegend({ className = "" }: { className?: string }) {
+  return (
+    <p className={`text-xs text-muted ${className}`}>
+      Các trường có dấu <span className="font-bold text-red-600">*</span> là thông tin bắt buộc.
+    </p>
+  )
+}
+
+export function TableSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="card flex flex-col gap-3 p-5" aria-busy="true" aria-live="polite">
+      <div className="h-4 w-48 animate-pulse rounded bg-surface-3" />
+      {Array.from({ length: rows }).map((_, idx) => (
+        <div key={idx} className="h-10 w-full animate-pulse rounded-lg bg-surface-2" />
+      ))}
+    </div>
+  )
+}
+
+export function CardListSkeleton({ count = 3 }: { count?: number }) {
+  return (
+    <div className="flex flex-col gap-3" aria-busy="true" aria-live="polite">
+      {Array.from({ length: count }).map((_, idx) => (
+        <div key={idx} className="card flex flex-col gap-2.5 p-5">
+          <div className="h-4 w-2/5 animate-pulse rounded bg-surface-3" />
+          <div className="h-3.5 w-4/5 animate-pulse rounded bg-surface-2" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** Trường biểu mẫu: nhãn + control + gợi ý. Bọc <label> thật nên bàn phím
  *  chuyển vòng qua các ô bằng Tab là tự động. */
 export function Field({
   label,
   hint,
+  required,
   children,
 }: {
   label: string
   hint?: string
+  required?: boolean
   children: React.ReactNode
 }) {
   return (
     <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-      {label}
+      <span>
+        {label}
+        {required && <RequiredMark />}
+      </span>
       {children}
       {hint && <span className="text-[12px] font-normal text-muted">{hint}</span>}
     </label>

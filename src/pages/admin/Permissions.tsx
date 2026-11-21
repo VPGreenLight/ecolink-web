@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
-import { PageHead, Status, Table, Td } from "@/components/admin/ui"
+import { PageHead, Status, Table, TableSkeleton, Td } from "@/components/admin/ui"
 import { PERMS, STAFF, type Staff } from "@/data/ops"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   getAdminStaffList,
   toCanonicalPerm,
@@ -34,7 +35,8 @@ function mapStaffToPermRow(dto: StaffMemberDto): StaffPermRow {
  *    qua `[HasPermission]` Policy và tự động xoá cache phân quyền ngay khi lưu (`MSG-ADM-01`).
  */
 export default function Permissions() {
-  const [list, setList] = useState<StaffPermRow[]>(STAFF)
+  const [list, setList] = useState<StaffPermRow[]>(() => initApiState([], STAFF))
+  const [loading, setLoading] = useState(() => initApiLoading(true))
   const [isLive, setIsLive] = useState(false)
   const [saving, setSaving] = useState(false)
   const [flash, setFlash] = useState("")
@@ -48,7 +50,10 @@ export default function Permissions() {
         setIsLive(true)
       })
       .catch(() => {
-        // Giữ dữ liệu STAFF mô phỏng khi chưa đăng nhập Admin
+        // Fallback nếu chưa đăng nhập Admin
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
@@ -109,6 +114,9 @@ export default function Permissions() {
         body="Mỗi cột tương ứng một chính sách bảo mật ở tầng API Backend (BR-ADM-02). Nhân viên không có quyền nào sẽ đăng nhập được nhưng bị chặn 403 trên các API nghiệp vụ chưa được cấp."
       />
 
+      {loading ? (
+        <TableSkeleton rows={4} />
+      ) : (
       <div className="card overflow-x-auto">
         <table className="w-full min-w-[760px] border-collapse text-left text-sm">
           <thead>
@@ -160,6 +168,7 @@ export default function Permissions() {
           </tbody>
         </table>
       </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <button

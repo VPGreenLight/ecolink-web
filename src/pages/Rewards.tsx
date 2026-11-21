@@ -27,7 +27,9 @@ import {
   type RedemptionDto,
   type VirtualTreeDto,
 } from "@/lib/gamificationApi"
-import { getSession, hasLiveBackendAuth } from "@/lib/session"
+import { isSsrSmokeTest } from "@/lib/hydration"
+import { openAuthPopup } from "@/lib/popupAuth"
+import { hasLiveBackendAuth, useSession } from "@/lib/session"
 
 const COIN = "/assets/AI/ecolink-coin.webp"
 
@@ -128,15 +130,16 @@ const REDEMPTION_STATUS_LABEL: Record<string, string> = {
 }
 
 export default function Rewards() {
-  const session = getSession()
+  const session = useSession()
+  const isGuest = !session && !isSsrSmokeTest()
   const liveRewardsUser =
     hasLiveBackendAuth() &&
     (session?.role === "user" || session?.role === "recycler")
 
   const offlineTier = tierProgress()
-  const [spend, setSpend] = useState(() => (liveRewardsUser ? 0 : getSpendPoints()))
-  const [rankPoints, setRankPoints] = useState(() => (liveRewardsUser ? 0 : RANK_POINTS))
-  const [spentTotal, setSpentTotal] = useState(() => (liveRewardsUser ? 0 : REDEEMED))
+  const [spend, setSpend] = useState(() => (liveRewardsUser || isGuest ? 0 : getSpendPoints()))
+  const [rankPoints, setRankPoints] = useState(() => (liveRewardsUser || isGuest ? 0 : RANK_POINTS))
+  const [spentTotal, setSpentTotal] = useState(() => (liveRewardsUser || isGuest ? 0 : REDEEMED))
   const [gifts, setGifts] = useState<GiftItemDto[]>([])
   const [giftSearch, setGiftSearch] = useState("")
   const debouncedGiftSearch = useDebouncedValue(giftSearch, 250)
@@ -297,10 +300,23 @@ export default function Rewards() {
             Điểm tiêu dùng
           </p>
           <p className="mt-1 text-4xl leading-none font-bold tracking-tight tabular-nums text-brand md:text-5xl">
-            {loading ? "—" : fmt(spend)}
+            {loading || isGuest ? "—" : fmt(spend)}
           </p>
           <p className="mt-3 text-[13px] leading-5 text-muted">
-            Dùng để đổi quà bên dưới. Đổi xong mới trừ.
+            {isGuest ? (
+              <>
+                Đang ở chế độ Khách (chỉ xem danh mục quà).{" "}
+                <button
+                  type="button"
+                  onClick={() => openAuthPopup("login")}
+                  className="font-semibold text-brand-deep underline underline-offset-4 hover:text-brand"
+                >
+                  Đăng nhập để tích điểm &amp; đổi quà
+                </button>
+              </>
+            ) : (
+              "Dùng để đổi quà bên dưới. Đổi xong mới trừ."
+            )}
           </p>
 
           <div className="mt-6 border-t border-line-soft pt-5">
@@ -308,40 +324,48 @@ export default function Rewards() {
               Điểm xếp hạng
             </p>
             <p className="mt-1 text-3xl leading-none font-bold tracking-tight tabular-nums text-ink md:text-4xl">
-              {loading ? "—" : fmt(rankPoints)}
+              {loading || isGuest ? "—" : fmt(rankPoints)}
             </p>
 
-            <p className="mt-3 text-sm font-semibold text-ink">
-              {tree ? `Cây ảo cấp ${tree.level}: ${tree.levelTitle}` : `Hạng ${cur.name}`}
-              {!tree && next && <span className="font-normal text-muted"> → {next.name}</span>}
-              {tree && tree.nextLevelTitle && (
-                <span className="font-normal text-muted"> → {tree.nextLevelTitle}</span>
-              )}
-            </p>
-            <div
-              className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3"
-              role="progressbar"
-              aria-valuenow={tree ? tree.progressPercent : pct}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label={next ? `Tiến độ lên hạng ${next.name}` : "Tiến độ cây ảo"}
-            >
-              <div
-                className="h-full rounded-full bg-brand"
-                style={{ width: `${tree ? tree.progressPercent : pct}%` }}
-              />
-            </div>
-            <p className="mt-2 text-[13px] leading-5 text-muted">
-              {tree
-                ? tree.isMaxLevel
-                  ? "Cây ảo đã đạt cấp tối đa"
-                  : `Cần ${fmt(tree.upgradeCost ?? 0)} điểm tiêu dùng để nâng cấp tiếp`
-                : next
-                  ? `Cần thêm ${fmt(need)} điểm để lên hạng ${next.name}`
-                  : "Đã đạt hạng cao nhất"}
-              {" · "}
-              đã chi {fmt(spentTotal)} điểm
-            </p>
+            {isGuest ? (
+              <p className="mt-3 text-sm font-medium text-muted">
+                Đăng nhập tài khoản Người dân để theo dõi hạng cây ảo &amp; lịch sử đổi quà.
+              </p>
+            ) : (
+              <>
+                <p className="mt-3 text-sm font-semibold text-ink">
+                  {tree ? `Cây ảo cấp ${tree.level}: ${tree.levelTitle}` : `Hạng ${cur.name}`}
+                  {!tree && next && <span className="font-normal text-muted"> → {next.name}</span>}
+                  {tree && tree.nextLevelTitle && (
+                    <span className="font-normal text-muted"> → {tree.nextLevelTitle}</span>
+                  )}
+                </p>
+                <div
+                  className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3"
+                  role="progressbar"
+                  aria-valuenow={tree ? tree.progressPercent : pct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={next ? `Tiến độ lên hạng ${next.name}` : "Tiến độ cây ảo"}
+                >
+                  <div
+                    className="h-full rounded-full bg-brand"
+                    style={{ width: `${tree ? tree.progressPercent : pct}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-[13px] leading-5 text-muted">
+                  {tree
+                    ? tree.isMaxLevel
+                      ? "Cây ảo đã đạt cấp tối đa"
+                      : `Cần ${fmt(tree.upgradeCost ?? 0)} điểm tiêu dùng để nâng cấp tiếp`
+                    : next
+                      ? `Cần thêm ${fmt(need)} điểm để lên hạng ${next.name}`
+                      : "Đã đạt hạng cao nhất"}
+                  {" · "}
+                  đã chi {fmt(spentTotal)} điểm
+                </p>
+              </>
+            )}
           </div>
         </div>
 
@@ -615,12 +639,12 @@ export default function Rewards() {
                       <div>
                         <p
                           className={`text-[15px] leading-6 font-bold tabular-nums ${
-                            can ? "text-brand" : "text-muted"
+                            isGuest || can ? "text-brand" : "text-muted"
                           }`}
                         >
                           {fmt(r.cost)} <span className="text-xs font-medium">điểm</span>
                         </p>
-                        {!enough && (
+                        {!isGuest && !enough && (
                           <p className="text-xs text-muted">
                             Thiếu {fmt(r.cost - spend)} điểm
                           </p>
@@ -629,13 +653,17 @@ export default function Rewards() {
 
                       <button
                         type="button"
-                        disabled={!can}
+                        disabled={!isGuest && !can}
                         onClick={() => {
+                          if (isGuest) {
+                            openAuthPopup("login")
+                            return
+                          }
                           if (can) setSpend(addSpendPoints(-r.cost))
                         }}
                         className="btn btn-primary h-10 min-w-[104px]"
                       >
-                        {soldOut ? "Hết hàng" : "Đổi ngay"}
+                        {soldOut ? "Hết hàng" : isGuest ? "Đăng nhập để đổi" : "Đổi ngay"}
                       </button>
                     </div>
                   </div>

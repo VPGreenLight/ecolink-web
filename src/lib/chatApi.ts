@@ -26,6 +26,7 @@ import {
   getAccessToken,
   getRefreshToken,
   getSession,
+  isRealJwt,
   isStoredAccessTokenExpired,
 } from "@/lib/session"
 import type { Role } from "@/lib/session"
@@ -180,7 +181,7 @@ export async function ensureInquiryOrderForPartner(params: {
 
 async function resolveEffectiveBearerToken(): Promise<string | null> {
   let direct = getAccessToken()
-  if (direct && isStoredAccessTokenExpired(10)) {
+  if (direct && isRealJwt(direct) && isStoredAccessTokenExpired(10)) {
     if (getRefreshToken()) {
       direct = await rotateRefreshTokenSingleFlight()
     } else {
@@ -188,13 +189,13 @@ async function resolveEffectiveBearerToken(): Promise<string | null> {
       return null
     }
   }
-  if (direct) return direct
+  if (isRealJwt(direct)) return direct
 
   const currentSession = getSession()
   if (currentSession?.fromBackend) {
     if (getRefreshToken()) {
       const renewed = await rotateRefreshTokenSingleFlight()
-      if (renewed) return renewed
+      if (renewed && isRealJwt(renewed)) return renewed
     } else {
       clearSessionOnUnauthorized()
     }
@@ -202,12 +203,23 @@ async function resolveEffectiveBearerToken(): Promise<string | null> {
   }
 
   const r: Role = currentSession?.role || "user"
-  return ensureRoleJwt(r).catch(() => null)
+  const demoToken = await ensureRoleJwt(r).catch(() => null)
+  return isRealJwt(demoToken) ? demoToken : null
 }
 
 export async function getEffectiveAuthHeader(): Promise<Record<string, string>> {
-  const token = await resolveEffectiveBearerToken()
-  return token ? { Authorization: `Bearer ${token}` } : {}
+  // Nếu đã có JWT trong RAM thì gửi Bearer, còn nếu đang dùng phiên HttpOnly Cookie sau reload thì trả {} để Cookie tự gửi
+  const direct = getAccessToken()
+  if (isRealJwt(direct)) {
+    if (isStoredAccessTokenExpired(10) && getRefreshToken()) {
+      const renewed = await rotateRefreshTokenSingleFlight()
+      return isRealJwt(renewed) ? { Authorization: `Bearer ${renewed}` } : {}
+    }
+    return { Authorization: `Bearer ${direct}` }
+  }
+  if (direct) return {}
+  const fallbackToken = await resolveEffectiveBearerToken()
+  return isRealJwt(fallbackToken) ? { Authorization: `Bearer ${fallbackToken}` } : {}
 }
 
 /**

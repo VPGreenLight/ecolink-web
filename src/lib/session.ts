@@ -22,6 +22,9 @@ const KEY = "ecolink:user"
 export const ACCESS_TOKEN_KEY = "ecolink:token"
 export const REFRESH_TOKEN_KEY = "ecolink:refresh_token"
 export const TOKEN_EXPIRES_AT_KEY = "ecolink:token_expires_at"
+export const SESSION_COOKIE_FLAG = "ecolink_session_active"
+export const COOKIE_SESSION_SENTINEL = "__cookie_auth__"
+export const COOKIE_REFRESH_SENTINEL = "__cookie_refresh__"
 
 const ROLE_JWT_KEYS = [
   "ecolink:jwt:user",
@@ -30,9 +33,59 @@ const ROLE_JWT_KEYS = [
   "ecolink:jwt:admin",
 ] as const
 
+// Lưu token tạm thời trong bộ nhớ RAM (tuyệt đối không lưu JWT/RefreshToken vào localStorage).
+let inMemoryAccessToken: string | null = null
+let inMemoryRefreshToken: string | null = null
+let inMemoryExpiresAt: string | null = null
+let legacyPurged = false
+
 const listeners = new Set<() => void>()
 
 const emit = () => listeners.forEach((l) => l())
+
+export function isRealJwt(token?: string | null): boolean {
+  if (!token) return false
+  const parts = token.split(".")
+  return parts.length === 3 && parts.every((p) => p.length > 0)
+}
+
+export function purgeLegacyTokenStorage(): void {
+  if (typeof localStorage === "undefined") return
+  try {
+    localStorage.removeItem(ACCESS_TOKEN_KEY)
+    localStorage.removeItem(REFRESH_TOKEN_KEY)
+    localStorage.removeItem(TOKEN_EXPIRES_AT_KEY)
+    for (const k of ROLE_JWT_KEYS) {
+      localStorage.removeItem(k)
+    }
+  } catch {
+    // Bỏ qua nếu bộ nhớ bị khóa
+  }
+}
+
+export function hasSessionCookieFlag(): boolean {
+  if (typeof document === "undefined") return false
+  try {
+    return document.cookie
+      .split(";")
+      .some((part) => part.trim().startsWith(`${SESSION_COOKIE_FLAG}=1`))
+  } catch {
+    return false
+  }
+}
+
+function setSessionCookieFlag(active: boolean): void {
+  if (typeof document === "undefined") return
+  try {
+    const isHttps = typeof window !== "undefined" && window.location?.protocol === "https:"
+    const secureAttr = isHttps ? "; Secure" : ""
+    document.cookie = active
+      ? `${SESSION_COOKIE_FLAG}=1; Path=/; Max-Age=604800; SameSite=Lax${secureAttr}`
+      : `${SESSION_COOKIE_FLAG}=; Path=/; Max-Age=0; SameSite=Lax${secureAttr}`
+  } catch {
+    // Bỏ qua nếu cookie bị khóa
+  }
+}
 
 export type Session = {
   name: string
@@ -124,6 +177,10 @@ function invalidate() {
 }
 
 export function getSession(): Session | null {
+  if (!legacyPurged) {
+    legacyPurged = true
+    purgeLegacyTokenStorage()
+  }
   if (!primed) {
     cached = readSession()
     primed = true
@@ -132,30 +189,28 @@ export function getSession(): Session | null {
 }
 
 export function getAccessToken(): string | null {
-  if (typeof localStorage === "undefined") return null
-  try {
-    return localStorage.getItem(ACCESS_TOKEN_KEY)
-  } catch {
-    return null
+  if (inMemoryAccessToken) return inMemoryAccessToken
+  if (hasSessionCookieFlag() || getSession()?.fromBackend) {
+    return COOKIE_SESSION_SENTINEL
   }
+  return null
 }
 
 export function getRefreshToken(): string | null {
-  if (typeof localStorage === "undefined") return null
-  try {
-    return localStorage.getItem(REFRESH_TOKEN_KEY)
-  } catch {
-    return null
+  if (inMemoryRefreshToken) return inMemoryRefreshToken
+  if (hasSessionCookieFlag() || getSession()?.fromBackend) {
+    return COOKIE_REFRESH_SENTINEL
   }
+  return null
 }
 
 export function hasLiveBackendAuth(): boolean {
-  return Boolean(getSession()?.fromBackend || getAccessToken())
+  return Boolean(getSession()?.fromBackend || hasSessionCookieFlag() || inMemoryAccessToken)
 }
 
 /**
  * Kiểm tra payload `exp` của JWT phía client (không xác minh chữ ký).
- * Trả về `false` nếu chuỗi không phải JWT chuẩn để tránh xóa nhầm token demo/tùy biến.
+ * Trả về `false` nếu chuỗi không phải JWT chuẩn để tránh xóa nhầm token cookie/sentinel.
  */
 export function isJwtExpired(token?: string | null, leewaySeconds = 10): boolean {
   if (!token) return false
@@ -175,19 +230,17 @@ export function isJwtExpired(token?: string | null, leewaySeconds = 10): boolean
 }
 
 export function isStoredAccessTokenExpired(leewaySeconds = 10): boolean {
-  if (typeof localStorage === "undefined") return false
-  try {
-    const expiresRaw = localStorage.getItem(TOKEN_EXPIRES_AT_KEY)
-    if (expiresRaw) {
-      const expiresMs = Date.parse(expiresRaw)
-      if (!Number.isNaN(expiresMs) && Date.now() >= expiresMs - leewaySeconds * 1000) {
-        return true
-      }
+  if (inMemoryExpiresAt) {
+    const expiresMs = Date.parse(inMemoryExpiresAt)
+    if (!Number.isNaN(expiresMs) && Date.now() >= expiresMs - leewaySeconds * 1000) {
+      return true
     }
-  } catch {
-    // Bỏ qua lỗi đọc storage
   }
-  return isJwtExpired(getAccessToken(), leewaySeconds)
+  if (inMemoryAccessToken && isRealJwt(inMemoryAccessToken)) {
+    return isJwtExpired(inMemoryAccessToken, leewaySeconds)
+  }
+  // Khi dùng HttpOnly Cookie sau reload (RAM rỗng), để Backend tự kiểm tra hạn dùng & 401
+  return false
 }
 
 export function setAuthTokens(tokens: {
@@ -195,20 +248,17 @@ export function setAuthTokens(tokens: {
   refreshToken?: string | null
   expiresAt?: string | null
 }) {
-  if (typeof localStorage === "undefined") return
-  try {
-    if (tokens.accessToken) {
-      localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken)
-    }
-    if (tokens.refreshToken) {
-      localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken)
-    }
-    if (tokens.expiresAt) {
-      localStorage.setItem(TOKEN_EXPIRES_AT_KEY, tokens.expiresAt)
-    }
-  } catch {
-    // Bỏ qua nếu trình duyệt khoá bộ nhớ cục bộ
+  purgeLegacyTokenStorage()
+  if (tokens.accessToken) {
+    inMemoryAccessToken = tokens.accessToken
   }
+  if (tokens.refreshToken) {
+    inMemoryRefreshToken = tokens.refreshToken
+  }
+  if (tokens.expiresAt !== undefined) {
+    inMemoryExpiresAt = tokens.expiresAt ?? null
+  }
+  setSessionCookieFlag(true)
 }
 
 export function signIn(name: string, role: Role = "user", extra?: SessionExtra) {
@@ -238,17 +288,17 @@ export function updateSession(patch: Partial<Session>) {
   emit()
 }
 
-/** Xoá sạch toàn bộ phiên và khoá JWT trong localStorage (không gọi lại API logout). */
+/** Xoá sạch toàn bộ phiên, token trong RAM, cookie cờ và khoá JWT cũ trong localStorage. */
 export function clearAuthStorage() {
+  inMemoryAccessToken = null
+  inMemoryRefreshToken = null
+  inMemoryExpiresAt = null
+  setSessionCookieFlag(false)
+  purgeLegacyTokenStorage()
+
   if (typeof localStorage !== "undefined") {
     localStorage.removeItem(KEY)
-    localStorage.removeItem(ACCESS_TOKEN_KEY)
-    localStorage.removeItem(REFRESH_TOKEN_KEY)
-    localStorage.removeItem(TOKEN_EXPIRES_AT_KEY)
     localStorage.removeItem("ecolink:m12_entitlements")
-    for (const k of ROLE_JWT_KEYS) {
-      localStorage.removeItem(k)
-    }
   }
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("ecolink:auth-cleared"))

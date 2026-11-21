@@ -1,12 +1,11 @@
+import { useEffect } from "react"
 import { Navigate } from "react-router-dom"
+import { ensureActiveAuthSession } from "@/lib/api"
+import { openAuthPopup } from "@/lib/popupAuth"
 import { ROLE_HOME, useSession, type Role } from "@/lib/session"
 
-/** Chốt chặn route theo vai trò. Chưa đăng nhập -> về trang chủ /, đã đăng nhập sai
- *  vai trò -> về trang chủ của vai trò đó.
- *
- *  Đây chỉ là chốt chặn phía client để không ai thấy màn hình của vai trò
- *  khác. Bảo mật thật phải nằm ở backend: mỗi API tự kiểm tra token, nếu không
- *  thì A-04 "phân quyền" chỉ là trang trí. */
+/** Chốt chặn route theo vai trò. Chưa đăng nhập -> về trang chủ / và mở hộp thoại đăng nhập nhỏ,
+ *  đã đăng nhập sai vai trò -> về trang chủ của vai trò đó, đồng thời đối chiếu Cookie với Backend. */
 export default function RequireRole({
   roles,
   children,
@@ -15,6 +14,16 @@ export default function RequireRole({
   children: React.ReactNode
 }) {
   const session = useSession()
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    if (!session) {
+      openAuthPopup("login")
+      return
+    }
+    void ensureActiveAuthSession()
+  }, [session])
+
   if (!session) return <Navigate to="/" replace />
   if (!roles.includes(session.role)) return <Navigate to={ROLE_HOME[session.role]} replace />
   return <>{children}</>

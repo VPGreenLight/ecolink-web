@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { Link, NavLink, useNavigate } from "react-router-dom"
 import { ROLE_HOME, ROLE_LABEL, signOut, useSession, type Role } from "@/lib/session"
 import { openAuthPopup } from "@/lib/popupAuth"
+import { useEntitlements } from "@/lib/servicePackageApi"
 import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
 import { NAV_LINKS } from "@/data/nav"
 
@@ -136,6 +137,7 @@ function ExploreList({ close, withRegister }: { close: () => void; withRegister:
 
 function AccountMenu() {
   const session = useSession()
+  const entitlements = useEntitlements()
   const user = session?.name ?? ""
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
@@ -229,19 +231,43 @@ function AccountMenu() {
                     </Link>
                   ))}
 
-                  {/* Nút vào khu vực theo vai trò (chỉ hiện cho các vai trò vận hành, không hiện cho user) */}
-                  {session!.role !== "user" && (
+                  {/* Lối vào nhanh nâng cấp gói dịch vụ theo vai trò */}
+                  {session!.role === "user" && (
                     <Link
-                      to={ROLE_HOME[session!.role]}
+                      to="/user/payout#citizen-packages"
                       onClick={() => setOpen(false)}
-                      className="flex items-center justify-between rounded-xl bg-brand/10 px-3.5 py-2.5 text-sm font-semibold text-brand-deep transition-colors hover:bg-brand/16"
+                      className="flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
                     >
-                      Khu vực {ROLE_LABEL[session!.role].toLowerCase()}
-                      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-4 text-muted">
-                        <path d="m6 4 4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
+                      <span>Gói dịch vụ &amp; Tắt quảng cáo</span>
+                      <span className="rounded-full bg-brand/12 px-2 py-0.5 text-[11px] font-bold text-brand-deep">
+                        {entitlements.currentTier}
+                      </span>
                     </Link>
                   )}
+                  {session!.role === "recycler" && (
+                    <Link
+                      to="/recycler#recycler-packages"
+                      onClick={() => setOpen(false)}
+                      className="flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
+                    >
+                      <span>Gói dịch vụ &amp; Tích xanh Pro</span>
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
+                        {entitlements.currentTier}
+                      </span>
+                    </Link>
+                  )}
+
+                  {/* Nút vào khu vực theo vai trò (hiện đồng nhất cho cả user, recycler, staff, admin) */}
+                  <Link
+                    to={ROLE_HOME[session!.role]}
+                    onClick={() => setOpen(false)}
+                    className="flex items-center justify-between rounded-xl bg-brand/10 px-3.5 py-2.5 text-sm font-semibold text-brand-deep transition-colors hover:bg-brand/16"
+                  >
+                    Khu vực {ROLE_LABEL[session!.role].toLowerCase()}
+                    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-4 text-muted">
+                      <path d="m6 4 4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </Link>
                 </div>
 
                 {/* Nhóm 2: Khám phá */}

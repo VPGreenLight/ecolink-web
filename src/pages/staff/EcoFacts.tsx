@@ -4,6 +4,7 @@ import SearchFilterBar from "@/components/SearchFilterBar"
 import PaginationBar from "@/components/PaginationBar"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { ECO_FACTS, type EcoFact } from "@/data/ops"
+import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
 import {
   createStaffEcoFact,
   deleteStaffEcoFact,
@@ -12,11 +13,10 @@ import {
   updateStaffEcoFact,
   type EcoFactItemDto,
 } from "@/lib/gamificationApi"
-import { hasLiveBackendAuth } from "@/lib/session"
 
 /** S-09 Quản lý nội dung Eco Fact. */
 export default function EcoFacts() {
-  const [liveMode] = useState(() => hasLiveBackendAuth())
+  const [liveMode] = useState(() => !isSsrSmokeTest())
   const [offlineList, setOfflineList] = useState<EcoFact[]>(ECO_FACTS)
   const [liveList, setLiveList] = useState<EcoFactItemDto[]>([])
   const [totalCount, setTotalCount] = useState(0)
@@ -26,7 +26,7 @@ export default function EcoFacts() {
   const [statusFilter, setStatusFilter] = useState<string>("")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
-  const [loading, setLoading] = useState(liveMode)
+  const [loading, setLoading] = useState(() => initApiLoading(true))
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [title, setTitle] = useState("")
@@ -136,7 +136,7 @@ export default function EcoFacts() {
           </div>
         )}
 
-        <Field label="Tiêu đề kiến thức">
+        <Field label="Tiêu đề kiến thức" required>
           <input
             className="input"
             value={title}
@@ -145,7 +145,7 @@ export default function EcoFacts() {
           />
         </Field>
 
-        <Field label="Nội dung" hint="Tối đa 300 ký tự. Ghi rõ số liệu và tác động môi trường.">
+        <Field label="Nội dung" required hint="Tối đa 300 ký tự. Ghi rõ số liệu và tác động môi trường.">
           <textarea
             className="input h-auto resize-y py-3 leading-6"
             rows={3}
@@ -157,7 +157,7 @@ export default function EcoFacts() {
 
         {liveMode ? (
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Mốc cấp Cây Ảo mở khoá" hint="Từ cấp 1 trở lên theo cấu hình A-07.">
+            <Field label="Mốc cấp Cây Ảo mở khoá" required hint="Từ cấp 1 trở lên theo cấu hình A-07.">
               <input
                 className="input w-40 tabular-nums"
                 type="number"
@@ -177,7 +177,7 @@ export default function EcoFacts() {
             </Field>
           </div>
         ) : (
-          <Field label="Điểm cần để mở" hint="Số điểm tiêu dùng, tức là sẽ bị trừ một lần khi mở.">
+          <Field label="Điểm cần để mở" required hint="Số điểm tiêu dùng, tức là sẽ bị trừ một lần khi mở.">
             <input
               className="input w-40 tabular-nums"
               type="number"

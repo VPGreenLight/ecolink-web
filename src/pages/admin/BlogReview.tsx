@@ -3,9 +3,10 @@ import { Link } from "react-router-dom"
 import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { ApiError } from "@/lib/api"
-import { PageHead, Status, Table, Td } from "@/components/admin/ui"
+import { PageHead, RequiredMark, Status, Table, Td } from "@/components/admin/ui"
 import { POSTS, type Post } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
 import {
   fetchAdminBlogDetail,
   fetchAdminPendingBlogs,
@@ -16,7 +17,6 @@ import {
   type BlogPostDetailDto,
   type BlogPostSummaryDto,
 } from "@/lib/blogApi"
-import { hasLiveBackendAuth } from "@/lib/session"
 
 interface ReviewedRow {
   id: string
@@ -33,7 +33,7 @@ interface ReviewedRow {
  *  Hủy bài luôn bắt buộc có lý do: tác giả đã viết và chờ, họ cần biết sửa
  *  chỗ nào thay vì thấy bài biến mất. Cùng lý do với S-04 từ chối hồ sơ. */
 export default function BlogReview() {
-  const [liveMode] = useState(() => hasLiveBackendAuth())
+  const [liveMode] = useState(() => !isSsrSmokeTest())
   const [offlineList, setOfflineList] = useState<Post[]>(POSTS)
 
   const [pendingLive, setPendingLive] = useState<BlogPostSummaryDto[]>([])
@@ -51,7 +51,7 @@ export default function BlogReview() {
   const [pendingPageSize, setPendingPageSize] = useState(5)
   const [donePage, setDonePage] = useState(1)
   const [donePageSize, setDonePageSize] = useState(10)
-  const [loading, setLoading] = useState(liveMode)
+  const [loading, setLoading] = useState(() => initApiLoading(true))
 
   useEffect(() => {
     setSearchQuery(debouncedSearch.trim())
@@ -433,6 +433,7 @@ export default function BlogReview() {
                         className="text-sm font-semibold text-ink"
                       >
                         Lý do hủy bài {code} (tác giả sẽ thấy lý do này)
+                        <RequiredMark />
                       </label>
                       <textarea
                         id={`reject-reason-${p.id}`}

@@ -1,21 +1,29 @@
 import { Link } from "react-router-dom"
 import { Sparkles, VolumeX } from "lucide-react"
 import { useEntitlements } from "@/lib/servicePackageApi"
+import { useSession } from "@/lib/session"
 
 /** Banner quảng cáo / tài trợ sinh thái hiển thị cho tài khoản gói Basic (0đ).
  *  Tự động ẩn hoàn toàn ngay khi tài khoản nâng cấp Premium (59k) hoặc Pro (1tr) có `isAdFree === true`. */
 export default function SponsoredAdBanner({
-  upgradeTo = "/user/payout",
+  upgradeTo,
   compact = false,
 }: {
   upgradeTo?: string
   compact?: boolean
 }) {
+  const session = useSession()
   const entitlements = useEntitlements()
 
   if (entitlements.isAdFree) {
     return null
   }
+
+  const resolvedUpgradeTo =
+    upgradeTo ??
+    (session?.role === "recycler"
+      ? "/recycler#recycler-packages"
+      : "/user/payout#citizen-packages")
 
   return (
     <aside
@@ -43,21 +51,21 @@ export default function SponsoredAdBanner({
         </div>
       </div>
 
-      {upgradeTo.startsWith("#") ? (
+      {resolvedUpgradeTo.startsWith("#") ? (
         <a
-          href={upgradeTo}
+          href={resolvedUpgradeTo}
           className="btn-outline inline-flex h-9 shrink-0 items-center gap-1.5 px-3.5 text-xs font-semibold"
         >
           <VolumeX className="size-3.5" aria-hidden="true" />
-          Tắt quảng cáo
+          Tắt quảng cáo (Gói Premium)
         </a>
       ) : (
         <Link
-          to={upgradeTo}
+          to={resolvedUpgradeTo}
           className="btn-outline inline-flex h-9 shrink-0 items-center gap-1.5 px-3.5 text-xs font-semibold"
         >
           <VolumeX className="size-3.5" aria-hidden="true" />
-          Tắt quảng cáo
+          Tắt quảng cáo (Gói Premium)
         </Link>
       )}
     </aside>

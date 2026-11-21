@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { PageHead, Field } from "@/components/Portal"
+import { FormRequiredLegend, PageHead, Field } from "@/components/Portal"
 import { changeCurrentUserPassword, formatAuthError } from "@/lib/authApi"
 
 /** SU-02 Đổi mật khẩu — nối trực tiếp tới `POST /api/v1/auth/change-password`.
@@ -68,7 +68,8 @@ export default function Password() {
         noValidate
         className="card flex max-w-[520px] flex-col gap-5 p-5 md:p-6"
       >
-        <Field label="Mật khẩu hiện tại">
+        <FormRequiredLegend />
+        <Field label="Mật khẩu hiện tại" required>
           <input
             className={`input ${err.startsWith("Nhập") || err.includes("hiện tại") ? "border-warn" : ""}`}
             type="password"
@@ -81,7 +82,7 @@ export default function Password() {
           />
         </Field>
 
-        <Field label="Mật khẩu mới" hint="Tối thiểu 8 ký tự, nên có cả chữ và số.">
+        <Field label="Mật khẩu mới" required hint="Tối thiểu 8 ký tự, nên có cả chữ và số.">
           <input
             className="input"
             type="password"
@@ -91,7 +92,7 @@ export default function Password() {
           />
         </Field>
 
-        <Field label="Nhập lại mật khẩu mới">
+        <Field label="Nhập lại mật khẩu mới" required>
           <input
             className="input"
             type="password"

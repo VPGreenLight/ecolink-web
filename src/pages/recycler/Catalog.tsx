@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
 import PaginationBar, { paginateItems } from "@/components/PaginationBar"
-import { PageHead, Status, Table, Td } from "@/components/Portal"
+import { PageHead, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { VND, WASTES } from "@/data/waste"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   fetchRecyclerPrices,
   fetchWasteCategories,
@@ -36,15 +37,16 @@ const WASTE_TO_CAT_CODE: Record<string, string> = {
  *  khác nhau có chủ ý: giá hệ thống là mức trần tham khảo để người dân biết
  *  mình bán được bao nhiêu, giá ở đây là giá cơ sở thật sự trả. Người dùng
  *  luôn thấy con số hệ thống nên không bị bất ngờ. */
+const INITIAL_SEED_ROWS: Row[] = WASTES.filter((w) => w.recyclable).map((w) => ({
+  id: w.id,
+  on: true,
+  price: w.price,
+  categoryCode: WASTE_TO_CAT_CODE[w.id] || "plastic",
+}))
+
 export default function Catalog() {
-  const [rows, setRows] = useState<Row[]>(() =>
-    WASTES.filter((w) => w.recyclable).map((w) => ({
-      id: w.id,
-      on: true,
-      price: w.price,
-      categoryCode: WASTE_TO_CAT_CODE[w.id] || "plastic",
-    })),
-  )
+  const [rows, setRows] = useState<Row[]>(() => initApiState([], INITIAL_SEED_ROWS))
+  const [loading, setLoading] = useState(() => initApiLoading(true))
   const [categories, setCategories] = useState<WasteCategoryDto[]>([])
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -58,34 +60,51 @@ export default function Catalog() {
   useEffect(() => {
     let active = true
     async function load() {
-      const [catsRes, pricesRes] = await Promise.all([
-        fetchWasteCategories(),
-        fetchRecyclerPrices(),
-      ])
-      if (!active) return
+      try {
+        const [catsRes, pricesRes] = await Promise.all([
+          fetchWasteCategories(),
+          fetchRecyclerPrices(),
+        ])
+        if (!active) return
 
-      if (catsRes.items.length > 0) {
-        setCategories(catsRes.items)
-      }
+        if (catsRes.items.length > 0) {
+          setCategories(catsRes.items)
+        }
 
-      if (pricesRes.items.length > 0) {
-        setRows((prev) =>
-          prev.map((r) => {
-            const matched = pricesRes.items.find(
-              (p) =>
-                p.wasteCategoryCode.toLowerCase() === r.categoryCode.toLowerCase() ||
-                p.wasteCategoryName.toLowerCase().includes(r.categoryCode.toLowerCase()),
-            )
-            if (matched) {
-              return {
-                ...r,
-                on: matched.isActive,
-                price: matched.pricePerKg > 0 ? matched.pricePerKg : r.price,
-              }
-            }
-            return r
-          }),
-        )
+        const baseRows: Row[] =
+          catsRes.items.length > 0
+            ? INITIAL_SEED_ROWS.map((r) => {
+                const matched = pricesRes.items.find(
+                  (p) =>
+                    p.wasteCategoryCode.toLowerCase() === r.categoryCode.toLowerCase() ||
+                    p.wasteCategoryName.toLowerCase().includes(r.categoryCode.toLowerCase()),
+                )
+                if (matched) {
+                  return {
+                    ...r,
+                    on: matched.isActive,
+                    price: matched.pricePerKg > 0 ? matched.pricePerKg : r.price,
+                  }
+                }
+                return r
+              })
+            : INITIAL_SEED_ROWS.map((r) => {
+                const matched = pricesRes.items.find(
+                  (p) =>
+                    p.wasteCategoryCode.toLowerCase() === r.categoryCode.toLowerCase() ||
+                    p.wasteCategoryName.toLowerCase().includes(r.categoryCode.toLowerCase()),
+                )
+                return matched
+                  ? {
+                      ...r,
+                      on: matched.isActive,
+                      price: matched.pricePerKg > 0 ? matched.pricePerKg : r.price,
+                    }
+                  : r
+              })
+        setRows(baseRows)
+      } finally {
+        if (active) setLoading(false)
       }
     }
     void load()
@@ -199,6 +218,10 @@ export default function Catalog() {
               </select>
             </SearchFilterBar>
 
+            {loading ? (
+              <TableSkeleton rows={5} />
+            ) : (
+            <>
             <Table head={["Loại rác", "Nhóm", "Thu mua", "Giá bạn trả", "Giá hệ thống"]}>
               {pagedRows.length === 0 ? (
                 <tr>
@@ -253,6 +276,8 @@ export default function Catalog() {
               onPageSizeChange={setPageSize}
               itemLabel="loại rác"
             />
+            </>
+            )}
           </>
         )
       })()}

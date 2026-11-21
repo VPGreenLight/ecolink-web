@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
+import { RequiredMark } from "@/components/Portal"
 import {
   AI_DONE,
   AI_IDLE,
@@ -14,16 +15,20 @@ import {
   AI_CLASS_OPTIONS,
   classifyWasteImage,
   fetchAiModels,
+  fetchMyScanHistory,
   getCategoryMeta,
   loadSampleImageAsFile,
   parsePreparationSteps,
   submitAiFeedback,
   type DetectedWasteObjectDto,
+  type MyWasteScanHistoryItemDto,
   type WasteScanResponseDto,
   type WasteSortingGuideDto,
 } from "@/lib/wasteScanApi"
 import { fetchMyAiFeedback, type MyAiFeedbackReportDto } from "@/lib/aiCurationApi"
-import { getAccessToken } from "@/lib/session"
+import { isSsrSmokeTest } from "@/lib/hydration"
+import { openAuthPopup } from "@/lib/popupAuth"
+import { getAccessToken, useSession } from "@/lib/session"
 import { isDiscoverableCategory } from "@/lib/recyclerDiscoveryApi"
 
 /** Trang này giữ bố cục gọn 2 cột (6/6) vừa màn hình 1440x900 và kết nối trực tiếp
@@ -305,6 +310,8 @@ function buildOfflineDemoViewModel(): ViewModelResult {
 }
 
 export default function Scanner() {
+  const session = useSession()
+  const isGuest = !session && !isSsrSmokeTest()
   const [phase, setPhase] = useState<Phase>("idle")
   const [file, setFile] = useState<File | null>(null)
   const [useSample, setUseSample] = useState(false)
@@ -316,6 +323,7 @@ export default function Scanner() {
   const [selectedObjectIndex, setSelectedObjectIndex] = useState<number>(0)
   const [showBoxes, setShowBoxes] = useState<boolean>(true)
   const [myFeedbacks, setMyFeedbacks] = useState<MyAiFeedbackReportDto[]>([])
+  const [myScanHistory, setMyScanHistory] = useState<MyWasteScanHistoryItemDto[]>([])
   const [hasSession, setHasSession] = useState<boolean>(false)
   const [showMyHistory, setShowMyHistory] = useState<boolean>(false)
   const [scanError, setScanError] = useState<{
@@ -334,6 +342,15 @@ export default function Scanner() {
       .then((res) => {
         if (res.success && Array.isArray(res.data?.items)) {
           setMyFeedbacks(res.data.items)
+        }
+      })
+      .catch(() => {
+        // Bỏ qua êm nếu phiên hết hạn hoặc backend đang offline
+      })
+    fetchMyScanHistory({ pageSize: 5 })
+      .then((res) => {
+        if (res.success && Array.isArray(res.data?.items)) {
+          setMyScanHistory(res.data.items)
         }
       })
       .catch(() => {
@@ -365,6 +382,10 @@ export default function Scanner() {
   }, [])
 
   const pick = (f: File | null) => {
+    if (isGuest) {
+      openAuthPopup("login")
+      return
+    }
     abortRef.current?.abort()
     setFile(f)
     setUseSample(false)
@@ -400,6 +421,26 @@ export default function Scanner() {
   const runScan = async (explicitFile?: File) => {
     const hasInput = Boolean(explicitFile || file || useSample)
     if (!hasInput) return
+
+    if (isGuest) {
+      if (!useSample || explicitFile || file) {
+        openAuthPopup("login")
+        return
+      }
+      // Khách được phép quét thử ảnh mẫu demo bằng mô phỏng nội bộ không tiêu tốn tài nguyên AI Backend
+      setScanError(null)
+      setSelectedObjectIndex(0)
+      setShowBoxes(true)
+      setPhase("scanning")
+      setTimeout(() => {
+        setScanResult({
+          ...buildOfflineDemoViewModel(),
+          message: "Kết quả quét thử ảnh mẫu dành cho Khách. Đăng nhập để chụp hoặc tải ảnh rác thật của bạn.",
+        })
+        setPhase("done")
+      }, 450)
+      return
+    }
 
     abortRef.current?.abort()
     const controller = new AbortController()
@@ -512,12 +553,20 @@ export default function Scanner() {
             />
           ) : phase === "idle" && !preview ? (
             <UploadZone
+              isGuest={isGuest}
               onPick={pick}
               onSample={pickSample}
-              onCamera={() => setCamera(true)}
+              onCamera={() => {
+                if (isGuest) {
+                  openAuthPopup("login")
+                  return
+                }
+                setCamera(true)
+              }}
             />
           ) : preview ? (
             <Preview
+              isGuest={isGuest}
               file={preview}
               scanning={phase === "scanning"}
               done={phase === "done"}
@@ -528,7 +577,13 @@ export default function Scanner() {
               onToggleBoxes={() => setShowBoxes((v) => !v)}
               onReset={reset}
               onPick={pick}
-              onCamera={() => setCamera(true)}
+              onCamera={() => {
+                if (isGuest) {
+                  openAuthPopup("login")
+                  return
+                }
+                setCamera(true)
+              }}
             />
           ) : null}
 
@@ -579,42 +634,90 @@ export default function Scanner() {
                     }}
                     className="flex w-full items-center justify-between text-xs font-semibold text-brand-deep hover:underline"
                   >
-                    <span>Lịch sử báo sai AI của tôi ({myFeedbacks.length})</span>
+                    <span>
+                      Lịch sử quét &amp; báo sai AI của tôi ({myScanHistory.length} quét ·{" "}
+                      {myFeedbacks.length} báo sai)
+                    </span>
                     <span>{showMyHistory ? "Ẩn" : "Xem"}</span>
                   </button>
 
                   {showMyHistory && (
-                    <div className="mt-2.5 flex flex-col gap-2">
-                      {myFeedbacks.length === 0 ? (
-                        <p className="text-xs text-muted">
-                          Bạn chưa gửi báo cáo phân loại sai nào.
+                    <div className="mt-2.5 flex flex-col gap-3">
+                      <div>
+                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                          Lần quét AI gần đây
                         </p>
-                      ) : (
-                        myFeedbacks.map((fb) => (
-                          <div
-                            key={fb.id}
-                            className="rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-xs"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-semibold text-ink">
-                                AI: {fb.predictedLabel} → Đề xuất: {fb.userReportedLabel}
-                              </span>
-                              <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-brand-deep">
-                                {fb.status === "Reviewed"
-                                  ? `Đã duyệt (${fb.adminVerifiedLabel ?? fb.userReportedLabel})`
-                                  : fb.status === "Rejected"
-                                    ? "Từ chối"
-                                    : "Chờ duyệt"}
-                              </span>
-                            </div>
-                            {fb.reviewNote && (
-                              <p className="mt-1 text-[11px] text-muted">
-                                Phản hồi Staff: {fb.reviewNote}
-                              </p>
-                            )}
+                        {myScanHistory.length === 0 ? (
+                          <p className="text-xs text-muted">
+                            Chưa có lượt quét ảnh AI nào được lưu.
+                          </p>
+                        ) : (
+                          <div className="flex flex-col gap-1.5">
+                            {myScanHistory.map((item) => {
+                              const meta = getCategoryMeta(item.predictedLabel)
+                              return (
+                                <div
+                                  key={item.scanId}
+                                  className="flex items-center justify-between gap-2 rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-xs"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="truncate font-semibold text-ink">
+                                      {meta.shortName} ({Math.round(item.confidenceScore * 100)}%)
+                                    </p>
+                                    <p className="text-[11px] text-muted">
+                                      {item.sortingGuide?.standardBinColor
+                                        ? `Thùng ${item.sortingGuide.standardBinColor}`
+                                        : item.pipelineUsed}{" "}
+                                      · {new Date(item.scannedAt).toLocaleString("vi-VN")}
+                                    </p>
+                                  </div>
+                                  <span className="shrink-0 rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-semibold text-brand-deep">
+                                    {item.predictedLabel}
+                                  </span>
+                                </div>
+                              )
+                            })}
                           </div>
-                        ))
-                      )}
+                        )}
+                      </div>
+
+                      <div>
+                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                          Báo cáo phân loại sai của tôi
+                        </p>
+                        {myFeedbacks.length === 0 ? (
+                          <p className="text-xs text-muted">
+                            Bạn chưa gửi báo cáo phân loại sai nào.
+                          </p>
+                        ) : (
+                          <div className="flex flex-col gap-1.5">
+                            {myFeedbacks.map((fb) => (
+                              <div
+                                key={fb.id}
+                                className="rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-xs"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-semibold text-ink">
+                                    AI: {fb.predictedLabel} → Đề xuất: {fb.userReportedLabel}
+                                  </span>
+                                  <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-brand-deep">
+                                    {fb.status === "Reviewed"
+                                      ? `Đã duyệt (${fb.adminVerifiedLabel ?? fb.userReportedLabel})`
+                                      : fb.status === "Rejected"
+                                        ? "Từ chối"
+                                        : "Chờ duyệt"}
+                                  </span>
+                                </div>
+                                {fb.reviewNote && (
+                                  <p className="mt-1 text-[11px] text-muted">
+                                    Phản hồi Staff: {fb.reviewNote}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -648,6 +751,7 @@ export default function Scanner() {
 const sampleShot = "sample" as const
 
 function Preview({
+  isGuest = false,
   file,
   scanning,
   done,
@@ -660,6 +764,7 @@ function Preview({
   onPick,
   onCamera,
 }: {
+  isGuest?: boolean
   file: File | typeof sampleShot
   scanning: boolean
   done: boolean
@@ -921,8 +1026,16 @@ function Preview({
         <span className="truncate text-[13px] text-body">
           {file === sampleShot ? r.imageCaption : file.name}
         </span>
-        <label className="btn-outline h-8 shrink-0 cursor-pointer px-3 text-[13px]">
-          Đổi ảnh
+        <label
+          onClick={(e) => {
+            if (isGuest) {
+              e.preventDefault()
+              openAuthPopup("login")
+            }
+          }}
+          className="btn-outline h-8 shrink-0 cursor-pointer px-3 text-[13px]"
+        >
+          {isGuest ? "Đăng nhập để đổi ảnh" : "Đổi ảnh"}
           <input
             type="file"
             accept=".jpg,.jpeg,.png,.webp,.bmp,image/*"
@@ -938,10 +1051,12 @@ function Preview({
 /* ---------------------------------------------------------------- vùng tải ảnh */
 
 function UploadZone({
+  isGuest = false,
   onPick,
   onSample,
   onCamera,
 }: {
+  isGuest?: boolean
   onPick: (f: File) => void
   onSample: () => void
   onCamera: () => void
@@ -957,7 +1072,9 @@ function UploadZone({
       <div>
         <p className="text-base font-bold text-ink">Đưa ảnh vật rác vào để bắt đầu</p>
         <p className="mt-1.5 text-[13px] leading-5 text-muted">
-          Hỗ trợ JPG, PNG, WEBP. AI tự động đóng khung từng món rác và ưu tiên vật thể ở giữa khung ngắm.
+          {isGuest
+            ? "Khách có thể dùng thử ảnh mẫu AI bên dưới. Đăng nhập để chụp hoặc tải ảnh rác thật từ thiết bị."
+            : "Hỗ trợ JPG, PNG, WEBP. AI tự động đóng khung từng món rác và ưu tiên vật thể ở giữa khung ngắm."}
         </p>
       </div>
 
@@ -966,7 +1083,15 @@ function UploadZone({
           <CameraIcon />
           Chụp ảnh
         </button>
-        <label className="btn-outline h-11 cursor-pointer px-5">
+        <label
+          onClick={(e) => {
+            if (isGuest) {
+              e.preventDefault()
+              openAuthPopup("login")
+            }
+          }}
+          className="btn-outline h-11 cursor-pointer px-5"
+        >
           Tải ảnh lên
           <input
             type="file"
@@ -1178,12 +1303,45 @@ function AiFace({
 
 /* ---------------------------------------------------------------- kết quả chuẩn & OOD */
 
+function getConfidenceDisplay(rawConfidence: number, threshold = 0.6) {
+  const clamped = Math.max(0, Math.min(1, Number.isFinite(rawConfidence) ? rawConfidence : 0))
+  const pctNumber = Math.round(clamped * 1000) / 10
+  const pctText = `${pctNumber.toFixed(1)}%`
+  const barWidth = `${Math.max(4, Math.min(100, Math.round(clamped * 100)))}%`
+  if (clamped < threshold) {
+    return {
+      pctText,
+      barWidth,
+      levelText: "Dưới ngưỡng tin cậy",
+      badgeClass: "border-warn/35 bg-warn/10 text-warn",
+      barClass: "bg-warn",
+    }
+  }
+  if (clamped >= 0.85) {
+    return {
+      pctText,
+      barWidth,
+      levelText: "Độ tin cậy rất cao",
+      badgeClass: "border-brand/30 bg-brand/12 text-brand-deep",
+      barClass: "bg-brand",
+    }
+  }
+  return {
+    pctText,
+    barWidth,
+    levelText: "Độ tin cậy khá",
+    badgeClass: "border-brand/25 bg-mint/25 text-brand-deep",
+    barClass: "bg-brand",
+  }
+}
+
 function ScanResult({ result }: { result: ViewModelResult }) {
   const mapUrl =
     result.recyclable && isDiscoverableCategory(result.categoryCode)
       ? `/map?category=${encodeURIComponent(result.categoryCode)}`
       : "/map"
   const summaryEntries = Object.entries(result.categorySummary)
+  const conf = getConfidenceDisplay(result.rawConfidence, result.confidenceThreshold)
 
   return (
     <div className="flex flex-col gap-3">
@@ -1249,6 +1407,34 @@ function ScanResult({ result }: { result: ViewModelResult }) {
           </span>
         </div>
 
+        <div className="mt-3 rounded-lg border border-line bg-white px-3.5 py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="font-semibold text-ink">
+              Độ tin cậy AI (Kết quả chắc chắn nhất)
+            </span>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold tabular-nums ${conf.badgeClass}`}
+            >
+              <span>{conf.pctText}</span>
+              <span>·</span>
+              <span>{conf.levelText}</span>
+            </span>
+          </div>
+          <div
+            className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-3"
+            role="progressbar"
+            aria-label="Độ tin cậy AI"
+            aria-valuenow={Math.round(result.rawConfidence * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className={`h-full rounded-full transition-all ${conf.barClass}`}
+              style={{ width: conf.barWidth }}
+            />
+          </div>
+        </div>
+
         {result.detectedCount > 1 && summaryEntries.length > 0 ? (
           <div className="mt-3 flex flex-col gap-2">
             <div className="flex flex-wrap gap-1.5">
@@ -1303,6 +1489,7 @@ function OodResult({
   result: ViewModelResult
   onSelectPrimary?: () => void
 }) {
+  const conf = getConfidenceDisplay(result.rawConfidence, result.confidenceThreshold)
   return (
     <div
       data-message-code={result.messageCode || "MSG-CLS-02"}
@@ -1317,6 +1504,11 @@ function OodResult({
           <span>Cần chụp rõ hơn</span>
         </p>
         <p className="mt-1.5 text-[13px] leading-5 text-ink">{result.message}</p>
+        <p className="mt-2 rounded-lg border border-warn/25 bg-white/80 px-3 py-2 text-xs font-medium text-ink">
+          Độ tin cậy cao nhất AI đo được:{" "}
+          <b className="tabular-nums text-warn">{conf.pctText}</b> (thấp hơn ngưỡng an toàn tối thiểu{" "}
+          {Math.round(result.confidenceThreshold * 100)}%).
+        </p>
         {onSelectPrimary && (
           <button
             type="button"
@@ -1362,6 +1554,8 @@ function InlineFeedbackReport({
   confidenceScore: number
   defaultOpen?: boolean
 }) {
+  const session = useSession()
+  const isGuest = !session && !isSsrSmokeTest()
   const [open, setOpen] = useState(defaultOpen)
   const [reportedLabel, setReportedLabel] = useState("")
   const [note, setNote] = useState("")
@@ -1370,6 +1564,10 @@ function InlineFeedbackReport({
   const [errMsg, setErrMsg] = useState("")
 
   const handleSubmit = async () => {
+    if (isGuest) {
+      openAuthPopup("login")
+      return
+    }
     if (!reportedLabel || sending) return
     setSending(true)
     setErrMsg("")
@@ -1406,7 +1604,13 @@ function InlineFeedbackReport({
     return (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          if (isGuest) {
+            openAuthPopup("login")
+            return
+          }
+          setOpen(true)
+        }}
         className="self-center text-xs font-medium text-muted underline underline-offset-4 hover:text-brand-deep"
       >
         AI nhận diện chưa đúng? Báo nhãn đúng tại đây
@@ -1430,26 +1634,35 @@ function InlineFeedbackReport({
       </div>
 
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        <select
-          aria-label="Chọn loại rác đúng"
-          value={reportedLabel}
-          onChange={(e) => setReportedLabel(e.target.value)}
-          className="h-9 rounded-lg border border-sage-line bg-white px-2.5 text-xs text-ink focus:border-brand focus:outline-none"
-        >
-          <option value="">-- Chọn loại rác đúng --</option>
-          {AI_CLASS_OPTIONS.map((opt) => (
-            <option key={opt.code} value={opt.code}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <input
-          type="text"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Ghi chú thêm (tuỳ chọn)"
-          className="h-9 rounded-lg border border-sage-line bg-white px-2.5 text-xs text-ink placeholder:text-muted focus:border-brand focus:outline-none"
-        />
+        <label className="flex flex-col gap-1 text-[11px] font-semibold text-ink">
+          <span>
+            Loại rác đúng theo bạn
+            <RequiredMark />
+          </span>
+          <select
+            aria-label="Chọn loại rác đúng"
+            value={reportedLabel}
+            onChange={(e) => setReportedLabel(e.target.value)}
+            className="h-9 rounded-lg border border-sage-line bg-white px-2.5 text-xs font-normal text-ink focus:border-brand focus:outline-none"
+          >
+            <option value="">-- Chọn loại rác đúng --</option>
+            {AI_CLASS_OPTIONS.map((opt) => (
+              <option key={opt.code} value={opt.code}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-[11px] font-semibold text-ink">
+          <span>Ghi chú thêm</span>
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Ghi chú thêm (tuỳ chọn)"
+            className="h-9 rounded-lg border border-sage-line bg-white px-2.5 text-xs font-normal text-ink placeholder:text-muted focus:border-brand focus:outline-none"
+          />
+        </label>
       </div>
 
       {errMsg && <p className="mt-1.5 text-warn">{errMsg}</p>}

@@ -18,7 +18,7 @@ import {
   rotateRefreshTokenSingleFlight,
   type ApiResponse,
 } from "@/lib/api"
-import { getAccessToken, getRefreshToken } from "@/lib/session"
+import { getAccessToken, getRefreshToken, isRealJwt } from "@/lib/session"
 
 /* ============================================================================
  * 1. BẢNG ÁNH XẠ QUYỀN HẠN NHÂN VIÊN (CANONICAL <-> UI ALIAS) — BR-ADM-02
@@ -601,7 +601,7 @@ export async function exportAdminReportBlob(
 
   const headers = new Headers()
   const token = getAccessToken()
-  if (token) {
+  if (isRealJwt(token)) {
     headers.set("Authorization", `Bearer ${token}`)
   }
 

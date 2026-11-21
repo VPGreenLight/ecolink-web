@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
-import { PageHead } from "@/components/Portal"
+import { FormRequiredLegend, PageHead, RequiredMark } from "@/components/Portal"
 import { ApiError } from "@/lib/api"
 import { LOCATION_PRESETS } from "@/lib/recyclerDiscoveryApi"
 import {
@@ -285,9 +285,13 @@ export default function JoinRecycler() {
       )}
 
       <form onSubmit={(e) => void submit(e)} noValidate className="card flex flex-col gap-6 p-5 md:p-6">
+        <FormRequiredLegend />
         <div className="grid gap-5 sm:grid-cols-2">
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Tên cơ sở
+            <span>
+              Tên cơ sở
+              <RequiredMark />
+            </span>
             <input
               className={`input ${err.startsWith("Cần tên") ? "border-warn" : ""}`}
               value={name}
@@ -296,7 +300,10 @@ export default function JoinRecycler() {
             />
           </label>
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Người đại diện
+            <span>
+              Người đại diện
+              <RequiredMark />
+            </span>
             <input
               className="input"
               value={owner}
@@ -305,7 +312,10 @@ export default function JoinRecycler() {
             />
           </label>
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Số điện thoại
+            <span>
+              Số điện thoại
+              <RequiredMark />
+            </span>
             <input
               className={`input tabular-nums ${
                 err.startsWith("Số điện thoại") ? "border-warn" : ""
@@ -317,7 +327,10 @@ export default function JoinRecycler() {
             />
           </label>
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Email nhận kết quả thẩm định
+            <span>
+              Email nhận kết quả thẩm định
+              <RequiredMark />
+            </span>
             <input
               className="input"
               type="email"
@@ -329,7 +342,10 @@ export default function JoinRecycler() {
         </div>
 
         <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-          Địa chỉ kho bãi thu gom thực tế
+          <span>
+            Địa chỉ kho bãi thu gom thực tế
+            <RequiredMark />
+          </span>
           <input
             className={`input ${err.startsWith("Cần địa chỉ") ? "border-warn" : ""}`}
             value={address}
@@ -341,6 +357,7 @@ export default function JoinRecycler() {
         <div className="flex flex-col gap-2">
           <span className="text-[13px] font-semibold text-ink">
             Ghim vị trí kho bãi trên bản đồ
+            <RequiredMark />
           </span>
           <span className="text-[12px] text-muted">
             Nhân viên thẩm định sẽ đối chiếu ghim này với địa chỉ trên giấy phép kinh doanh.
@@ -365,6 +382,7 @@ export default function JoinRecycler() {
         <fieldset>
           <legend className="text-[13px] font-semibold text-ink">
             Loại rác bạn thu mua
+            <RequiredMark />
           </legend>
           <div className="mt-2 flex flex-wrap gap-2">
             {MATERIALS.map((m) => {

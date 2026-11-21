@@ -5,7 +5,7 @@ import Navbar from "./Navbar"
 import MobileNav from "./MobileNav"
 import Footer from "./Footer"
 
-/** Chrome shared by every public page. Auth pages render `AuthLayout` instead. */
+/** Khung dùng chung cho mọi trang công khai và portal (hộp thoại đăng nhập/đăng ký Trang Nhỏ được render toàn cục). */
 export default function Layout() {
   const { pathname } = useLocation()
 

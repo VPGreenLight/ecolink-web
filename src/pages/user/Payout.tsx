@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { Check, Crown, Lock, QrCode, RefreshCw, ShieldCheck, Sparkles, XCircle } from "lucide-react"
-import { PageHead, Status, Table, Td } from "@/components/Portal"
+import { Check, QrCode, RefreshCw, ShieldCheck, Sparkles, XCircle } from "lucide-react"
+import { FormRequiredLegend, PageHead, RequiredMark, Status, Table, Td } from "@/components/Portal"
 import SponsoredAdBanner from "@/components/SponsoredAdBanner"
 import VietQrCheckoutModal from "@/components/VietQrCheckoutModal"
 import { BANKS, validAccount } from "@/data/cashflow"
 import { fmtVnd } from "@/data/ops"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   CANONICAL_FALLBACK_PACKAGES,
   cancelPendingServiceOrder,
@@ -75,12 +76,12 @@ export default function Payout() {
   const entitlements = useEntitlements()
 
   // Phần U-16: Gói dịch vụ & Thanh toán VietQR
-  const [packages, setPackages] = useState<ServicePackageCatalogDto[]>(
-    () => CANONICAL_FALLBACK_PACKAGES,
+  const [packages, setPackages] = useState<ServicePackageCatalogDto[]>(() =>
+    initApiState([], CANONICAL_FALLBACK_PACKAGES),
   )
   const [activeSubs, setActiveSubs] = useState<ActiveSubscriptionDto[]>([])
   const [orders, setOrders] = useState<PayInOrderDto[]>([])
-  const [loadingPackages, setLoadingPackages] = useState(false)
+  const [loadingPackages, setLoadingPackages] = useState(() => initApiLoading(true))
   const [buyingCode, setBuyingCode] = useState<string | null>(null)
   const [activeQrOrder, setActiveQrOrder] = useState<PayInOrderDto | null>(null)
   const [pkgFlash, setPkgFlash] = useState("")
@@ -88,8 +89,8 @@ export default function Payout() {
 
   // Phần U-13: Tài khoản ngân hàng nhận tiền bán phế liệu
   const [bank, setBank] = useState<string>(BANKS[0])
-  const [no, setNo] = useState("007012345678")
-  const [holder, setHolder] = useState("Nguyễn Đức")
+  const [no, setNo] = useState(() => initApiState("", "007012345678"))
+  const [holder, setHolder] = useState(() => initApiState("", "Nguyễn Đức"))
   const [saved, setSaved] = useState(false)
   const [err, setErr] = useState("")
 
@@ -242,13 +243,17 @@ export default function Payout() {
   }
 
   const primaryActiveSub = activeSubs[0]
+  const citizenPackages = packages.filter(
+    (pkg) => pkg.targetRole !== "Recycler" && pkg.packageCode.toUpperCase() !== "PRO",
+  )
+  const isUpgradedTier = entitlements.currentTier.toUpperCase() !== "BASIC"
 
   return (
     <div className="flex flex-col gap-6">
       <PageHead
-        eyebrow="DÒNG TIỀN"
-        title="Tài khoản nhận tiền"
-        body="Quản lý gói thành viên VietQR không quảng cáo và cài đặt tài khoản ngân hàng nhận tiền bán phế liệu tự động."
+        eyebrow="GÓI DỊCH VỤ & DÒNG TIỀN"
+        title="Gói dịch vụ & Tắt quảng cáo"
+        body="Nâng cấp gói Premium (59.000 đ/30 ngày) để tắt hoàn toàn banner quảng cáo và cài đặt Tài khoản nhận tiền bán phế liệu tự động."
         action={
           <button
             type="button"
@@ -272,7 +277,7 @@ export default function Payout() {
               U-16 · GÓI DỊCH VỤ NỘI BỘ &amp; VIETQR ĐỘNG
             </p>
             <h2 className="mt-1 text-lg font-bold text-ink">
-              Nâng cấp đặc quyền EcoLink (Basic – Premium – Pro)
+              Nâng cấp đặc quyền EcoLink cho Người dân (Basic – Premium)
             </h2>
             <p className="mt-1 text-xs leading-5 text-body">
               Gia hạn sớm cùng hạng gói sẽ được cộng dồn trọn vẹn số ngày còn lại theo quy tắc{" "}
@@ -306,13 +311,15 @@ export default function Payout() {
           </p>
         )}
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          {packages.map((pkg) => {
-            const isBasic = pkg.isDefaultFree || pkg.packageCode === "BASIC"
-            const isPro = pkg.packageCode === "PRO" || pkg.targetRole === "Recycler"
+        <div className="grid gap-4 md:grid-cols-2">
+          {citizenPackages.map((pkg) => {
+            const isBasic = pkg.isDefaultFree || pkg.packageCode.toUpperCase() === "BASIC"
+            const isIncludedInHigherPlan =
+              Boolean(pkg.isIncludedInHigherPlan) || (isBasic && isUpgradedTier)
             const isCurrent =
-              pkg.isCurrentPlan ||
-              entitlements.currentTier.toUpperCase() === pkg.packageCode.toUpperCase()
+              !isIncludedInHigherPlan &&
+              (pkg.isCurrentPlan ||
+                entitlements.currentTier.toUpperCase() === pkg.packageCode.toUpperCase())
 
             return (
               <article
@@ -326,9 +333,7 @@ export default function Payout() {
                 <div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="inline-flex items-center gap-1.5 text-xs font-bold tracking-wider text-brand uppercase">
-                      {isPro ? (
-                        <Crown className="size-3.5 text-amber-600" />
-                      ) : pkg.packageCode === "PREMIUM" ? (
+                      {pkg.packageCode === "PREMIUM" ? (
                         <Sparkles className="size-3.5" />
                       ) : (
                         <ShieldCheck className="size-3.5" />
@@ -336,7 +341,6 @@ export default function Payout() {
                       {pkg.packageCode}
                     </span>
                     {isCurrent && <Status tone="ok">Đang sử dụng</Status>}
-                    {!isCurrent && isPro && <Status tone="off">Cơ sở thu mua</Status>}
                   </div>
 
                   <h3 className="mt-2 text-base font-bold text-ink">{pkg.packageName}</h3>
@@ -363,32 +367,21 @@ export default function Payout() {
                       <Check className="size-3.5 shrink-0 text-brand" />
                       Điểm điểm danh: x{pkg.features.dailyPointMultiplier} hằng ngày
                     </li>
-                    {pkg.features.verifiedBlueBadge && (
-                      <li className="flex items-center gap-2">
-                        <Check className="size-3.5 shrink-0 text-[#0284c7]" />
-                        Tích xanh xác minh &amp; Ghim ưu tiên bản đồ
-                      </li>
-                    )}
                   </ul>
                 </div>
 
                 <div className="mt-5 border-t border-line-soft pt-4">
-                  {isBasic ? (
+                  {isIncludedInHigherPlan ? (
+                    <p className="rounded-lg border border-brand/20 bg-brand/6 px-3 py-2 text-center text-xs font-semibold text-brand-deep">
+                      Đã bao gồm trong gói {entitlements.currentTier} hiện tại
+                    </p>
+                  ) : isBasic ? (
                     <button
                       type="button"
                       disabled
                       className="btn-outline h-10 w-full cursor-default text-xs opacity-75"
                     >
                       Mặc định không cần thanh toán
-                    </button>
-                  ) : isPro ? (
-                    <button
-                      type="button"
-                      disabled
-                      className="btn-outline inline-flex h-10 w-full cursor-not-allowed items-center justify-center gap-1.5 text-xs opacity-75"
-                    >
-                      <Lock className="size-3.5" />
-                      Dành riêng cho Cơ sở thu mua (KYB)
                     </button>
                   ) : (
                     <button
@@ -477,8 +470,12 @@ export default function Payout() {
             </p>
           </div>
 
+          <FormRequiredLegend />
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Ngân hàng
+            <span>
+              Ngân hàng
+              <RequiredMark />
+            </span>
             <select className="input" value={bank} onChange={(e) => setBank(e.target.value)}>
               {BANKS.map((b) => (
                 <option key={b} value={b}>
@@ -489,7 +486,10 @@ export default function Payout() {
           </label>
 
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Số tài khoản
+            <span>
+              Số tài khoản
+              <RequiredMark />
+            </span>
             <input
               className={`input tabular-nums ${err && !validAccount(no) ? "border-warn" : ""}`}
               inputMode="numeric"
@@ -503,7 +503,10 @@ export default function Payout() {
           </label>
 
           <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Chủ tài khoản
+            <span>
+              Chủ tài khoản
+              <RequiredMark />
+            </span>
             <input
               className={`input ${err && holder.trim().length < 3 ? "border-warn" : ""}`}
               value={holder}

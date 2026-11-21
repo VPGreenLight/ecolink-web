@@ -15,7 +15,7 @@ import {
   rotateRefreshTokenSingleFlight,
   type ApiResponse,
 } from "@/lib/api"
-import { getAccessToken, getRefreshToken } from "@/lib/session"
+import { getAccessToken, getRefreshToken, isRealJwt } from "@/lib/session"
 import type { DetectedWasteObjectDto } from "@/lib/wasteScanApi"
 
 export interface YoloBoundingBoxDto {
@@ -348,7 +348,7 @@ export async function downloadDatasetVersionZip(
   const qs = buildQuery({ format })
   const headers = new Headers()
   const token = getAccessToken()
-  if (token) {
+  if (isRealJwt(token)) {
     headers.set("Authorization", `Bearer ${token}`)
   }
 

@@ -2,8 +2,9 @@ import { useEffect, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
 import PaginationBar, { paginateItems } from "@/components/PaginationBar"
-import { PageHead, Status, Table, Td } from "@/components/Portal"
+import { FormRequiredLegend, PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   MY_HANDOVERS,
@@ -20,7 +21,6 @@ import {
   type Handover as HandoverItem,
 } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
-import { hasLiveBackendAuth } from "@/lib/session"
 import {
   LOCATION_PRESETS,
   searchNearbyRecyclers,
@@ -82,9 +82,9 @@ export default function Handover() {
 
   const [open, setOpen] = useState(() => Boolean(prefilledPartner || prefilledWaste))
   const [list, setList] = useState<HandoverView[]>(() =>
-    hasLiveBackendAuth() ? [] : DEFAULT_OFFLINE_HANDOVERS,
+    initApiState([], DEFAULT_OFFLINE_HANDOVERS),
   )
-  const [loading, setLoading] = useState<boolean>(() => hasLiveBackendAuth())
+  const [loading, setLoading] = useState<boolean>(() => initApiLoading(true))
   const [editId, setEditId] = useState<string | null>(null)
   const [editDateIso, setEditDateIso] = useState<string>(() => getDefaultAppointmentDateAndSlot().dateIso)
   const [flash, setFlash] = useState("")
@@ -254,9 +254,7 @@ export default function Handover() {
             </SearchFilterBar>
 
             {loading ? (
-              <p className="card px-5 py-8 text-center text-sm text-muted">
-                Đang tải danh sách yêu cầu thu gom...
-              </p>
+              <TableSkeleton rows={4} />
             ) : list.length === 0 ? (
               <p className="card px-5 py-8 text-center text-sm text-muted">
                 Bạn chưa có yêu cầu nào trên hệ thống. Bấm &quot;Tạo yêu cầu mới&quot; để đặt lịch thu gom.
@@ -343,9 +341,23 @@ export default function Handover() {
                     </Link>
                   )}
                   {h.status === "done" && (
-                    <Link to="/user/transactions" className="btn-ghost h-9 px-3 text-[13px]">
-                      Xem tiền đã nhận
-                    </Link>
+                    <>
+                      <Link
+                        to={`/user/receipt?orderId=${encodeURIComponent(h.id)}`}
+                        className="btn-primary h-9 px-3 text-[13px]"
+                      >
+                        Biên nhận &amp; Đánh giá sao
+                      </Link>
+                      <Link
+                        to={`/chat?orderId=${encodeURIComponent(h.id)}&partnerName=${encodeURIComponent(h.recycler)}&partnerAddress=${encodeURIComponent(h.address)}`}
+                        className="btn-outline h-9 px-3 text-[13px]"
+                      >
+                        Xem lại Chat
+                      </Link>
+                      <Link to="/user/transactions" className="btn-ghost h-9 px-3 text-[13px]">
+                        Xem tiền đã nhận
+                      </Link>
+                    </>
                   )}
                 </div>
               </div>
@@ -634,14 +646,20 @@ function CreateForm({
   return (
     <form onSubmit={(e) => void submit(e)} noValidate className="card flex flex-col gap-5 p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-bold text-ink">Thông tin rác & điểm hẹn bàn giao</h2>
+        <div>
+          <h2 className="text-base font-bold text-ink">Thông tin rác &amp; điểm hẹn bàn giao</h2>
+          <FormRequiredLegend className="mt-1" />
+        </div>
         <span className="rounded-full border border-brand/25 bg-brand/8 px-3 py-1 text-xs font-semibold text-brand-deep">
           Đối tác nhận đơn: {selectedPartnerName}
         </span>
       </div>
 
       <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-        Cơ sở thu mua tiếp nhận đơn
+        <span>
+          Cơ sở thu mua tiếp nhận đơn
+          <RequiredMark />
+        </span>
         <select
           className="input"
           value={selectedPartnerId}
@@ -673,7 +691,10 @@ function CreateForm({
         {rows.map((r, i) => (
           <li key={i} className="flex flex-wrap items-end gap-3">
             <label className="flex min-w-[180px] flex-1 flex-col gap-2 text-[13px] font-semibold text-ink">
-              Loại rác
+              <span>
+                Loại rác
+                <RequiredMark />
+              </span>
               <select
                 className="input"
                 value={r.wasteId}
@@ -687,7 +708,10 @@ function CreateForm({
               </select>
             </label>
             <label className="flex w-32 flex-col gap-2 text-[13px] font-semibold text-ink">
-              Khối lượng (kg)
+              <span>
+                Khối lượng (kg)
+                <RequiredMark />
+              </span>
               <input
                 className="input"
                 type="number"
@@ -720,7 +744,10 @@ function CreateForm({
 
       <div className="grid gap-5 sm:grid-cols-2">
         <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-          Ngày hẹn thu gom
+          <span>
+            Ngày hẹn thu gom
+            <RequiredMark />
+          </span>
           <input
             type="date"
             className="input"
@@ -743,7 +770,10 @@ function CreateForm({
           </span>
         </label>
         <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-          Khung giờ muốn thu gom
+          <span>
+            Khung giờ muốn thu gom
+            <RequiredMark />
+          </span>
           <select
             className="input"
             value={slot}
@@ -766,7 +796,10 @@ function CreateForm({
       </div>
 
       <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-        Mô tả điểm hẹn (đầu ngõ, sảnh chung cư, cột mốc dễ tìm)
+        <span>
+          Mô tả điểm hẹn (đầu ngõ, sảnh chung cư, cột mốc dễ tìm)
+          <RequiredMark />
+        </span>
         <input
           className="input"
           value={address}
@@ -777,6 +810,7 @@ function CreateForm({
       <div className="flex flex-col gap-2">
         <span className="text-[13px] font-semibold text-ink">
           Ghim điểm hẹn trên bản đồ (chỉ chia sẻ cho cơ sở nhận đơn — BR-MTH-05)
+          <RequiredMark />
         </span>
         <span className="text-[12px] text-muted">
           Bạn có thể ghim tại đầu ngõ, sảnh toà nhà hoặc bật làm mờ ~500m nếu muốn hẹn thêm qua khung chat.

@@ -21,6 +21,8 @@
 
 import { ApiError, apiRequest, fetchWithAutoHost } from "@/lib/api"
 import {
+  COOKIE_REFRESH_SENTINEL,
+  isRealJwt,
   mapBackendRole,
   registerLogoutHook,
   setAuthTokens,
@@ -168,15 +170,6 @@ function persistBackendAuth(dto: BackendAuthResponseDto, fallbackEmail?: string)
     refreshToken: dto.refreshToken,
     expiresAt: dto.expiresAt ?? null,
   })
-
-  // Đồng bộ luôn khoá JWT theo vai trò để các trang workflow (bản đồ, đặt lịch, duyệt hồ sơ) dùng ngay token thật
-  if (typeof localStorage !== "undefined" && dto.accessToken) {
-    try {
-      localStorage.setItem(`ecolink:jwt:${role}`, dto.accessToken)
-    } catch {
-      // ignore
-    }
-  }
 
   const extra = {
     id: user?.id,
@@ -776,14 +769,18 @@ registerLogoutHook((refreshToken, accessToken) => {
     Accept: "application/json",
     "Content-Type": "application/json",
   }
-  if (accessToken) {
+  if (isRealJwt(accessToken)) {
     headers.Authorization = `Bearer ${accessToken}`
   }
 
+  const payload =
+    refreshToken && refreshToken !== COOKIE_REFRESH_SENTINEL ? { refreshToken } : {}
+
   void fetchWithAutoHost("/api/v1/auth/logout", {
     method: "POST",
+    credentials: "include",
     headers,
-    body: JSON.stringify({ refreshToken }),
+    body: JSON.stringify(payload),
   }).catch(() => {
     // Bỏ qua lỗi mạng khi đăng xuất
   })

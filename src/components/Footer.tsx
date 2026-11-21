@@ -61,7 +61,7 @@ function FooterList({
       {note && <p className="mt-4 text-sm leading-6 text-body">{note}</p>}
       <ul className={`flex flex-col gap-2.5 ${note ? "mt-3" : "mt-4"}`}>
         {items.map((item) => (
-          <li key={typeof item === "string" ? item : item.to}>
+          <li key={typeof item === "string" ? item : `${item.to}-${item.label}`}>
             {/* link nội bộ dùng Link để điều hướng client-side; còn lại chưa có
                 trang thì href="#" như cũ, không giả vờ là đã xong. */}
             {typeof item === "string" ? (

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react"
+import { useSearchParams } from "react-router-dom"
+import { FormRequiredLegend, RequiredMark } from "@/components/Portal"
 import { ApiError } from "@/lib/api"
 import {
   fetchSyncedHandoverOrders,
@@ -28,11 +30,16 @@ import {
   type Errors,
 } from "@/data/feedback"
 import { SUPPORT } from "@/data/nav"
+import { isSsrSmokeTest } from "@/lib/hydration"
+import { openAuthPopup } from "@/lib/popupAuth"
 import { getAccessToken, useSession, useUser } from "@/lib/session"
 
 export default function Feedback() {
+  const [searchParams] = useSearchParams()
+  const urlOrderId = searchParams.get("orderId")?.trim() ?? ""
   const user = useUser()
   const session = useSession()
+  const isGuest = !session && !isSsrSmokeTest()
   const [cat, setCat] = useState<Category>("complaint")
   const [issue, setIssue] = useState("")
   const [desc, setDesc] = useState("")
@@ -45,7 +52,7 @@ export default function Feedback() {
 
   // Liên kết đơn bàn giao thật (U-11) & danh sách "Khiếu nại của tôi" (STT 110-111)
   const [handoverOrders, setHandoverOrders] = useState<SyncedHandoverOrder[]>([])
-  const [selectedOrderId, setSelectedOrderId] = useState("")
+  const [selectedOrderId, setSelectedOrderId] = useState(urlOrderId)
   const [backendCategory, setBackendCategory] =
     useState<ComplaintCategoryCode>("ScaleDiscrepancy")
   const [myComplaints, setMyComplaints] = useState<ComplaintSummaryDto[]>([])
@@ -73,6 +80,10 @@ export default function Feedback() {
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isGuest) {
+      openAuthPopup("login")
+      return
+    }
     setSubmitError("")
 
     if (cat === "complaint" && selectedOrderId) {
@@ -129,10 +140,14 @@ export default function Feedback() {
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[1.6fr_1fr] lg:gap-10">
         <form onSubmit={send} noValidate className="min-w-0">
+          <FormRequiredLegend className="mb-4" />
           {/* 1. Nhóm: khiếu nại hay góp ý. Radio gốc nên bàn phím chuyển được
               bằng mũi tên, không phải tự viết xử lý phím. */}
           <fieldset>
-            <legend className="text-sm font-bold text-ink">Loại nội dung</legend>
+            <legend className="text-sm font-bold text-ink">
+              Loại nội dung
+              <RequiredMark />
+            </legend>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {CATEGORIES.map((c) => {
                 const on = c.id === cat
@@ -219,8 +234,8 @@ export default function Feedback() {
           {/* 2. Loại vấn đề */}
           <fieldset className="mt-7">
             <legend className="text-sm font-bold text-ink">
-              Vấn đề cụ thể{" "}
-              <span className="font-normal text-muted">(bắt buộc)</span>
+              Vấn đề cụ thể
+              <RequiredMark />
             </legend>
             <div className="mt-3 flex flex-wrap gap-2">
               {list.map((it) => {
@@ -261,7 +276,8 @@ export default function Feedback() {
           {/* 3. Mô tả */}
           <div className="mt-7">
             <label htmlFor="fb-desc" className="text-sm font-bold text-ink">
-              Mô tả chi tiết <span className="font-normal text-muted">(bắt buộc)</span>
+              Mô tả chi tiết
+              <RequiredMark />
             </label>
             <textarea
               id="fb-desc"
@@ -316,8 +332,8 @@ export default function Feedback() {
             </div>
             <div>
               <label htmlFor="fb-contact" className="text-sm font-bold text-ink">
-                Email hoặc số điện thoại{" "}
-                <span className="font-normal text-muted">(bắt buộc)</span>
+                Email hoặc số điện thoại
+                <RequiredMark />
               </label>
               <input
                 id="fb-contact"
@@ -347,9 +363,28 @@ export default function Feedback() {
             </p>
           )}
 
+          {isGuest && (
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/25 bg-brand/6 px-4 py-3 text-sm text-ink">
+              <span>
+                Vui lòng đăng nhập tài khoản để gửi phiếu khiếu nại hoặc góp ý chính thức và theo dõi kết quả xử lý.
+              </span>
+              <button
+                type="button"
+                onClick={() => openAuthPopup("login")}
+                className="btn-outline h-9 shrink-0 px-3.5 text-xs font-semibold"
+              >
+                Đăng nhập ngay
+              </button>
+            </div>
+          )}
+
           <div className="mt-8 flex flex-wrap items-center gap-4">
             <button type="submit" disabled={submitting} className="btn btn-primary h-12 px-7">
-              {submitting ? "Đang gửi..." : "Gửi nội dung"}
+              {isGuest
+                ? "Đăng nhập để gửi khiếu nại / góp ý"
+                : submitting
+                  ? "Đang gửi..."
+                  : "Gửi nội dung"}
             </button>
             <p className="text-[13px] text-muted">
               Miễn phí. Thông tin chỉ dùng để xử lý việc bạn báo.

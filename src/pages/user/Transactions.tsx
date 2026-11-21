@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
 import PaginationBar, { paginateItems } from "@/components/PaginationBar"
-import { PageHead, Stat, Status, Table, Td } from "@/components/Portal"
+import { PageHead, Stat, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { FLOWS, KIND_LABEL } from "@/data/cashflow"
 import { fmtVnd } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
 import { fetchUserTransactions, type TransactionHistoryDto } from "@/lib/recyclerWorkflowApi"
 import { hasLiveBackendAuth } from "@/lib/session"
 
@@ -18,7 +20,7 @@ export default function Transactions() {
   const liveAuth = hasLiveBackendAuth()
   const [liveData, setLiveData] = useState<TransactionHistoryDto | null>(null)
   const [fromBackend, setFromBackend] = useState(false)
-  const [loading, setLoading] = useState<boolean>(() => liveAuth)
+  const [loading, setLoading] = useState<boolean>(() => initApiLoading(true))
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)
   const [page, setPage] = useState(1)
@@ -44,7 +46,7 @@ export default function Transactions() {
     }
   }, [])
 
-  const showOfflineDemo = !loading && !fromBackend && !liveAuth
+  const showOfflineDemo = isSsrSmokeTest() && !loading && !fromBackend && !liveAuth
   const payout = showOfflineDemo
     ? FLOWS.filter((f) => f.kind === "payout").reduce((s, f) => s + f.amount, 0)
     : 0
@@ -121,15 +123,13 @@ export default function Transactions() {
             />
 
             {loading ? (
-              <p className="card px-5 py-8 text-center text-sm text-muted">
-                Đang tải lịch sử giao dịch...
-              </p>
+              <TableSkeleton rows={4} />
             ) : liveData && liveData.items.length > 0 ? (
               <>
-                <Table head={["Ngày", "Mã đơn", "Đối tác", "Khối lượng", "Số tiền nhận", "Điểm xanh"]}>
+                <Table head={["Ngày", "Mã đơn", "Đối tác", "Khối lượng", "Số tiền nhận", "Điểm xanh", "Thao tác"]}>
                   {pagedLive.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-6 text-center text-xs text-muted">
+                      <td colSpan={7} className="px-4 py-6 text-center text-xs text-muted">
                         Không có giao dịch nào khớp từ khóa tìm kiếm.
                       </td>
                     </tr>
@@ -152,6 +152,21 @@ export default function Transactions() {
                         <Td className="tabular-nums font-semibold text-mint-leaf">
                           +{item.pointsAwarded} pts
                         </Td>
+                        <Td className="whitespace-nowrap">
+                          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                            <Link to="/user/receipt" className="text-brand-deep hover:underline">
+                              Biên nhận &amp; Đánh giá
+                            </Link>
+                            <span className="text-line">·</span>
+                            <Link to="/chat" className="text-brand hover:underline">
+                              Chat
+                            </Link>
+                            <span className="text-line">·</span>
+                            <Link to="/feedback" className="text-warn hover:underline">
+                              Khiếu nại
+                            </Link>
+                          </div>
+                        </Td>
                       </tr>
                     ))
                   )}
@@ -165,14 +180,14 @@ export default function Transactions() {
                   itemLabel="giao dịch"
                 />
               </>
-            ) : fromBackend || liveAuth ? (
+            ) : !isSsrSmokeTest() ? (
               <p className="card px-5 py-8 text-center text-sm text-muted">
                 Tài khoản chưa có giao dịch hoàn tất nào trên hệ thống. Khi bạn xác nhận biên nhận thu
                 gom, tiền thanh toán và Điểm Xanh sẽ tự động ghi nhận tại đây.
               </p>
             ) : (
               <>
-                <Table head={["Ngày", "Mã", "Loại", "Số tiền", "Đối tác", "Ghi chú"]}>
+                <Table head={["Ngày", "Mã", "Loại", "Số tiền", "Đối tác", "Ghi chú", "Thao tác"]}>
                   {pagedOffline.map((f) => (
                     <tr key={f.id} className={f.kind === "payout" ? "bg-brand/6" : ""}>
                       <Td className="whitespace-nowrap tabular-nums">{f.date}</Td>
@@ -188,6 +203,30 @@ export default function Transactions() {
                       </Td>
                       <Td className="whitespace-nowrap">{f.party}</Td>
                       <Td>{f.note}</Td>
+                      <Td className="whitespace-nowrap">
+                        <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                          <Link
+                            to={`/user/receipt?orderId=${encodeURIComponent(f.handoverId)}`}
+                            className="text-brand-deep hover:underline"
+                          >
+                            Biên nhận &amp; Đánh giá
+                          </Link>
+                          <span className="text-line">·</span>
+                          <Link
+                            to={`/chat?orderId=${encodeURIComponent(f.handoverId)}`}
+                            className="text-brand hover:underline"
+                          >
+                            Chat
+                          </Link>
+                          <span className="text-line">·</span>
+                          <Link
+                            to={`/feedback?orderId=${encodeURIComponent(f.handoverId)}`}
+                            className="text-warn hover:underline"
+                          >
+                            Khiếu nại
+                          </Link>
+                        </div>
+                      </Td>
                     </tr>
                   ))}
                 </Table>

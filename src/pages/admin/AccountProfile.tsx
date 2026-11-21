@@ -1,13 +1,19 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { PageHead, Field, Status } from "@/components/admin/ui"
-import { ROLE_LABEL, useSession } from "@/lib/session"
+import { FormRequiredLegend, PageHead, Field, Status } from "@/components/admin/ui"
+import { getAccessToken, ROLE_LABEL, useSession } from "@/lib/session"
 import {
   fetchCurrentUserProfile,
   formatAuthError,
   updateCurrentUserProfile,
 } from "@/lib/authApi"
 import { AI_CASES, APPLICATIONS, COMPLAINTS, PERMS, POSTS, STAFF } from "@/data/ops"
+import { initApiState, isSsrSmokeTest } from "@/lib/hydration"
+import { fetchStaffAiFeedbackQueue } from "@/lib/aiCurationApi"
+import { fetchStaffApplications } from "@/lib/recyclerWorkflowApi"
+import { fetchStaffComplaints } from "@/lib/reviewComplaintApi"
+import { fetchAdminPendingBlogs } from "@/lib/blogApi"
+import { getAdminStaffList } from "@/lib/governanceApi"
 
 /** Hồ sơ và thông báo cho STAFF và ADMIN — đồng bộ trực tiếp với
  *  `GET /api/v1/auth/me` và `PUT /api/v1/auth/profile`. */
@@ -17,7 +23,9 @@ export default function AccountProfile() {
   const me = STAFF.find((s) => s.name === session?.name)
 
   const [name, setName] = useState(session?.name ?? "")
-  const [phone, setPhone] = useState(session?.phoneNumber ?? "0901 234 567")
+  const [phone, setPhone] = useState(() =>
+    session?.phoneNumber ?? initApiState("", "0901 234 567"),
+  )
   const [submitting, setSubmitting] = useState(false)
   const [savedMsg, setSavedMsg] = useState("")
   const [err, setErr] = useState("")
@@ -80,7 +88,8 @@ export default function AccountProfile() {
           noValidate
           className="card flex flex-col gap-5 self-start p-5 md:p-6"
         >
-          <Field label="Tên hiển thị" hint="Tên này hiện cạnh quyền trong log vận hành.">
+          <FormRequiredLegend />
+          <Field label="Tên hiển thị" required hint="Tên này hiện cạnh quyền trong log vận hành.">
             <input
               className={`input ${err && name.trim().length < 2 ? "border-warn" : ""}`}
               value={name}
@@ -91,7 +100,7 @@ export default function AccountProfile() {
             />
           </Field>
 
-          <Field label="Số điện thoại nội bộ" hint="Để người trực ban gọi khi có việc gấp ngoài giờ.">
+          <Field label="Số điện thoại nội bộ" required hint="Để người trực ban gọi khi có việc gấp ngoài giờ.">
             <input
               className={`input tabular-nums ${
                 err && !/^(?:\+84|0)\d{9,10}$/.test(phone.replace(/[\s.\-()]/g, ""))
@@ -183,40 +192,108 @@ export default function AccountProfile() {
 }
 
 function Queue({ role }: { role: "staff" | "admin" }) {
+  const [counts, setCounts] = useState(() =>
+    initApiState(
+      { ai: 0, apps: 0, complaints: 0, posts: 0, lockedStaff: 0 },
+      {
+        ai: AI_CASES.filter((c) => !c.inDataset).length,
+        apps: APPLICATIONS.filter((a) => a.status === "pending").length,
+        complaints: COMPLAINTS.filter((c) => c.status === "new").length,
+        posts: POSTS.filter((p) => p.status === "pending").length,
+        lockedStaff: STAFF.filter((s) => s.status === "locked").length,
+      },
+    ),
+  )
+
+  useEffect(() => {
+    if (isSsrSmokeTest() || !getAccessToken()) return
+    let active = true
+    if (role === "staff") {
+      void Promise.allSettled([
+        fetchStaffAiFeedbackQueue({ pageSize: 1 }),
+        fetchStaffApplications(),
+        fetchStaffComplaints({ pageSize: 1, includeReportedReviews: false }),
+        fetchAdminPendingBlogs({ pageSize: 1 }),
+      ]).then(([aiRes, appRes, cmpRes, blogRes]) => {
+        if (!active) return
+        setCounts((prev) => ({
+          ...prev,
+          ai:
+            aiRes.status === "fulfilled" && aiRes.value.data
+              ? aiRes.value.data.pendingCount
+              : prev.ai,
+          apps:
+            appRes.status === "fulfilled"
+              ? appRes.value.items.filter((a) => a.status === "pending").length
+              : prev.apps,
+          complaints:
+            cmpRes.status === "fulfilled" && cmpRes.value.data
+              ? cmpRes.value.data.openCount + cmpRes.value.data.investigatingCount
+              : prev.complaints,
+          posts:
+            blogRes.status === "fulfilled" && blogRes.value.data
+              ? blogRes.value.data.totalCount
+              : prev.posts,
+        }))
+      })
+    } else {
+      void Promise.allSettled([
+        fetchAdminPendingBlogs({ pageSize: 1 }),
+        getAdminStaffList(),
+      ]).then(([blogRes, staffRes]) => {
+        if (!active) return
+        setCounts((prev) => ({
+          ...prev,
+          posts:
+            blogRes.status === "fulfilled" && blogRes.value.data
+              ? blogRes.value.data.totalCount
+              : prev.posts,
+          lockedStaff:
+            staffRes.status === "fulfilled" && Array.isArray(staffRes.value.data)
+              ? staffRes.value.data.filter((s) => s.status !== "Active").length
+              : prev.lockedStaff,
+        }))
+      })
+    }
+    return () => {
+      active = false
+    }
+  }, [role])
+
   const rows: { to: string; label: string; count: number }[] =
     role === "staff"
       ? [
           {
             to: "/staff/ai-review",
             label: "Ảnh AI chờ gán nhãn",
-            count: AI_CASES.filter((c) => !c.inDataset).length,
+            count: counts.ai,
           },
           {
             to: "/staff/applications",
             label: "Hồ sơ đối tác chờ thẩm định",
-            count: APPLICATIONS.filter((a) => a.status === "pending").length,
+            count: counts.apps,
           },
           {
             to: "/staff/complaints",
             label: "Khiếu nại mới",
-            count: COMPLAINTS.filter((c) => c.status === "new").length,
+            count: counts.complaints,
           },
           {
             to: "/staff/blog",
             label: "Bài Blog chờ duyệt",
-            count: POSTS.filter((p) => p.status === "pending").length,
+            count: counts.posts,
           },
         ]
       : [
           {
             to: "/admin/blog",
             label: "Bài Blog chờ duyệt",
-            count: POSTS.filter((p) => p.status === "pending").length,
+            count: counts.posts,
           },
           {
             to: "/admin/staff",
             label: "Nhân viên đang bị khoá",
-            count: STAFF.filter((s) => s.status === "locked").length,
+            count: counts.lockedStaff,
           },
         ]
 

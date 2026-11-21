@@ -11,6 +11,8 @@ import {
   getRefreshToken,
   getSession,
   hasLiveBackendAuth,
+  hasSessionCookieFlag,
+  isRealJwt,
   isStoredAccessTokenExpired,
   type Role,
 } from "@/lib/session"
@@ -376,34 +378,41 @@ function writeSyncState(next: LocalWorkflowSyncState) {
   }
 }
 
+const inMemoryRoleTokens: Partial<Record<Role, string>> = {}
+
 /**
- * Tự động lấy JWT tương ứng với vai trò hiện tại nếu phiên đăng nhập giả lập (`session.ts`)
- * chưa lưu `ecolink:token`. Không chạm tới khoá `ecolink:user` để giữ ổn định tuyệt đối cho `useSession()`.
+ * Tự động lấy JWT tương ứng với vai trò hiện tại nếu đang ở chế độ dùng thử không đăng nhập.
+ * Khi đã đăng nhập Backend qua HttpOnly Cookie (`fromBackend === true`), tuyệt đối không tráo đổi Cookie.
  */
 export async function ensureRoleJwt(role: Role): Promise<string | null> {
-  if (typeof localStorage === "undefined") return null
+  if (typeof window === "undefined") return null
 
   const currentSession = getSession()
-  const existingGlobal = localStorage.getItem("ecolink:token")
-  if (
-    existingGlobal &&
+  const existingToken = getAccessToken()
+  const roleMatches =
     currentSession &&
     (currentSession.role === role || (role === "staff" && currentSession.role === "admin"))
-  ) {
-    if (isStoredAccessTokenExpired(10)) {
-      if (getRefreshToken()) {
-        return rotateRefreshTokenSingleFlight()
+
+  if (roleMatches && existingToken) {
+    if (isRealJwt(existingToken)) {
+      if (isStoredAccessTokenExpired(10)) {
+        if (getRefreshToken()) {
+          return rotateRefreshTokenSingleFlight()
+        }
+        clearSessionOnUnauthorized()
+        return null
       }
-      clearSessionOnUnauthorized()
-      return null
+      return existingToken
     }
-    return existingGlobal
+
+    // Phiên đang xác thực qua HttpOnly Cookie sau reload: để trình duyệt tự gửi Cookie
+    return existingToken
   }
 
-  // Nếu người dùng đã đăng nhập Backend thật theo đúng vai trò này nhưng token đã bị xóa -> không tráo sang tài khoản demo khác
+  // Nếu người dùng đã đăng nhập Backend thật theo đúng vai trò này nhưng token trong RAM chưa có -> xoay vòng từ Cookie
   if (
-    currentSession?.fromBackend &&
-    (currentSession.role === role || (role === "staff" && currentSession.role === "admin"))
+    (currentSession?.fromBackend || hasSessionCookieFlag()) &&
+    roleMatches
   ) {
     if (getRefreshToken()) {
       return rotateRefreshTokenSingleFlight()
@@ -412,19 +421,24 @@ export async function ensureRoleJwt(role: Role): Promise<string | null> {
     return null
   }
 
-  const roleTokenKey = `ecolink:jwt:${role}`
-  const cachedRoleToken = localStorage.getItem(roleTokenKey)
+  // Nếu đang đăng nhập tài khoản Backend khác vai trò -> không gọi login đè Cookie của phiên hiện tại
+  if (currentSession?.fromBackend || hasSessionCookieFlag()) {
+    return null
+  }
+
+  const cachedRoleToken = inMemoryRoleTokens[role]
   if (cachedRoleToken) return cachedRoleToken
 
   const creds = DEMO_BACKEND_CREDENTIALS[role]
   try {
     const res = await apiRequest<AuthLoginResponseDto>("/api/v1/auth/login", {
       method: "POST",
+      headers: { "X-EcoLink-No-Cookie": "1" },
       body: JSON.stringify(creds),
     })
     const token = res.data?.accessToken
     if (token) {
-      localStorage.setItem(roleTokenKey, token)
+      inMemoryRoleTokens[role] = token
       return token
     }
   } catch {
@@ -433,11 +447,12 @@ export async function ensureRoleJwt(role: Role): Promise<string | null> {
       try {
         const adminRes = await apiRequest<AuthLoginResponseDto>("/api/v1/auth/login", {
           method: "POST",
+          headers: { "X-EcoLink-No-Cookie": "1" },
           body: JSON.stringify(DEMO_BACKEND_CREDENTIALS.admin),
         })
         const token = adminRes.data?.accessToken
         if (token) {
-          localStorage.setItem(roleTokenKey, token)
+          inMemoryRoleTokens[role] = token
           return token
         }
       } catch {
@@ -461,7 +476,7 @@ async function authorizedRequest<T>(
   let token = await ensureRoleJwt(role)
   const makeHeaders = (jwt: string | null) => {
     const h = new Headers(options.headers)
-    if (jwt) h.set("Authorization", `Bearer ${jwt}`)
+    if (isRealJwt(jwt)) h.set("Authorization", `Bearer ${jwt}`)
     return h
   }
 
@@ -471,13 +486,8 @@ async function authorizedRequest<T>(
       headers: makeHeaders(token),
     })
   } catch (err) {
-    if (
-      !isActingRealUser &&
-      err instanceof ApiError &&
-      err.status === 401 &&
-      typeof localStorage !== "undefined"
-    ) {
-      localStorage.removeItem(`ecolink:jwt:${role}`)
+    if (!isActingRealUser && err instanceof ApiError && err.status === 401) {
+      delete inMemoryRoleTokens[role]
       token = await ensureRoleJwt(role)
       if (token) {
         return apiRequest<T>(path, {

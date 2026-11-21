@@ -33,10 +33,10 @@ export const FOOTER_COLUMNS = [
     title: "CỘNG ĐỒNG & PHÁP LÝ",
     links: [
       { label: "Khiếu nại và góp ý", to: "/feedback" },
-      "Hướng dẫn phân loại rác nguồn",
-      "Quy chuẩn vật liệu tái chế",
-      "Chính sách quyền riêng tư",
-      "Điều khoản dịch vụ môi trường",
+      { label: "Hướng dẫn phân loại rác nguồn", to: "/guidance" },
+      { label: "Quy chuẩn vật liệu tái chế", to: "/waste" },
+      { label: "Chính sách quyền riêng tư", to: "/terms?category=PRIVACY" },
+      { label: "Điều khoản dịch vụ môi trường", to: "/terms" },
     ],
   },
 ] as const

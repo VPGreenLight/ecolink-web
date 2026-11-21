@@ -1,10 +1,11 @@
 import { Suspense } from "react"
-import { BrowserRouter, Route, Routes } from "react-router-dom"
+import { BrowserRouter, Outlet, Route, Routes } from "react-router-dom"
+import CompactAuthModal from "@/components/CompactAuthModal"
 import Layout from "@/components/Layout"
-import AuthLayout from "@/components/AuthLayout"
 import Portal from "@/components/Portal"
 import AdminShell from "@/components/admin/Shell"
 import RequireRole from "@/components/RequireRole"
+import { useSession } from "@/lib/session"
 
 import { PAGES } from "@/lazyPages"
 
@@ -32,19 +33,22 @@ const {
  *  thật với `MemoryRouter`, nếu không thì mọi route đều chỉ được test bằng
  *  cách render lẻ từng component — hỏng phần ghép route (RequireRole, Portal,
  *  Layout) thì test vẫn xanh. */
+function RolePortal() {
+  const session = useSession()
+  return <Portal role={session?.role === "recycler" ? "recycler" : "user"} />
+}
+
 export function AppRoutes() {
   return (
+    <>
     <Suspense fallback={null}>
       <Routes>
-        {/* auth pages own the whole screen — no nav, no footer */}
-        <Route element={<AuthLayout />}>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-        </Route>
         <Route path="/logout" element={<Logout />} />
         <Route path="/reset-password" element={<ResetPassword />} />
 
         <Route element={<Layout />}>
+          <Route path="login" element={<Login />} />
+          <Route path="register" element={<Register />} />
           {/* ---- công khai: G-01, và các trang khách xem được ---- */}
           <Route index element={<Home />} />
           <Route path="blog" element={<Blog />} />
@@ -64,21 +68,29 @@ export function AppRoutes() {
           <Route path="ecofacts" element={<EcoFactsPage />} />
 
           {/* ---- sau đăng nhập, dùng chung SU-01..SU-04 ---- */}
-          <Route path="account">
+          <Route
+            path="account"
+            element={
+              <RequireRole roles={["user", "recycler", "staff", "admin"]}>
+                <Outlet />
+              </RequireRole>
+            }
+          >
             <Route path="profile" element={<Profile />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="password" element={<Password />} />
           </Route>
 
-          {/* U-09 / R-05 chatbox: hai vai trò cùng chat với nhau */}
+          {/* U-09 / R-05 chatbox: hai vai trò cùng chat với nhau, giữ nguyên Sidebar Portal */}
           <Route
-            path="chat"
             element={
               <RequireRole roles={["user", "recycler"]}>
-                <Chat />
+                <RolePortal />
               </RequireRole>
             }
-          />
+          >
+            <Route path="chat" element={<Chat />} />
+          </Route>
 
           {/* ---- phân hệ USER ---- */}
           <Route element={<RequireRole roles={["user"]}><Portal role="user" /></RequireRole>}>
@@ -87,6 +99,7 @@ export function AppRoutes() {
               <Route path="handover" element={<Handover />} />
               <Route path="receipt" element={<Receipt />} />
               <Route path="payout" element={<Payout />} />
+              <Route path="subscription" element={<Payout />} />
               <Route path="transactions" element={<Transactions />} />
               <Route path="gamification" element={<Gamification />} />
             </Route>
@@ -157,6 +170,8 @@ export function AppRoutes() {
           </Route>
       </Routes>
     </Suspense>
+    <CompactAuthModal />
+  </>
   )
 }
 

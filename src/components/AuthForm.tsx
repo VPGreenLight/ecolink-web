@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { ROLE_HOME, type Role } from "@/lib/session"
-import { isAuthPopup } from "@/lib/popupAuth"
+import { closeAuthModal, isAuthPopup } from "@/lib/popupAuth"
 import {
   SEEDED_DEMO_ACCOUNTS,
   authenticateWithGoogleToken,
@@ -33,7 +33,13 @@ const COPY = {
   },
 } as const
 
-export default function AuthForm({ mode: initialMode }: { mode: Mode }) {
+export default function AuthForm({
+  mode: initialMode,
+  onClose,
+}: {
+  mode: Mode
+  onClose?: () => void
+}) {
   const isPopup = isAuthPopup()
   const [mode, setMode] = useState<Mode>(initialMode)
   const copy = COPY[mode]
@@ -58,7 +64,25 @@ export default function AuthForm({ mode: initialMode }: { mode: Mode }) {
     void preloadGoogleIdentity()
   }, [])
 
+  const dismissModal = () => {
+    closeAuthModal()
+    onClose?.()
+  }
+
+  const handleClose = () => {
+    if (onClose) {
+      dismissModal()
+      return
+    }
+    if (isPopup && typeof window !== "undefined" && window.opener) {
+      window.close()
+      return
+    }
+    navigate("/")
+  }
+
   const finishAuthNavigation = (role: Role) => {
+    dismissModal()
     if (isPopup && typeof window !== "undefined" && window.opener) {
       try {
         window.opener.postMessage({ type: "AUTH_SUCCESS", role }, "*")
@@ -75,7 +99,11 @@ export default function AuthForm({ mode: initialMode }: { mode: Mode }) {
     setMode(next)
     setErr("")
     setShowGooglePrompt(false)
-    if (typeof window !== "undefined") {
+    if (
+      !onClose &&
+      typeof window !== "undefined" &&
+      (window.location.pathname === "/login" || window.location.pathname === "/register")
+    ) {
       window.history.replaceState(null, "", `/${next}${isPopup ? "?popup=1" : ""}`)
     }
   }
@@ -193,62 +221,32 @@ export default function AuthForm({ mode: initialMode }: { mode: Mode }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[430px] flex-col">
-      {/* Nút thoát: đóng popup nếu mở cửa sổ riêng, hoặc quay về trang chủ */}
-      {isPopup ? (
-        <button
-          type="button"
-          onClick={() => window.close()}
-          className="group mb-5 inline-flex items-center gap-2 self-start text-sm font-semibold text-body transition-colors hover:text-brand-deep"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-            className="size-5 transition-transform duration-200 group-hover:-translate-x-0.5"
-          >
-            <path
-              d="M18 6 6 18M6 6l12 12"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          Đóng cửa sổ
-        </button>
-      ) : (
-        <Link
-          to="/"
-          aria-label="Về trang chủ"
-          className="group mb-5 inline-flex items-center gap-2.5 self-start text-sm font-semibold text-body transition-colors hover:text-brand-deep"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-            className="size-5 -translate-x-0 transition-transform duration-200 group-hover:-translate-x-1"
-          >
-            <path
-              d="M20 12H4m0 0 6.5-6.5M4 12l6.5 6.5"
-              stroke="currentColor"
-              strokeWidth="1.9"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          Về trang chủ
-        </Link>
-      )}
+    <div className="relative mx-auto flex w-full max-w-[420px] flex-col rounded-2xl border border-line bg-white p-6 shadow-[0_24px_60px_-15px_rgba(15,31,21,0.28)]">
+      <button
+        type="button"
+        onClick={handleClose}
+        aria-label="Đóng cửa sổ đăng nhập"
+        className="absolute top-4 right-4 grid size-8 place-items-center rounded-full text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+      >
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="size-4.5">
+          <path
+            d="M18 6 6 18M6 6l12 12"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
 
-      {/* Khung viền (border): chỉ hiện khi người dùng mở hết màn hình ra (desktop lg), màn hình thu nhỏ thì không viền */}
-      <div className="rounded-none border-0 bg-transparent p-0 shadow-none lg:rounded-3xl lg:border lg:border-line lg:bg-white lg:p-8 lg:shadow-[0_4px_24px_rgba(15,31,21,0.05)]">
+      <div>
         <Link
           to="/"
+          onClick={dismissModal}
           aria-label="EcoLink - Trang chủ"
-          className="mx-auto mb-6 block w-fit"
+          className="mx-auto mb-5 block w-fit"
         >
-          <img src="/assets/brand/logo1.png" alt="EcoLink" className="h-[66px] w-auto" />
+          <img src="/assets/brand/logo1.png" alt="EcoLink" className="h-[54px] w-auto" />
         </Link>
 
         {/* Thanh tab Compact: Tạo tài khoản trước, Đăng nhập sau (khớp menu user ở ngoài) */}
@@ -405,6 +403,7 @@ export default function AuthForm({ mode: initialMode }: { mode: Mode }) {
             {mode === "login" && (
               <Link
                 to="/reset-password"
+                onClick={dismissModal}
                 className="text-[13px] font-semibold text-brand transition-colors hover:text-brand-deep"
               >
                 Quên mật khẩu?
@@ -524,7 +523,11 @@ export default function AuthForm({ mode: initialMode }: { mode: Mode }) {
         {mode === "register" && !isPopup && (
           <p className="mt-4 text-center text-xs text-muted">
             Bạn là chủ vựa/trạm tái chế?{" "}
-            <Link to="/join-recycler" className="font-semibold text-brand hover:text-brand-deep">
+            <Link
+              to="/join-recycler"
+              onClick={dismissModal}
+              className="font-semibold text-brand hover:text-brand-deep"
+            >
               Đăng ký hồ sơ cơ sở thu mua
             </Link>
           </p>

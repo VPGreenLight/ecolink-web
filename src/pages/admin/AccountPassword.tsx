@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { PageHead, Field } from "@/components/admin/ui"
+import { FormRequiredLegend, PageHead, Field } from "@/components/admin/ui"
 import { ROLE_LABEL, useSession } from "@/lib/session"
 import { changeCurrentUserPassword, formatAuthError } from "@/lib/authApi"
 
@@ -75,7 +75,8 @@ export default function AccountPassword() {
         noValidate
         className="card flex max-w-[520px] flex-col gap-5 p-5 md:p-6"
       >
-        <Field label="Mật khẩu hiện tại">
+        <FormRequiredLegend />
+        <Field label="Mật khẩu hiện tại" required>
           <input
             className={`input ${err.startsWith("Nhập") || err.includes("hiện tại") ? "border-warn" : ""}`}
             type="password"
@@ -88,7 +89,7 @@ export default function AccountPassword() {
           />
         </Field>
 
-        <Field label="Mật khẩu mới" hint="Tối thiểu 12 ký tự, phải có chữ số.">
+        <Field label="Mật khẩu mới" required hint="Tối thiểu 12 ký tự, phải có chữ số.">
           <input
             className={`input ${
               err.startsWith("Mật khẩu mới cần") || err.startsWith("Mật khẩu mới phải có")
@@ -105,7 +106,7 @@ export default function AccountPassword() {
           />
         </Field>
 
-        <Field label="Nhập lại mật khẩu mới">
+        <Field label="Nhập lại mật khẩu mới" required>
           <input
             className={`input ${err.startsWith("Hai mật khẩu") ? "border-warn" : ""}`}
             type="password"

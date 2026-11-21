@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { PageHead, Stat } from "@/components/Portal"
 import { ECO_FACTS, GIFTS, POSTS, STATS, DATASET, fmtInt } from "@/data/ops"
-import { hasLiveBackendAuth } from "@/lib/session"
+import { isSsrSmokeTest } from "@/lib/hydration"
 import {
   fetchAiDatasetDashboard,
   fetchStaffAiFeedbackQueue,
@@ -13,7 +13,7 @@ import { fetchStaffComplaints } from "@/lib/reviewComplaintApi"
 
 /** Tổng quan nhân viên (Staff). */
 export default function StaffHome() {
-  const [liveAuth] = useState(() => hasLiveBackendAuth())
+  const [liveAuth] = useState(() => !isSsrSmokeTest())
   const [pendingAiCount, setPendingAiCount] = useState<number>(liveAuth ? 0 : STATS.pending.aiCases)
   const [openComplaintCount, setOpenComplaintCount] = useState<number>(
     liveAuth ? 0 : STATS.pending.complaints,

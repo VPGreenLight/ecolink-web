@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState } from "react"
 import PaginationBar, { paginateItems } from "@/components/PaginationBar"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { ApiError } from "@/lib/api"
-import { PageHead, Field, Status } from "@/components/admin/ui"
+import { Field, FormRequiredLegend, PageHead, Status } from "@/components/admin/ui"
 import { CYCLES } from "@/data/ops"
 import { LEADERBOARD, fmt } from "@/data/rewards"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { formatViDate } from "@/lib/blogApi"
+import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
 import {
   activateLeaderboardCycle,
   createLeaderboardCycle,
@@ -16,7 +17,6 @@ import {
   type LeaderboardCycleDto,
   type LeaderboardViewDto,
 } from "@/lib/gamificationApi"
-import { hasLiveBackendAuth } from "@/lib/session"
 
 const PERIOD_LABEL: Record<string, string> = {
   Weekly: "Theo tuần",
@@ -57,7 +57,7 @@ function statusMeta(cycle: LeaderboardCycleDto): {
  *  chu kỳ đang bật — bảng nào không bật thì không render, không phải render
  *  rồi ghi "tạm thời không xếp hạng". */
 export default function LeaderboardConfig() {
-  const [liveMode] = useState(() => hasLiveBackendAuth())
+  const [liveMode] = useState(() => !isSsrSmokeTest())
 
   // Offline / SSR fallback
   const [on, setOn] = useState<string>(CYCLES.find((c) => c.active)!.id)
@@ -66,7 +66,7 @@ export default function LeaderboardConfig() {
   const [cycles, setCycles] = useState<LeaderboardCycleDto[]>([])
   const [board, setBoard] = useState<LeaderboardViewDto | null>(null)
   const [selectedCycleId, setSelectedCycleId] = useState<string>("")
-  const [loading, setLoading] = useState(liveMode)
+  const [loading, setLoading] = useState(() => initApiLoading(true))
   const [busyId, setBusyId] = useState<string | null>(null)
   const [confirmFinalizeId, setConfirmFinalizeId] = useState<string | null>(null)
 
@@ -270,9 +270,12 @@ export default function LeaderboardConfig() {
         <>
           {showCreate && (
             <form onSubmit={handleCreate} className="card flex flex-col gap-4 p-5 md:p-6">
-              <h2 className="text-base font-bold text-ink">Tạo chu kỳ bảng xếp hạng mới</h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base font-bold text-ink">Tạo chu kỳ bảng xếp hạng mới</h2>
+                <FormRequiredLegend />
+              </div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <Field label="Tên chu kỳ">
+                <Field label="Tên chu kỳ" required>
                   <input
                     className="input"
                     type="text"
@@ -282,7 +285,7 @@ export default function LeaderboardConfig() {
                     onChange={(e) => setName(e.target.value)}
                   />
                 </Field>
-                <Field label="Loại chu kỳ">
+                <Field label="Loại chu kỳ" required>
                   <select
                     className="input"
                     value={periodType}
@@ -297,7 +300,7 @@ export default function LeaderboardConfig() {
                     <option value="Quarterly">Theo quý (Quarterly)</option>
                   </select>
                 </Field>
-                <Field label="Từ ngày">
+                <Field label="Từ ngày" required>
                   <input
                     className="input"
                     type="date"
@@ -305,7 +308,7 @@ export default function LeaderboardConfig() {
                     onChange={(e) => setStartsAt(e.target.value)}
                   />
                 </Field>
-                <Field label="Đến ngày">
+                <Field label="Đến ngày" required>
                   <input
                     className="input"
                     type="date"
@@ -316,7 +319,7 @@ export default function LeaderboardConfig() {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-3">
-                <Field label="Thưởng Top 1 (điểm)">
+                <Field label="Thưởng Top 1 (điểm)" required>
                   <input
                     className="input tabular-nums"
                     type="number"
@@ -325,7 +328,7 @@ export default function LeaderboardConfig() {
                     onChange={(e) => setTop1Bonus(Number(e.target.value))}
                   />
                 </Field>
-                <Field label="Thưởng Top 2 (điểm)">
+                <Field label="Thưởng Top 2 (điểm)" required>
                   <input
                     className="input tabular-nums"
                     type="number"
@@ -334,7 +337,7 @@ export default function LeaderboardConfig() {
                     onChange={(e) => setTop2Bonus(Number(e.target.value))}
                   />
                 </Field>
-                <Field label="Thưởng Top 3 (điểm)">
+                <Field label="Thưởng Top 3 (điểm)" required>
                   <input
                     className="input tabular-nums"
                     type="number"

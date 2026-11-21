@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import CheckIn from "@/components/CheckIn"
 import { Empty, Field, PageHead, Status, Table, Td } from "@/components/Portal"
 import { fmt } from "@/data/rewards"
+import { initApiState } from "@/lib/hydration"
 import {
   checkInStaff,
   checkOutStaff,
@@ -22,7 +23,7 @@ import { useUser } from "@/lib/session"
 export default function StaffCheckIn() {
   const user = useUser()
   const [points, setPoints] = useState(0)
-  const [tasksHandled, setTasksHandled] = useState(42)
+  const [tasksHandled, setTasksHandled] = useState(() => initApiState(0, 42))
   const [checkedInToday, setCheckedInToday] = useState(false)
   const [checkedOutToday, setCheckedOutToday] = useState(false)
   const [streak, setStreak] = useState(0)

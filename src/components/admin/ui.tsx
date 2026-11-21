@@ -164,21 +164,55 @@ export function Status({
   )
 }
 
+export function RequiredMark() {
+  return (
+    <span
+      className="ml-1 font-bold text-red-600"
+      aria-hidden="true"
+      title="Trường bắt buộc"
+    >
+      *
+    </span>
+  )
+}
+
+export function FormRequiredLegend({ className = "" }: { className?: string }) {
+  return (
+    <p className={`text-xs text-muted ${className}`}>
+      Các trường có dấu <span className="font-bold text-red-600">*</span> là thông tin bắt buộc.
+    </p>
+  )
+}
+
+export function TableSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="card flex flex-col gap-3 p-5" aria-busy="true" aria-live="polite">
+      <div className="h-4 w-48 animate-pulse rounded bg-surface-3" />
+      {Array.from({ length: rows }).map((_, idx) => (
+        <div key={idx} className="h-10 w-full animate-pulse rounded-lg bg-surface-2" />
+      ))}
+    </div>
+  )
+}
+
 /** Trường biểu mẫu: nhãn uppercase 11px như tiêu đề cột của bảng, để cả trang
  *  nhìn như một hệ thống. */
 export function Field({
   label,
   hint,
+  required,
   children,
 }: {
   label: string
   hint?: string
+  required?: boolean
   children: React.ReactNode
 }) {
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-[11px] font-bold tracking-[0.1em] text-muted uppercase">
         {label}
+        {required && <RequiredMark />}
       </span>
       {children}
       {hint && <span className="text-[12px] leading-5 text-muted">{hint}</span>}
@@ -211,7 +245,7 @@ export function ColumnChart({
   format?: (n: number) => string
   height?: number
 }) {
-  const peak = Math.max(...data.map((d) => d.value))
+  const peak = Math.max(1, ...data.map((d) => d.value))
 
   return (
     <div>

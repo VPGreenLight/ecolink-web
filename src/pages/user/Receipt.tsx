@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
-import { PageHead, Status, Table, Td } from "@/components/Portal"
+import { FormRequiredLegend, PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import { INCOMING, STATUS_LABEL, TONE, calc, type Handover } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
 import { ApiError } from "@/lib/api"
+import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   confirmHandoverReceipt,
   disputeHandoverReceipt,
@@ -54,7 +55,7 @@ export default function Receipt() {
   const liveAuth = hasLiveBackendAuth()
 
   const defaultHandover = INCOMING.find((x) => x.status === "collected") || INCOMING[0]
-  const [loadingOrder, setLoadingOrder] = useState<boolean>(() => liveAuth)
+  const [loadingOrder, setLoadingOrder] = useState<boolean>(() => initApiLoading(true))
   const [candidates, setCandidates] = useState<ReceiptCandidate[]>([])
   const [orderUnitPrice, setOrderUnitPrice] = useState<number | undefined>(undefined)
   const [h, setH] = useState<Handover | null>(() => {
@@ -74,7 +75,7 @@ export default function Receipt() {
         }
       }
     }
-    return liveAuth ? null : defaultHandover
+    return initApiState(null, defaultHandover)
   })
 
   const [actual, setActual] = useState<ActualLineView[]>(() =>
@@ -454,9 +455,7 @@ export default function Receipt() {
       )}
 
       {loadingOrder ? (
-        <p className="card px-5 py-8 text-center text-sm text-muted">
-          Đang tải thông tin biên nhận...
-        </p>
+        <TableSkeleton rows={4} />
       ) : !h ? (
         <div className="card flex flex-col items-center gap-3 px-5 py-10 text-center">
           <p className="text-sm font-semibold text-ink">
@@ -604,8 +603,12 @@ export default function Receipt() {
           <h2 className="text-base font-bold text-ink">
             Gửi khiếu nại sai lệch biên nhận (U-11)
           </h2>
+          <FormRequiredLegend />
           <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
-            Lý do sai lệch khối lượng / thanh toán
+            <span>
+              Lý do sai lệch khối lượng / thanh toán
+              <RequiredMark />
+            </span>
             <textarea
               className="input h-auto resize-y py-2.5 leading-6"
               rows={3}
@@ -682,11 +685,16 @@ export default function Receipt() {
             </div>
           ) : (
             <>
-              <div
-                role="radiogroup"
-                aria-label="Chấm điểm"
-                className="flex items-center gap-1.5"
-              >
+              <div>
+                <p className="mb-1.5 text-xs font-semibold text-ink">
+                  Chọn mức độ hài lòng (1 – 5 sao)
+                  <RequiredMark />
+                </p>
+                <div
+                  role="radiogroup"
+                  aria-label="Chấm điểm"
+                  className="flex items-center gap-1.5"
+                >
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button
                     key={n}
@@ -704,6 +712,7 @@ export default function Receipt() {
                     ★
                   </button>
                 ))}
+              </div>
               </div>
 
               <textarea

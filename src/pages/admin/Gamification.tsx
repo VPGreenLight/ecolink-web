@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { ApiError } from "@/lib/api"
 import { PageHead, Field, Stat, Table, Td } from "@/components/admin/ui"
 import { GAMIFICATION, ECO_FACTS } from "@/data/ops"
+import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
 import {
   fetchGamificationConfig,
   fetchStaffEcoFacts,
@@ -9,7 +10,6 @@ import {
   updateGamificationConfig,
   type GamificationConfigDto,
 } from "@/lib/gamificationApi"
-import { hasLiveBackendAuth } from "@/lib/session"
 
 /** A-07 Cấu hình gamification: tỷ lệ điểm và mốc level cây ảo.
  *
@@ -17,7 +17,7 @@ import { hasLiveBackendAuth } from "@/lib/session"
  *  nhánh cây. Hai bảng đặt cạnh nhau vì sửa hạng mà quên nhánh cây thì người
  *  dùng lên hạng xong không mở được gì. */
 export default function GamificationConfig() {
-  const [liveMode] = useState(() => hasLiveBackendAuth())
+  const [liveMode] = useState(() => !isSsrSmokeTest())
 
   // Offline / SSR fallback state
   const [pointsPerKg, setPointsPerKg] = useState(GAMIFICATION.pointsPerKg)
@@ -27,7 +27,7 @@ export default function GamificationConfig() {
   // Live Backend state
   const [config, setConfig] = useState<GamificationConfigDto | null>(null)
   const [ecoFactsCount, setEcoFactsCount] = useState<number | null>(null)
-  const [loading, setLoading] = useState(liveMode)
+  const [loading, setLoading] = useState(() => initApiLoading(true))
   const [saving, setSaving] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
 
@@ -278,7 +278,7 @@ export default function GamificationConfig() {
                 </Field>
 
                 <div className="grid gap-4 sm:grid-cols-3">
-                  <Field label="Điểm danh cơ bản">
+                  <Field label="Điểm danh cơ bản" required>
                     <input
                       className="input tabular-nums"
                       type="number"
@@ -291,7 +291,7 @@ export default function GamificationConfig() {
                       }
                     />
                   </Field>
-                  <Field label="Thưởng chuỗi/ngày">
+                  <Field label="Thưởng chuỗi/ngày" required>
                     <input
                       className="input tabular-nums"
                       type="number"
@@ -304,7 +304,7 @@ export default function GamificationConfig() {
                       }
                     />
                   </Field>
-                  <Field label="Trần thưởng chuỗi">
+                  <Field label="Trần thưởng chuỗi" required>
                     <input
                       className="input tabular-nums"
                       type="number"
@@ -320,7 +320,7 @@ export default function GamificationConfig() {
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Giới hạn tưới cây/ngày" hint="Tối đa số lần chăm cây mỗi ngày.">
+                  <Field label="Giới hạn tưới cây/ngày" required hint="Tối đa số lần chăm cây mỗi ngày.">
                     <input
                       className="input tabular-nums"
                       type="number"
@@ -333,7 +333,7 @@ export default function GamificationConfig() {
                       }
                     />
                   </Field>
-                  <Field label="Hạn dùng voucher (ngày)" hint="Số ngày hiệu lực sau khi đổi quà.">
+                  <Field label="Hạn dùng voucher (ngày)" required hint="Số ngày hiệu lực sau khi đổi quà.">
                     <input
                       className="input tabular-nums"
                       type="number"
@@ -548,7 +548,7 @@ export default function GamificationConfig() {
               />
             </Field>
 
-            <Field label="Điểm thưởng khi gán nhãn AI đúng" hint="Dành cho nhân viên vận hành.">
+            <Field label="Điểm thưởng khi gán nhãn AI đúng" required hint="Dành cho nhân viên vận hành.">
               <input
                 className="input tabular-nums"
                 type="number"
