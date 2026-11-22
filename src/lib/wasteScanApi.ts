@@ -1,6 +1,13 @@
 import { apiRequest, type ApiResponse } from "@/lib/api"
 
-export type AiModelId = "yolov8_detect" | "mobilenet_v3" | "efficientnet_b0" | "yolov8n"
+export type AiModelId =
+  | "yolo26_detect"
+  | "yolo26s_cls"
+  | "yolo26n_cls"
+  | "yolov8_detect"
+  | "mobilenet_v3"
+  | "efficientnet_b0"
+  | "yolov8n"
 
 export interface AiModelOption {
   id: string
@@ -143,9 +150,21 @@ export interface PublishSortingRuleResultDto {
 
 export const DEFAULT_AI_MODELS: AiModelOption[] = [
   {
-    id: "yolov8_detect",
-    name: "YOLOv8 Detection (Khuyên dùng - Đa vật thể & Cắt nền)",
-    family: "Two-Stage Object Detection & Ensemble",
+    id: "yolo26_detect",
+    name: "YOLO26 Detection (End-to-End NMS-Free + YOLO26s-cls - Khuyên dùng)",
+    family: "YOLO26 End-to-End NMS-Free (Two-Stage)",
+    is_ready: true,
+  },
+  {
+    id: "yolo26s_cls",
+    name: "YOLO26 Small Classifier (12-Class Fine-Tuned - 97.1%)",
+    family: "YOLO26-cls (Ultralytics)",
+    is_ready: true,
+  },
+  {
+    id: "yolo26n_cls",
+    name: "YOLO26 Nano Classifier (Siêu tốc)",
+    family: "YOLO26-cls (Ultralytics)",
     is_ready: true,
   },
   {
@@ -160,18 +179,12 @@ export const DEFAULT_AI_MODELS: AiModelOption[] = [
     family: "CNN (Torchvision)",
     is_ready: true,
   },
-  {
-    id: "yolov8n",
-    name: "YOLOv8 Nano Classifier (Tốc độ nhanh)",
-    family: "CNN (Ultralytics)",
-    is_ready: true,
-  },
 ]
 
 export interface WasteCategoryMeta {
   code: string
   shortName: string
-  group: "Nhựa" | "Giấy" | "Kim loại" | "Thủy tinh" | "Hữu cơ"
+  group: "Nhựa" | "Giấy" | "Kim loại" | "Thủy tinh" | "Điện tử" | "Hữu cơ" | "Vải & Đồ cũ"
   badge: string
   priceRange: string
   priceUnit: string
@@ -261,18 +274,82 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
     code: "trash",
     shortName: "Rác sinh hoạt thông thường",
     group: "Hữu cơ",
-    badge: "Không thuộc danh mục thu mua",
+    badge: "Chỉ áp dụng hướng dẫn xử lý — Không thu mua",
     priceRange: "Không thu mua",
     priceUnit: "Bỏ thùng rác đô thị",
     recyclable: false,
-    handoverWasteId: "organic",
-    defaultBinColor: "Xám / Xanh đậm",
+    handoverWasteId: "trash",
+    defaultBinColor: "Đen / Xám đậm",
     defaultSteps: [
       "Tách riêng khỏi nhóm nhựa, giấy, kim loại để không làm bẩn phế liệu sạch.",
       "Buộc kín túi rác và bỏ đúng giờ thu gom rác sinh hoạt tại địa phương.",
     ],
   },
+  battery: {
+    code: "battery",
+    shortName: "Pin & Rác thải nguy hại",
+    group: "Điện tử",
+    badge: "Rác thải nguy hại — Đồng nát không thu mua",
+    priceRange: "Không thu mua",
+    priceUnit: "Nộp điểm thu hồi pin",
+    recyclable: false,
+    handoverWasteId: "battery",
+    defaultBinColor: "Đỏ Nguy Hại",
+    defaultSteps: [
+      "Dán băng keo cách điện kín hai đầu cực của pin đã qua sử dụng.",
+      "Đựng trong lọ nhựa khô kín và mang tới điểm thu hồi pin tại siêu thị hoặc UBND phường.",
+    ],
+  },
+  biological: {
+    code: "biological",
+    shortName: "Rác hữu cơ & Thực phẩm",
+    group: "Hữu cơ",
+    badge: "Rác hữu cơ dễ phân hủy — Không thu mua",
+    priceRange: "Không thu mua",
+    priceUnit: "Thùng Xanh Lá / Ủ compost",
+    recyclable: false,
+    handoverWasteId: "organic",
+    defaultBinColor: "Xanh Lá",
+    defaultSteps: [
+      "Chắt ráo nước thừa và lọc bỏ túi ni-lông, dây buộc nhựa lẫn trong thực phẩm.",
+      "Bỏ vào thùng rác hữu cơ màu Xanh Lá hoặc ủ phân sinh học tại nhà.",
+    ],
+  },
+  clothes: {
+    code: "clothes",
+    shortName: "Vải vóc & Quần áo cũ",
+    group: "Vải & Đồ cũ",
+    badge: "Đồ tái sử dụng cộng đồng — Không thu mua",
+    priceRange: "Không thu mua",
+    priceUnit: "Quyên góp / Điểm tái sử dụng",
+    recyclable: false,
+    handoverWasteId: "clothes",
+    defaultBinColor: "Tím Đồ Cũ",
+    defaultSteps: [
+      "Giặt sạch, phơi khô và gấp gọn quần áo còn sử dụng tốt để gửi tủ đồ thiện nguyện.",
+      "Vải rách bẩn dính dầu mỡ bọc kín bỏ luồng xử lý riêng, không trộn giấy carton.",
+    ],
+  },
+  shoes: {
+    code: "shoes",
+    shortName: "Giày dép cũ",
+    group: "Vải & Đồ cũ",
+    badge: "Đồ tái sử dụng cộng đồng — Không thu mua",
+    priceRange: "Không thu mua",
+    priceUnit: "Quyên góp / Điểm đồ cũ",
+    recyclable: false,
+    handoverWasteId: "shoes",
+    defaultBinColor: "Tím Đồ Cũ",
+    defaultSteps: [
+      "Vệ sinh sơ bùn đất, buộc cố định theo đôi và tháo pin nếu là giày phát sáng.",
+      "Quyên góp cho tổ chức thiện nguyện nếu còn tốt hoặc bỏ đúng điểm tập kết.",
+    ],
+  },
 }
+
+WASTE_CATEGORY_META["brown-glass"] = WASTE_CATEGORY_META.glass
+WASTE_CATEGORY_META["green-glass"] = WASTE_CATEGORY_META.glass
+WASTE_CATEGORY_META["white-glass"] = WASTE_CATEGORY_META.glass
 
 export const AI_CLASS_OPTIONS = [
   { code: "plastic", label: "Nhựa tái chế (Plastic)" },
@@ -280,6 +357,10 @@ export const AI_CLASS_OPTIONS = [
   { code: "cardboard", label: "Bìa Carton (Cardboard)" },
   { code: "metal", label: "Kim loại & Vỏ lon (Metal)" },
   { code: "glass", label: "Thủy tinh (Glass)" },
+  { code: "battery", label: "Pin & Rác nguy hại (Battery)" },
+  { code: "biological", label: "Rác hữu cơ & Thực phẩm (Biological)" },
+  { code: "clothes", label: "Vải vóc & Quần áo cũ (Clothes)" },
+  { code: "shoes", label: "Giày dép cũ (Shoes)" },
   { code: "trash", label: "Rác sinh hoạt khác (Trash)" },
 ] as const
 
@@ -321,7 +402,7 @@ export function parsePreparationSteps(raw?: string | string[] | null): string[] 
 /** Gửi file ảnh rác tới POST /api/v1/waste-scan/classify (UC-CLS-01). */
 export async function classifyWasteImage(
   file: File,
-  model: string = "yolov8_detect",
+  model: string = "yolo26_detect",
   signal?: AbortSignal,
 ): Promise<ApiResponse<WasteScanResponseDto>> {
   const form = new FormData()
@@ -360,7 +441,7 @@ export async function fetchAiModels(signal?: AbortSignal): Promise<AiModelsPaylo
     return res.data
   }
   return {
-    default_model: "yolov8_detect",
+    default_model: "yolo26_detect",
     models: DEFAULT_AI_MODELS,
   }
 }

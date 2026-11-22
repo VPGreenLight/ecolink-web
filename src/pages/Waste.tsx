@@ -23,7 +23,12 @@ const WASTE_TO_API_CATEGORY: Record<string, string> = {
   steel: "metal",
   aluminum: "metal",
   glass: "glass",
-  organic: "trash",
+  battery: "battery",
+  ewaste: "battery",
+  organic: "biological",
+  clothes: "clothes",
+  shoes: "shoes",
+  trash: "trash",
 }
 
 const SEED_ITEMS: ExtendedWasteItem[] = WASTES.map((w) => ({

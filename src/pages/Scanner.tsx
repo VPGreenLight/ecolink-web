@@ -462,7 +462,7 @@ export default function Scanner() {
         explicitFile ??
         file ??
         (await loadSampleImageAsFile(r.image, "sample-pet-bottle.png"))
-      const res = await classifyWasteImage(targetFile, "yolov8_detect", controller.signal)
+      const res = await classifyWasteImage(targetFile, "yolo26_detect", controller.signal)
 
       // Giữ hiệu ứng tia quét tối thiểu 550ms để mắt người dùng kịp quan sát nhịp quét
       const elapsed = Date.now() - startedAt
@@ -1346,7 +1346,13 @@ function ScanResult({ result }: { result: ViewModelResult }) {
   return (
     <div className="flex flex-col gap-3">
       <span
-        className="draw-frame block w-full truncate rounded-full border border-mint/40 bg-mint/25 px-3.5 py-1.5 text-center text-[11px] leading-4 font-semibold text-brand-deep"
+        className={`draw-frame block w-full truncate rounded-full border px-3.5 py-1.5 text-center text-[11px] leading-4 font-semibold ${
+          result.recyclable
+            ? "border-mint/40 bg-mint/25 text-brand-deep"
+            : result.categoryCode === "battery"
+              ? "border-rose-300 bg-rose-50 text-rose-700"
+              : "border-amber-300 bg-amber-50 text-amber-800"
+        }`}
         style={{ animationDelay: `${T.chipFrame}ms` }}
       >
         <Words text={result.badge} from={T.chipWord} />
@@ -1365,6 +1371,14 @@ function ScanResult({ result }: { result: ViewModelResult }) {
         >
           {result.description}
         </p>
+        {!result.recyclable && result.hazardWarning && (
+          <div
+            role="alert"
+            className="mt-2.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] leading-5 font-medium text-rose-800"
+          >
+            {result.hazardWarning}
+          </div>
+        )}
       </div>
 
       <div
@@ -1466,7 +1480,7 @@ function ScanResult({ result }: { result: ViewModelResult }) {
           </Link>
         ) : (
           <Link to="/guidance" className="btn-outline h-11 w-full rounded-xl px-4">
-            Xem hướng dẫn xử lý rác sinh hoạt
+            Xem chi tiết hướng dẫn phân loại &amp; xử lý
           </Link>
         )}
 

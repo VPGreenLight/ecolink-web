@@ -9,7 +9,7 @@
 export type Waste = {
   id: string
   name: string
-  group: "Nhựa" | "Giấy" | "Kim loại" | "Thủy tinh" | "Điện tử" | "Hữu cơ"
+  group: "Nhựa" | "Giấy" | "Kim loại" | "Thủy tinh" | "Điện tử" | "Hữu cơ" | "Vải & Đồ cũ"
   /** đơn giá thu mua tham khảo, đồng/kg */
   price: number
   /** rác có thu gom lại hay đem xử lý riêng */
@@ -26,6 +26,7 @@ export const WASTE_GROUPS = [
   "Thủy tinh",
   "Điện tử",
   "Hữu cơ",
+  "Vải & Đồ cũ",
 ] as const
 
 export const WASTES: Waste[] = [
@@ -94,21 +95,21 @@ export const WASTES: Waste[] = [
   },
   {
     id: "battery",
-    name: "Pin và ắc quy",
+    name: "Pin và rác nguy hại",
     group: "Điện tử",
-    price: 25_000,
-    recyclable: true,
-    rule: "Pin Li-ion, ắc quy, sạc dự phòng. Điểm thu mua điện tử mới nhận.",
-    prep: "Dán băng keo lên cực pin, không để chung với rác ướt.",
+    price: 0,
+    recyclable: false,
+    rule: "Pin AA/AAA, pin cúc áo, sạc dự phòng. Vựa đồng nát không thu mua — phải bỏ tại điểm thu hồi pin.",
+    prep: "Dán băng keo cách điện 2 cực pin, cho vào lọ khô kín, không vứt vào thùng rác sinh hoạt.",
   },
   {
     id: "ewaste",
-    name: "Thiết bị điện tử",
+    name: "Thiết bị điện tử thải bỏ",
     group: "Điện tử",
-    price: 8_500,
-    recyclable: true,
-    rule: "Điện thoại, máy tính, màn hình, linh kiện hỏng.",
-    prep: "Xoá dữ liệu trước khi bàn giao, tháo thẻ nhớ nếu có.",
+    price: 0,
+    recyclable: false,
+    rule: "Linh kiện điện tử cũ hỏng cần đưa tới trạm thu hồi rác thải điện tử theo quy định.",
+    prep: "Xoá dữ liệu cá nhân, tháo rời pin trước khi bàn giao tới điểm tiếp nhận.",
   },
   {
     id: "organic",
@@ -116,8 +117,35 @@ export const WASTES: Waste[] = [
     group: "Hữu cơ",
     price: 0,
     recyclable: false,
-    rule: "Vỏ rau củ, thức ăn thừa. Không đưa vào nhóm thu gom phế liệu.",
-    prep: "Bỏ trực tiếp vào thùng rác hữu cơ của địa phương.",
+    rule: "Vỏ rau củ, thức ăn thừa, bã trà/cà phê. Không đưa vào nhóm thu mua phế liệu.",
+    prep: "Chắt ráo nước thừa, bỏ vào thùng rác xanh lá hoặc ủ phân vi sinh.",
+  },
+  {
+    id: "clothes",
+    name: "Vải vóc & Quần áo cũ",
+    group: "Vải & Đồ cũ",
+    price: 0,
+    recyclable: false,
+    rule: "Quần áo, chăn màn cũ. Các vựa phế liệu không thu mua — ưu tiên quyên góp tái sử dụng.",
+    prep: "Giặt sạch, phơi khô và gấp gọn trước khi gửi tới tủ đồ thiện nguyện.",
+  },
+  {
+    id: "shoes",
+    name: "Giày dép cũ",
+    group: "Vải & Đồ cũ",
+    price: 0,
+    recyclable: false,
+    rule: "Giày thể thao, dép cũ. Không thuộc danh mục cân ký đồng nát.",
+    prep: "Làm sạch bùn đất, buộc theo đôi để quyên góp hoặc bọc kín nếu đã hỏng đế.",
+  },
+  {
+    id: "trash",
+    name: "Rác sinh hoạt khác",
+    group: "Hữu cơ",
+    price: 0,
+    recyclable: false,
+    rule: "Giấy ăn bẩn, túi dính dầu mỡ và rác không thể tái chế.",
+    prep: "Buộc kín miệng túi, bỏ thùng rác đen/xám theo giờ thu gom đô thị.",
   },
 ]
 
