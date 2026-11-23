@@ -29,6 +29,7 @@ type ReceiptFormRow = {
   wasteName?: string
   estimatedKg: number
   kg: number
+  rawKg?: string
   unitPrice?: number
 }
 
@@ -252,15 +253,28 @@ export default function Receipt() {
   }
 
   const totalEstimatedKg = rows.reduce((s, r) => s + r.estimatedKg, 0)
-  const totalGross = rows.reduce((s, r, i) => s + r.kg * rowPriceOf(r, i), 0)
+  const totalGross = rows.reduce(
+    (s, r, i) => s + (Number.isFinite(r.kg) && r.kg > 0 ? r.kg : 0) * rowPriceOf(r, i),
+    0,
+  )
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!h) return
     setErrorMessage(null)
 
-    if (rows.length === 0 || rows.some((r) => !Number.isFinite(r.kg) || r.kg <= 0)) {
-      setErrorMessage("Vui lòng nhập khối lượng cân thực tế lớn hơn 0 kg cho tất cả loại rác.")
+    if (
+      rows.length === 0 ||
+      rows.some(
+        (r) =>
+          !Number.isFinite(r.kg) ||
+          r.kg <= 0 ||
+          Math.abs(r.kg * 100 - Math.round(r.kg * 100)) > 1e-4,
+      )
+    ) {
+      setErrorMessage(
+        "Vui lòng nhập khối lượng cân thực tế lớn hơn 0 kg (hỗ trợ tối đa 2 chữ số thập phân, ví dụ 10 hoặc 10.25) cho tất cả loại rác.",
+      )
       return
     }
 
@@ -389,14 +403,28 @@ export default function Receipt() {
                   <input
                     className="input h-9 w-28 tabular-nums"
                     type="number"
-                    min={0.01}
-                    step={0.1}
+                    min="0.01"
+                    step="0.01"
+                    inputMode="decimal"
                     aria-label={`Khối lượng cân thực tế ${r.wasteName || nameOf(r.wasteId)}`}
-                    value={r.kg}
+                    value={r.rawKg ?? (Number.isFinite(r.kg) ? String(r.kg) : "")}
                     disabled={sent || submitting}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      const parsed = raw.trim() === "" ? Number.NaN : Number(raw)
                       setRows((rs) =>
-                        rs.map((x, n) => (n === i ? { ...x, kg: Number(e.target.value) } : x)),
+                        rs.map((x, n) =>
+                          n === i ? { ...x, rawKg: raw, kg: parsed } : x,
+                        ),
+                      )
+                    }}
+                    onBlur={() =>
+                      setRows((rs) =>
+                        rs.map((x, n) =>
+                          n === i && Number.isFinite(x.kg) && x.kg > 0
+                            ? { ...x, rawKg: undefined, kg: Number(x.kg.toFixed(2)) }
+                            : x,
+                        ),
                       )
                     }
                   />

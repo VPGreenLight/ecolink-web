@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { FormRequiredLegend, PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { initApiLoading, initApiState } from "@/lib/hydration"
@@ -92,7 +92,7 @@ export default function Handover() {
   const debouncedSearch = useDebouncedValue(search, 250)
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(5)
+  const pageSize = FIXED_PAGE_SIZE
   const appointmentBounds = getAppointmentDateBounds()
 
   useEffect(() => {
@@ -461,8 +461,6 @@ export default function Handover() {
           pageSize={pageSize}
           totalCount={filteredList.length}
           onPageChange={setPage}
-          onPageSizeChange={setPageSize}
-          pageSizeOptions={[5, 10, 20]}
           itemLabel="yêu cầu"
         />
         </>
@@ -742,15 +740,15 @@ function CreateForm({
         Thêm loại rác
       </button>
 
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid items-start gap-5 sm:grid-cols-2">
         <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-          <span>
+          <span className="min-h-5 leading-5">
             Ngày hẹn thu gom
             <RequiredMark />
           </span>
           <input
             type="date"
-            className="input"
+            className="input h-10"
             min={formDateBounds.minDate}
             max={formDateBounds.maxDate}
             value={appointmentDate}
@@ -770,12 +768,12 @@ function CreateForm({
           </span>
         </label>
         <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-          <span>
-            Khung giờ muốn thu gom
+          <span className="min-h-5 leading-5">
+            Khung giờ thu gom
             <RequiredMark />
           </span>
           <select
-            className="input"
+            className="input h-10"
             value={slot}
             onChange={(e) => {
               setSlot(e.target.value)

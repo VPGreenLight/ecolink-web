@@ -14,15 +14,18 @@ export default function RequireRole({
   children: React.ReactNode
 }) {
   const session = useSession()
+  const sessionIdentity = session
+    ? `${session.id ?? session.username ?? session.name}:${session.role}`
+    : null
 
   useEffect(() => {
     if (typeof window === "undefined") return
-    if (!session) {
+    if (!sessionIdentity) {
       openAuthPopup("login")
       return
     }
     void ensureActiveAuthSession()
-  }, [session])
+  }, [sessionIdentity])
 
   if (!session) return <Navigate to="/" replace />
   if (!roles.includes(session.role)) return <Navigate to={ROLE_HOME[session.role]} replace />

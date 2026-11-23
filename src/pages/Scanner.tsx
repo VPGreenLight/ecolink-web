@@ -112,7 +112,7 @@ function buildBoxItem(
   return {
     id: dto.id || 1,
     categoryCode: code,
-    shortGroup: meta.group,
+    shortGroup: isOod ? "Chưa rõ" : meta.boxLabel,
     displayName: dto.displayName || meta.shortName,
     rawConfidence: rawConf,
     isPrimary: Boolean(dto.isPrimary),
@@ -798,7 +798,7 @@ function Preview({
   const summaryChips = result
     ? Object.entries(result.categorySummary).map(([code, count]) => ({
         code,
-        name: getCategoryMeta(code).group,
+        name: getCategoryMeta(code).boxLabel,
         count,
       }))
     : []
@@ -1457,7 +1457,7 @@ function ScanResult({ result }: { result: ViewModelResult }) {
                   key={code}
                   className="inline-flex items-center gap-1 rounded-full border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink"
                 >
-                  <span>{getCategoryMeta(code).group}</span>
+                  <span>{getCategoryMeta(code).boxLabel}</span>
                   <span className="text-brand-deep">×{count}</span>
                 </span>
               ))}

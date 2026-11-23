@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { PageHead, RequiredMark, Status } from "@/components/Portal"
 import { AI_CASES } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
@@ -80,11 +80,11 @@ export default function AiReview() {
   const [fbSearch, setFbSearch] = useState("")
   const debouncedFbSearch = useDebouncedValue(fbSearch, 250)
   const [fbPage, setFbPage] = useState(1)
-  const [fbPageSize, setFbPageSize] = useState(8)
+  const fbPageSize = FIXED_PAGE_SIZE
   const [labelSearch, setLabelSearch] = useState("")
   const debouncedLabelSearch = useDebouncedValue(labelSearch, 250)
   const [labelPage, setLabelPage] = useState(1)
-  const [labelPageSize, setLabelPageSize] = useState(8)
+  const labelPageSize = FIXED_PAGE_SIZE
 
   const fbKeyword = debouncedFbSearch.trim().toLowerCase()
   const filteredFeedbacks = feedbacks.filter((c) => {
@@ -560,8 +560,6 @@ export default function AiReview() {
               pageSize={fbPageSize}
               totalCount={filteredFeedbacks.length}
               onPageChange={setFbPage}
-              onPageSizeChange={setFbPageSize}
-              pageSizeOptions={[8, 15, 30]}
               itemLabel="báo cáo"
             />
           </aside>
@@ -784,8 +782,6 @@ export default function AiReview() {
               pageSize={labelPageSize}
               totalCount={filteredLabelItems.length}
               onPageChange={setLabelPage}
-              onPageSizeChange={setLabelPageSize}
-              pageSizeOptions={[8, 15, 30]}
               itemLabel="ảnh"
             />
           </aside>

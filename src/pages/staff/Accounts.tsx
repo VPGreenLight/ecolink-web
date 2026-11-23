@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { ACCOUNTS, type Account } from "@/data/ops"
@@ -74,7 +74,7 @@ export default function Accounts() {
   const [q, setQ] = useState("")
   const debouncedQ = useDebouncedValue(q, 250)
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const pageSize = FIXED_PAGE_SIZE
   const [pick, setPick] = useState<AccountRow | null>(null)
   const [detail, setDetail] = useState<StaffAccountDetailDto | null>(null)
   const [flash, setFlash] = useState("")
@@ -385,7 +385,6 @@ export default function Accounts() {
             pageSize={pageSize}
             totalCount={view.length}
             onPageChange={setPage}
-            onPageSizeChange={setPageSize}
             itemLabel="tài khoản"
           />
         </div>

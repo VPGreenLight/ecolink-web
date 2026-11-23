@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { PageHead, Field, Status, Table, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
-import PaginationBar from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE } from "@/components/PaginationBar"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { GIFTS, type Gift } from "@/data/ops"
 import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
@@ -41,7 +41,7 @@ export default function Gifts() {
   const debouncedGiftSearch = useDebouncedValue(giftSearch, 300)
   const [giftTypeFilter, setGiftTypeFilter] = useState("")
   const [giftPage, setGiftPage] = useState(1)
-  const [giftPageSize, setGiftPageSize] = useState(10)
+  const giftPageSize = FIXED_PAGE_SIZE
 
   const [redemptions, setRedemptions] = useState<RedemptionDto[]>([])
   const [redTotal, setRedTotal] = useState(0)
@@ -49,7 +49,7 @@ export default function Gifts() {
   const debouncedRedSearch = useDebouncedValue(redSearch, 300)
   const [redStatusFilter, setRedStatusFilter] = useState("")
   const [redPage, setRedPage] = useState(1)
-  const [redPageSize, setRedPageSize] = useState(10)
+  const redPageSize = FIXED_PAGE_SIZE
 
   const [loading, setLoading] = useState(() => initApiLoading(true))
 
@@ -456,7 +456,6 @@ export default function Gifts() {
                 pageSize={giftPageSize}
                 totalCount={giftsTotal}
                 onPageChange={setGiftPage}
-                onPageSizeChange={setGiftPageSize}
                 itemLabel="món quà"
               />
               </>
@@ -568,7 +567,6 @@ export default function Gifts() {
               pageSize={redPageSize}
               totalCount={redTotal}
               onPageChange={setRedPage}
-              onPageSizeChange={setRedPageSize}
               itemLabel="đơn đổi quà"
             />
           </section>

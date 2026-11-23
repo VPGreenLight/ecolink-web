@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { ApiError } from "@/lib/api"
 import { PageHead, RequiredMark, Status, Table, Td } from "@/components/admin/ui"
@@ -48,9 +48,9 @@ export default function BlogReview() {
   const debouncedSearch = useDebouncedValue(searchInput, 250)
   const [searchQuery, setSearchQuery] = useState("")
   const [pendingPage, setPendingPage] = useState(1)
-  const [pendingPageSize, setPendingPageSize] = useState(5)
+  const pendingPageSize = FIXED_PAGE_SIZE
   const [donePage, setDonePage] = useState(1)
-  const [donePageSize, setDonePageSize] = useState(10)
+  const donePageSize = FIXED_PAGE_SIZE
   const [loading, setLoading] = useState(() => initApiLoading(true))
 
   useEffect(() => {
@@ -476,8 +476,6 @@ export default function BlogReview() {
             pageSize={pendingPageSize}
             totalCount={pendingLive.length}
             onPageChange={setPendingPage}
-            onPageSizeChange={setPendingPageSize}
-            pageSizeOptions={[5, 10, 20]}
             itemLabel="bài chờ duyệt"
           />
           </>
@@ -572,8 +570,6 @@ export default function BlogReview() {
             pageSize={pendingPageSize}
             totalCount={filteredOfflinePending.length}
             onPageChange={setPendingPage}
-            onPageSizeChange={setPendingPageSize}
-            pageSizeOptions={[5, 10, 20]}
             itemLabel="bài chờ duyệt"
           />
           </>
@@ -619,7 +615,6 @@ export default function BlogReview() {
             pageSize={donePageSize}
             totalCount={doneRows.length}
             onPageChange={setDonePage}
-            onPageSizeChange={setDonePageSize}
             itemLabel="bài đã xử lý"
           />
         </div>

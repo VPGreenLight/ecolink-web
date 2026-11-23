@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { Download, FileJson, RefreshCw, ShieldCheck, Wrench, X } from "lucide-react"
-import PaginationBar, { extractPagedMeta, paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { extractPagedMeta, FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { Empty, Field, FormRequiredLegend, PageHead, Stat, Status, Table, Td } from "@/components/admin/ui"
 import { fmtInt, fmtVnd } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
@@ -272,7 +272,7 @@ export default function Reconciliation() {
   const [fromDate, setFromDate] = useState("")
   const [toDate, setToDate] = useState("")
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(15)
+  const pageSize = FIXED_PAGE_SIZE
   const [totalCount, setTotalCount] = useState(() => initApiState(0, DEMO_LEDGER.length))
   const [loading, setLoading] = useState(() => initApiLoading(Boolean(getAccessToken())))
   const [exportingFormat, setExportingFormat] = useState<"csv" | "xlsx" | null>(null)
@@ -719,8 +719,6 @@ export default function Reconciliation() {
           pageSize={pageSize}
           totalCount={effectiveTotal}
           onPageChange={setPage}
-          onPageSizeChange={setPageSize}
-          pageSizeOptions={[10, 15, 30, 50]}
           itemLabel="giao dịch đối soát"
         />
         </>

@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo, useRef } from "react"
 import { PageHead } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { getSpendPoints, addSpendPoints, fmt } from "@/data/rewards"
 import {
   careVirtualTree,
   fetchMyUnlockedEcoFacts,
   fetchMyVirtualTree,
   fetchPointWallet,
+  harvestVirtualTree,
   upgradeVirtualTree,
   type EcoFactItemDto,
   type VirtualTreeDto,
@@ -128,14 +129,16 @@ function loadInitialState(liveUser: boolean): TreeState {
 export default function EcoFactsPage() {
   const session = useSession()
   const isGuest = !session && !isSsrSmokeTest()
-  const liveTreeUser = hasLiveBackendAuth() && session?.role === "user"
-  const [tree, setTree] = useState<TreeState>(() => loadInitialState(liveTreeUser || isGuest))
+  const hasLiveAuth = hasLiveBackendAuth()
+  const isNonCitizenLiveRole = hasLiveAuth && Boolean(session && session.role !== "user")
+  const liveTreeUser = hasLiveAuth && session?.role === "user"
+  const [tree, setTree] = useState<TreeState>(() => loadInitialState(hasLiveAuth || isGuest))
   const [backendTree, setBackendTree] = useState<VirtualTreeDto | null>(null)
   const [unlockedFacts, setUnlockedFacts] = useState<EcoFactItemDto[]>([])
   const [factSearch, setFactSearch] = useState("")
   const [factLevelFilter, setFactLevelFilter] = useState<number | "all">("all")
   const [factPage, setFactPage] = useState(1)
-  const [factPageSize, setFactPageSize] = useState(6)
+  const factPageSize = FIXED_PAGE_SIZE
   const [selectedFact, setSelectedFact] = useState<EcoFactItemDto | null>(null)
   const [upgradingOfficial, setUpgradingOfficial] = useState(false)
   const [officialMsg, setOfficialMsg] = useState("")
@@ -146,8 +149,26 @@ export default function EcoFactsPage() {
   const [floatingCoins, setFloatingCoins] = useState<{ id: number; amount: number; x: number; y: number }[]>([])
   const [isWatering, setIsWatering] = useState(false)
   const [isFertilizing, setIsFertilizing] = useState(false)
+  const [isHarvesting, setIsHarvesting] = useState(false)
   const [showRewardInfo, setShowRewardInfo] = useState(false)
   const treeContainerRef = useRef<HTMLDivElement>(null)
+
+  const applyBackendTree = (dto: VirtualTreeDto) => {
+    setBackendTree(dto)
+    const visualStage = dto.harvestReady ? "fruiting" : stageForBackendLevel(dto.level)
+    setTree((prev) => ({
+      ...prev,
+      stage: visualStage,
+      water: dto.hydrationPercent,
+      exp: dto.careExp,
+      maxExp: dto.maxCareExp > 0 ? dto.maxCareExp : prev.maxExp,
+      coins: dto.walletBalance,
+      harvestReady: dto.harvestReady,
+      fruitsCount: dto.harvestReady ? 5 : 0,
+      isDead: dto.isWilted,
+    }))
+    setCurrentFrame(getDefaultFrameForStage(visualStage))
+  }
 
   const syncOfficialTree = async () => {
     if (!liveTreeUser) return
@@ -161,16 +182,7 @@ export default function EcoFactsPage() {
         setTree((prev) => ({ ...prev, coins: wRes.data.balance }))
       }
       if (tRes.data) {
-        setBackendTree(tRes.data)
-        const nextStage = stageForBackendLevel(tRes.data.level)
-        setTree((prev) => ({
-          ...prev,
-          stage: nextStage,
-          coins: tRes.data.walletBalance,
-          isDead: false,
-          exp: Math.min(prev.maxExp, tRes.data.dailyWaterCount * 15),
-        }))
-        setCurrentFrame(getDefaultFrameForStage(nextStage))
+        applyBackendTree(tRes.data)
       }
       if (fRes.data) setUnlockedFacts(fRes.data)
     } catch {
@@ -194,10 +206,7 @@ export default function EcoFactsPage() {
       const res = await upgradeVirtualTree()
       if (res.data) {
         const t = res.data.tree
-        setBackendTree(t)
-        const nextStage = stageForBackendLevel(t.level)
-        setTree((prev) => ({ ...prev, stage: nextStage, coins: t.walletBalance, isDead: false }))
-        setCurrentFrame(getDefaultFrameForStage(nextStage))
+        applyBackendTree(t)
         setOfficialMsg(
           res.data.unlockedFacts.length > 0
             ? `Cây đã thăng cấp ${t.level} (${t.levelTitle}) và mở ${res.data.unlockedFacts.length} Eco Fact mới!`
@@ -224,11 +233,11 @@ export default function EcoFactsPage() {
 
   // Lưu trạng thái cục bộ chỉ cho chế độ xem thử nghiệm (khi chưa đăng nhập tài khoản thật)
   useEffect(() => {
-    if (liveTreeUser || isGuest) return
+    if (hasLiveAuth || isGuest) return
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(tree))
     } catch {}
-  }, [tree, liveTreeUser, isGuest])
+  }, [tree, hasLiveAuth, isGuest])
 
   // Đồng bộ số dư điểm tiêu dùng khi có thay đổi từ trang Đổi Thưởng hoặc các tab khác
   useEffect(() => {
@@ -244,7 +253,7 @@ export default function EcoFactsPage() {
 
   // Chu kỳ sinh học: chỉ giảm độ ẩm theo thời gian ở chế độ mô phỏng offline
   useEffect(() => {
-    if (liveTreeUser || isGuest) return
+    if (hasLiveAuth || isGuest) return
     const timer = setInterval(() => {
       setTree((prev) => {
         if (prev.isDead) return prev
@@ -266,7 +275,7 @@ export default function EcoFactsPage() {
     }, 4500)
 
     return () => clearInterval(timer)
-  }, [liveTreeUser])
+  }, [hasLiveAuth, isGuest])
 
   // Điều khiển animation khung hình theo giai đoạn:
   // - seed: dừng ở frame 1
@@ -317,10 +326,18 @@ export default function EcoFactsPage() {
     return () => clearInterval(timer)
   }, [tree.stage, tree.isDead])
 
-  // Trồng lại cây mới khi cây bị khô héo
+  // Trồng lại / hồi sinh cây khi cây bị khô héo
   const handleReplant = () => {
     if (isGuest) {
       openAuthPopup("login")
+      return
+    }
+    if (liveTreeUser) {
+      void handleWater()
+      return
+    }
+    if (hasLiveAuth) {
+      setOfficialMsg("Theo quy định BR-GAM-08, tính năng Cây Ảo & mở khóa Eco Fact dành riêng cho tài khoản Người dân.")
       return
     }
     setCurrentFrame(1)
@@ -337,7 +354,7 @@ export default function EcoFactsPage() {
   }
 
   // Hiệu ứng rơi coin / điểm tiêu dùng
-  const triggerCoinReward = (amount: number) => {
+  const showFloatingCoins = (amount: number, creditLocal: boolean) => {
     const id = Date.now() + Math.random()
     const x = 40 + Math.random() * 20
     const y = 30 + Math.random() * 20
@@ -346,43 +363,56 @@ export default function EcoFactsPage() {
       setFloatingCoins((prev) => prev.filter((c) => c.id !== id))
     }, 1200)
 
-    // Điểm tiêu dùng đổi thưởng và điểm của EcoFacts là một
-    const newBalance = addSpendPoints(amount)
-    setTree((prev) => ({ ...prev, coins: newBalance }))
+    if (creditLocal) {
+      // Điểm tiêu dùng đổi thưởng và điểm của EcoFacts là một (chế độ xem thử ngoại tuyến)
+      const newBalance = addSpendPoints(amount)
+      setTree((prev) => ({ ...prev, coins: newBalance }))
+    }
   }
 
-  // Hành động 1: Tưới nước
+  const triggerCoinReward = (amount: number) => showFloatingCoins(amount, true)
+
+  // Hành động 1: Tưới nước (+35% ẩm, +10 EXP; chặn khi đã bão hòa >= 95%)
   const handleWater = async () => {
     if (isGuest) {
       openAuthPopup("login")
       return
     }
+    if (isNonCitizenLiveRole) {
+      setOfficialMsg("Theo quy định BR-GAM-08, tính năng Cây Ảo & mở khóa Eco Fact dành riêng cho tài khoản Người dân.")
+      return
+    }
     if (isWatering) return
     if (liveTreeUser) {
-      if (backendTree && backendTree.dailyWaterCount >= backendTree.dailyLimit) {
-        setOfficialMsg(`Bạn đã đạt giới hạn chăm sóc cây hôm nay (${backendTree.dailyWaterCount}/${backendTree.dailyLimit} lượt). Quay lại vào ngày mai nhé!`)
-        return
+      if (backendTree) {
+        if (backendTree.dailyWaterCount >= backendTree.dailyLimit) {
+          setOfficialMsg(`Bạn đã tưới cây tối đa ${backendTree.dailyLimit} lần trong ngày hôm nay.`)
+          return
+        }
+        if (backendTree.hydrationPercent >= 95) {
+          setOfficialMsg("Độ ẩm đất đang ở mức bão hòa (≥ 95%), không cần tưới thêm lúc này.")
+          return
+        }
       }
       setIsWatering(true)
       setOfficialMsg("")
       try {
         const res = await careVirtualTree("water")
         if (res.data) {
-          setBackendTree(res.data)
-          setTree((prev) => ({
-            ...prev,
-            water: Math.min(100, prev.water + 30),
-            exp: Math.min(prev.maxExp, prev.exp + 15),
-            coins: res.data.walletBalance,
-            isDead: false,
-          }))
-          setOfficialMsg(`Đã ghi nhận tưới nước (${res.data.dailyWaterCount}/${res.data.dailyLimit} lượt hôm nay).`)
+          applyBackendTree(res.data)
+          setOfficialMsg(res.data.lastCareEffect || res.message || `Đã ghi nhận tưới nước (${res.data.dailyWaterCount}/${res.data.dailyLimit}).`)
         }
       } catch (err) {
-        setOfficialMsg(err instanceof Error ? err.message : "Đã hết lượt chăm sóc cây trong ngày.")
+        setOfficialMsg(err instanceof Error ? err.message : "Không thể tưới nước cho cây lúc này.")
       } finally {
         setTimeout(() => setIsWatering(false), 700)
       }
+      return
+    }
+    if (hasLiveAuth) return
+
+    if (!tree.isDead && tree.water >= 95) {
+      setOfficialMsg("Độ ẩm đất đang ở mức bão hòa (≥ 95%), hãy bón phân hoặc đợi đất thoáng hơn rồi tưới.")
       return
     }
 
@@ -396,7 +426,7 @@ export default function EcoFactsPage() {
     }
 
     setTree((prev) => {
-      const newWater = Math.min(100, prev.water + 30)
+      const newWater = Math.min(100, prev.water + 35)
       const expGain = 10
       const currentStageIdx = STAGES.findIndex((s) => s.id === prev.stage)
       const currentStageDef = STAGES[currentStageIdx]
@@ -436,44 +466,59 @@ export default function EcoFactsPage() {
     setTimeout(() => setIsWatering(false), 900)
   }
 
-  // Hành động 2: Bón phân hữu cơ
+  // Hành động 2: Bón phân hữu cơ (-10% ẩm; +35 EXP tại vùng ẩm vàng 60-90%, ngược lại +25 EXP; yêu cầu >= 30% ẩm)
   const handleFertilize = async () => {
     if (isGuest) {
       openAuthPopup("login")
       return
     }
+    if (isNonCitizenLiveRole) {
+      setOfficialMsg("Theo quy định BR-GAM-08, tính năng Cây Ảo & mở khóa Eco Fact dành riêng cho tài khoản Người dân.")
+      return
+    }
     if (isFertilizing || tree.isDead) return
     if (liveTreeUser) {
-      if (backendTree && backendTree.dailyWaterCount >= backendTree.dailyLimit) {
-        setOfficialMsg(`Bạn đã đạt giới hạn chăm sóc cây hôm nay (${backendTree.dailyWaterCount}/${backendTree.dailyLimit} lượt). Quay lại vào ngày mai nhé!`)
-        return
+      if (backendTree) {
+        if (backendTree.hydrationPercent < 30) {
+          setOfficialMsg("Độ ẩm dưới 30% rất dễ xót rễ! Hãy tưới nước đạt tối thiểu 30% trước khi bón phân.")
+          return
+        }
+        if (backendTree.harvestReady) {
+          setOfficialMsg("Cây đã tích đủ EXP và sẵn sàng thu hoạch quả! Hãy hái quả trước khi bón phân tiếp.")
+          return
+        }
+        if (backendTree.dailyFertilizeCount >= backendTree.dailyFertilizeLimit && backendTree.fertilizerPacks <= 0) {
+          setOfficialMsg(`Bạn đã hết ${backendTree.dailyFertilizeLimit} lượt bón phân miễn phí hôm nay và chưa còn túi phân hữu cơ dự trữ.`)
+          return
+        }
       }
       setIsFertilizing(true)
       setOfficialMsg("")
       try {
         const res = await careVirtualTree("fertilize")
         if (res.data) {
-          setBackendTree(res.data)
-          setTree((prev) => ({
-            ...prev,
-            exp: Math.min(prev.maxExp, prev.exp + 25),
-            coins: res.data.walletBalance,
-            isDead: false,
-          }))
-          setOfficialMsg(`Đã ghi nhận bón phân (${res.data.dailyWaterCount}/${res.data.dailyLimit} lượt hôm nay).`)
+          applyBackendTree(res.data)
+          setOfficialMsg(res.data.lastCareEffect || res.message || `Đã ghi nhận bón phân (${res.data.dailyFertilizeCount}/${res.data.dailyFertilizeLimit}).`)
         }
       } catch (err) {
-        setOfficialMsg(err instanceof Error ? err.message : "Đã hết lượt chăm sóc cây trong ngày.")
+        setOfficialMsg(err instanceof Error ? err.message : "Không thể bón phân cho cây lúc này.")
       } finally {
         setTimeout(() => setIsFertilizing(false), 700)
       }
+      return
+    }
+    if (hasLiveAuth) return
+
+    if (tree.water < 30) {
+      setOfficialMsg("Độ ẩm dưới 30% rất dễ xót rễ! Hãy tưới nước trước khi bón phân.")
       return
     }
 
     setIsFertilizing(true)
 
     setTree((prev) => {
-      const expGain = 25
+      const expGain = prev.water >= 60 && prev.water <= 90 ? 35 : 25
+      const nextWater = Math.max(0, prev.water - 10)
       const currentStageIdx = STAGES.findIndex((s) => s.id === prev.stage)
       const currentStageDef = STAGES[currentStageIdx]
 
@@ -498,6 +543,7 @@ export default function EcoFactsPage() {
 
       return {
         ...prev,
+        water: nextWater,
         exp: newExp,
         maxExp: newMax,
         stage: newStage,
@@ -511,10 +557,42 @@ export default function EcoFactsPage() {
   }
 
   // Hành động 3: Thu hoạch quả ngọt
-  // Khi người dùng ấn hái quả: cây trở về frame 46
-  const handleHarvest = () => {
+  // Khi người dùng ấn hái quả (offline: về frame 46; live: nhận Điểm Xanh thật vào ví)
+  const handleHarvest = async () => {
     if (isGuest) {
       openAuthPopup("login")
+      return
+    }
+    if (isNonCitizenLiveRole) {
+      setOfficialMsg("Theo quy định BR-GAM-08, tính năng Cây Ảo & mở khóa Eco Fact dành riêng cho tài khoản Người dân.")
+      return
+    }
+    if (liveTreeUser) {
+      if (isHarvesting) return
+      if (backendTree?.isWilted) {
+        setOfficialMsg("Cây đang khô héo (0% ẩm). Hãy tưới nước hồi sinh trước khi thu hoạch.")
+        return
+      }
+      if (!backendTree?.harvestReady) {
+        setOfficialMsg("Chăm sóc đủ thanh EXP để kết quả chín thu hoạch Điểm Xanh, hoặc nâng cấp Cấp cây ở bên dưới.")
+        return
+      }
+      setIsHarvesting(true)
+      setOfficialMsg("")
+      try {
+        const res = await harvestVirtualTree()
+        if (res.data) {
+          applyBackendTree(res.data.tree)
+          if (res.data.pointsAwarded > 0) {
+            showFloatingCoins(res.data.pointsAwarded, false)
+          }
+          setOfficialMsg(res.data.tree.lastCareEffect || res.message || `Thu hoạch thành công +${res.data.pointsAwarded} Điểm Xanh!`)
+        }
+      } catch (err) {
+        setOfficialMsg(err instanceof Error ? err.message : "Không thể thu hoạch lúc này.")
+      } finally {
+        setIsHarvesting(false)
+      }
       return
     }
     if (!tree.harvestReady || tree.fruitsCount <= 0) return
@@ -553,8 +631,17 @@ export default function EcoFactsPage() {
     [filteredFacts, factPage, factPageSize],
   )
 
-  const dailyCareExhausted =
-    Boolean(liveTreeUser && backendTree && backendTree.dailyWaterCount >= backendTree.dailyLimit)
+  const waterDisabled = Boolean(
+    isWatering ||
+      isNonCitizenLiveRole ||
+      (liveTreeUser && backendTree && !backendTree.canWater),
+  )
+  const fertilizeDisabled = Boolean(
+    isFertilizing ||
+      isNonCitizenLiveRole ||
+      tree.isDead ||
+      (liveTreeUser && backendTree && !backendTree.canFertilize),
+  )
 
   const currentStageIndex = STAGES.findIndex((s) => s.id === tree.stage)
   const currentStage = STAGES[currentStageIndex]
@@ -687,19 +774,25 @@ export default function EcoFactsPage() {
                         <div className="flex size-6 shrink-0 items-center justify-center p-0.5">
                           <img src="/assets/tree/binhtuoi_icon.png" alt="Bình tưới" className="size-full object-contain scale-110 drop-shadow-xs" />
                         </div>
-                        <span>Tưới nước bổ sung độ ẩm: <b className="text-blue-900">+3 Coin</b></span>
+                        <span>
+                          Tưới nước: <b className="text-blue-900">+35% ẩm · +10 EXP</b> (tưới hồi sinh khi 0%, chặn khi ≥ 95%)
+                        </span>
                       </div>
                       <div className="flex items-center gap-2.5">
                         <div className="flex size-6 shrink-0 items-center justify-center p-0.5">
                           <img src="/assets/tree/phanbon_icon.png" alt="Phân bón" className="size-full object-contain drop-shadow-xs" />
                         </div>
-                        <span>Bón phân kích thích lớn nhanh: <b className="text-emerald-900">+6 Coin</b></span>
+                        <span>
+                          Bón phân (ẩm ≥ 30%): <b className="text-emerald-900">+25 EXP</b> hoặc <b className="text-emerald-900">+35 EXP</b> ở vùng ẩm vàng 60–90% (-10% ẩm)
+                        </span>
                       </div>
                       <div className="flex items-center gap-2.5">
                         <div className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 border border-amber-100">
                           <Apple className="size-3.5" />
                         </div>
-                        <span>Thu hoạch quả chín mùa vụ: <b className="text-amber-900">+25 Coin</b></span>
+                        <span>
+                          Thu hoạch mùa vụ khi đầy EXP: nhận Điểm Xanh thật theo cấp cây, tăng thêm túi phân khi Quét AI &amp; Bàn giao rác
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -709,14 +802,14 @@ export default function EcoFactsPage() {
               <div>
                 <h2 className="text-lg font-bold text-ink">Chỉ số sinh tồn của cây</h2>
                 <p className="mt-0.5 text-xs text-muted">
-                  Cây cần đủ độ ẩm để sống. Nếu nước về 0%, cây sẽ héo khô và ngừng tăng trưởng.
+                  Độ ẩm giảm dần theo thời gian (-2%/giờ). Về 0% cây sẽ héo tạm thời cho tới khi được tưới nước hồi sinh.
                 </p>
               </div>
             </div>
 
             {/* Thanh đo lượng nước */}
             <div className="mt-5 flex flex-col gap-2">
-              <div className="flex justify-between items-center text-xs font-bold">
+              <div className="flex justify-between items-center text-xs font-bold gap-2">
                 <span className="flex items-center gap-1.5 text-blue-800">
                   <Droplets className="size-4 text-blue-600" />
                   <span>Lượng nước duy trì:</span>
@@ -725,6 +818,14 @@ export default function EcoFactsPage() {
                   <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600">
                     <TriangleAlert className="size-3.5 text-rose-500 shrink-0" />
                     <span>{tree.water}% (Báo động khô hạn!)</span>
+                  </span>
+                ) : tree.water < 30 ? (
+                  <span className="text-[11px] font-bold text-amber-700 tabular-nums">
+                    {tree.water}% (Cần tưới ≥ 30% để bón phân)
+                  </span>
+                ) : tree.water >= 60 && tree.water <= 90 ? (
+                  <span className="text-[11px] font-bold text-sky-700 tabular-nums">
+                    {tree.water}% · Ẩm vàng x1.4 EXP
                   </span>
                 ) : (
                   <span className="text-blue-950 font-bold tabular-nums">
@@ -735,7 +836,13 @@ export default function EcoFactsPage() {
               <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100 p-0.5 border border-slate-200/60">
                 <div
                   className={`h-full rounded-full transition-all duration-500 ${
-                    tree.water <= 20 ? "bg-rose-500" : tree.water <= 50 ? "bg-amber-400" : "bg-blue-500"
+                    tree.water <= 20
+                      ? "bg-rose-500"
+                      : tree.water < 30
+                        ? "bg-amber-500"
+                        : tree.water >= 60 && tree.water <= 90
+                          ? "bg-sky-500"
+                          : "bg-blue-500"
                   }`}
                   style={{ width: `${tree.water}%` }}
                 />
@@ -763,18 +870,20 @@ export default function EcoFactsPage() {
 
             {/* HÀNH ĐỘNG CHĂM SÓC CÂY SANG BÊN PHẢI THEO THIẾT KẾ MỚI */}
             <div className="mt-6 flex flex-col gap-3 pt-5 border-t border-line-soft">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-muted">
                   Hành động chăm sóc
                 </span>
-                <span className="text-[11px] font-semibold text-muted">
+                <span className="text-[11px] font-semibold text-muted text-right">
                   {isGuest
                     ? "Chế độ xem trước cho Khách"
-                    : liveTreeUser && backendTree
-                      ? `Lượt hôm nay: ${backendTree.dailyWaterCount}/${backendTree.dailyLimit}`
-                      : tree.isDead
-                        ? "Cây đang khô héo"
-                        : "Nhấn để bổ sung"}
+                    : isNonCitizenLiveRole
+                      ? "Áp dụng cho Người dân"
+                      : liveTreeUser && backendTree
+                        ? `Tưới: ${backendTree.dailyWaterCount}/${backendTree.dailyLimit} · Bón: ${backendTree.dailyFertilizeCount}/${backendTree.dailyFertilizeLimit}${backendTree.fertilizerPacks > 0 ? ` (+${backendTree.fertilizerPacks} túi)` : ""}`
+                        : tree.isDead
+                          ? "Cây đang khô héo"
+                          : "Nhấn để bổ sung"}
                 </span>
               </div>
 
@@ -795,54 +904,120 @@ export default function EcoFactsPage() {
                 <button
                   type="button"
                   onClick={handleReplant}
-                  className="group relative flex w-full items-center justify-center gap-2.5 rounded-2xl bg-brand hover:bg-brand-deep p-3.5 text-sm font-semibold text-white shadow-xs transition-all duration-150 active:scale-[0.98] cursor-pointer"
+                  disabled={isWatering}
+                  className="group relative flex w-full items-center justify-center gap-2.5 rounded-2xl bg-brand hover:bg-brand-deep p-3.5 text-sm font-semibold text-white shadow-xs transition-all duration-150 active:scale-[0.98] disabled:opacity-50 cursor-pointer"
                 >
                   <RotateCcw className="size-4.5 transition-transform duration-300 group-hover:-rotate-90" />
-                  <span>Cây đã chết — Gieo hạt nuôi lại từ đầu</span>
+                  <span>
+                    {liveTreeUser
+                      ? "Cây đang khô héo (0% ẩm) — Tưới nước hồi sinh ngay (+35% ẩm)"
+                      : "Cây đã chết — Gieo hạt nuôi lại từ đầu"}
+                  </span>
                 </button>
               ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => void handleWater()}
-                    disabled={isWatering || dailyCareExhausted}
-                    className="group relative flex items-center gap-3 rounded-2xl border border-blue-200/80 bg-gradient-to-b from-blue-50/70 to-blue-100/50 p-3 text-left transition-all duration-150 hover:border-blue-300 hover:bg-blue-100/70 hover:shadow-xs active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
-                  >
-                    <div className="flex size-12 shrink-0 items-center justify-center p-0.5">
-                      <img
-                        src="/assets/tree/binhtuoi_icon.png"
-                        alt="Bình tưới"
-                        className="size-full object-contain scale-120 drop-shadow-xs"
-                      />
-                    </div>
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-[13px] font-bold text-slate-900 tracking-tight">Tưới nước</span>
-                      <span className="text-[11px] font-medium text-blue-700">
-                        {liveTreeUser ? "+30% ẩm · Lưu ngày" : "+30% • +3 xu"}
+                <div className="flex flex-col gap-3">
+                  {liveTreeUser && backendTree?.harvestReady && (
+                    <button
+                      type="button"
+                      onClick={() => void handleHarvest()}
+                      disabled={isHarvesting}
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-400 to-amber-500 p-3 text-sm font-bold text-amber-950 shadow-xs transition-all duration-150 hover:from-amber-500 hover:to-amber-600 active:scale-[0.98] disabled:opacity-60 cursor-pointer"
+                    >
+                      <Apple className="size-4.5 shrink-0" />
+                      <span>
+                        {isHarvesting
+                          ? "Đang thu hoạch..."
+                          : `Thu hoạch quả chín (+${backendTree.harvestRewardPreview} Điểm Xanh)`}
                       </span>
-                    </div>
-                  </button>
+                    </button>
+                  )}
 
-                  <button
-                    type="button"
-                    onClick={() => void handleFertilize()}
-                    disabled={isFertilizing || dailyCareExhausted}
-                    className="group relative flex items-center gap-3 rounded-2xl border border-emerald-200/80 bg-gradient-to-b from-emerald-50/70 to-emerald-100/50 p-3 text-left transition-all duration-150 hover:border-emerald-300 hover:bg-emerald-100/70 hover:shadow-xs active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
-                  >
-                    <div className="flex size-12 shrink-0 items-center justify-center p-1">
-                      <img
-                        src="/assets/tree/phanbon_icon.png"
-                        alt="Phân bón"
-                        className="size-full object-contain drop-shadow-xs"
-                      />
-                    </div>
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-[13px] font-bold text-slate-900 tracking-tight">Bón phân</span>
-                      <span className="text-[11px] font-medium text-emerald-700">
-                        {liveTreeUser ? "+25 EXP · Lưu ngày" : "+25 EXP • +6 xu"}
-                      </span>
-                    </div>
-                  </button>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void handleWater()}
+                      disabled={waterDisabled}
+                      className="group relative flex items-center gap-3 rounded-2xl border border-blue-200/80 bg-gradient-to-b from-blue-50/70 to-blue-100/50 p-3 text-left transition-all duration-150 hover:border-blue-300 hover:bg-blue-100/70 hover:shadow-xs active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+                    >
+                      <div className="flex size-12 shrink-0 items-center justify-center p-0.5">
+                        <img
+                          src="/assets/tree/binhtuoi_icon.png"
+                          alt="Bình tưới"
+                          className="size-full object-contain scale-120 drop-shadow-xs"
+                        />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[13px] font-bold text-slate-900 tracking-tight">Tưới nước</span>
+                        <span className="text-[11px] font-medium text-blue-700">
+                          {liveTreeUser && backendTree
+                            ? backendTree.hydrationPercent >= 95
+                              ? "Đủ ẩm (≥95%)"
+                              : backendTree.dailyWaterCount >= backendTree.dailyLimit
+                                ? `Hết lượt (${backendTree.dailyWaterCount}/${backendTree.dailyLimit})`
+                                : "+35% ẩm · +10 EXP"
+                            : "+35% ẩm · +10 EXP"}
+                        </span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleFertilize()}
+                      disabled={fertilizeDisabled}
+                      className="group relative flex items-center gap-3 rounded-2xl border border-emerald-200/80 bg-gradient-to-b from-emerald-50/70 to-emerald-100/50 p-3 text-left transition-all duration-150 hover:border-emerald-300 hover:bg-emerald-100/70 hover:shadow-xs active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+                    >
+                      <div className="flex size-12 shrink-0 items-center justify-center p-1">
+                        <img
+                          src="/assets/tree/phanbon_icon.png"
+                          alt="Phân bón"
+                          className="size-full object-contain drop-shadow-xs"
+                        />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[13px] font-bold text-slate-900 tracking-tight">Bón phân</span>
+                        <span className="text-[11px] font-medium text-emerald-700">
+                          {liveTreeUser && backendTree
+                            ? backendTree.harvestReady
+                              ? "Thu hoạch trước"
+                              : backendTree.hydrationPercent < 30
+                                ? "Cần độ ẩm ≥ 30%"
+                                : backendTree.dailyFertilizeCount >= backendTree.dailyFertilizeLimit
+                                  ? backendTree.fertilizerPacks > 0
+                                    ? `Dùng 1 túi (còn ${backendTree.fertilizerPacks})`
+                                    : "Hết lượt & túi phân"
+                                  : backendTree.inOptimalHydrationZone
+                                    ? "+35 EXP (Ẩm vàng!) · -10% ẩm"
+                                    : "+25 EXP · -10% ẩm"
+                            : tree.water >= 60 && tree.water <= 90
+                              ? "+35 EXP (Ẩm vàng!) · -10% ẩm"
+                              : "+25 EXP · -10% ẩm"}
+                        </span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isNonCitizenLiveRole && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-3.5 py-2.5 text-xs text-amber-950">
+                  Theo quy tắc <span className="font-bold">BR-GAM-08</span>, Cây Ảo và phần thưởng chăm cây áp dụng riêng cho tài khoản Người dân (Citizen).
+                </div>
+              )}
+
+              {liveTreeUser && backendTree && backendTree.fertilizerPacks > 0 && (
+                <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/70 px-3.5 py-2 text-xs text-emerald-950">
+                  Túi phân hữu cơ dự trữ: <span className="font-bold">{backendTree.fertilizerPacks} túi</span> — tự động dùng khi hết lượt miễn phí trong ngày (nhận thêm khi Quét rác AI hoặc Bàn giao rác).
+                </div>
+              )}
+
+              {liveTreeUser && backendTree && !backendTree.canWater && !backendTree.canFertilize && !backendTree.harvestReady && !backendTree.isWilted && (
+                <div className="rounded-xl border border-line bg-surface-2 px-3.5 py-2.5 text-xs text-body">
+                  {backendTree.hydrationPercent >= 95
+                    ? "Đất đang bão hòa độ ẩm (≥ 95%) nên tạm khóa tưới để tránh úng rễ. "
+                    : "Đã dùng hết lượt tưới và bón phân miễn phí hôm nay (có thể Quét rác AI hoặc Bàn giao rác để nhận thêm túi phân hữu cơ). "}
+                  <span className="font-medium text-brand-deep">
+                    Nếu đủ Điểm Xanh, bạn vẫn có thể bấm Nâng cấp cấp cây ở bên dưới.
+                  </span>
                 </div>
               )}
             </div>
@@ -894,8 +1069,11 @@ export default function EcoFactsPage() {
               {backendTree && (
                 <p className="mt-1 text-sm text-muted">
                   Đã đầu tư {fmt(backendTree.growthPoints)} điểm · Mở{" "}
-                  {backendTree.unlockedFactCount}/{backendTree.totalFactCount} Eco Fact · Lượt hôm nay{" "}
-                  {backendTree.dailyWaterCount}/{backendTree.dailyLimit}
+                  {backendTree.unlockedFactCount}/{backendTree.totalFactCount} Eco Fact · Tưới{" "}
+                  {backendTree.dailyWaterCount}/{backendTree.dailyLimit} · Bón{" "}
+                  {backendTree.dailyFertilizeCount}/{backendTree.dailyFertilizeLimit}
+                  {backendTree.fertilizerPacks > 0 ? ` (+${backendTree.fertilizerPacks} túi)` : ""} · Đã thu hoạch{" "}
+                  {backendTree.totalHarvested} vụ
                 </p>
               )}
             </div>
@@ -1038,8 +1216,6 @@ export default function EcoFactsPage() {
                 pageSize={factPageSize}
                 totalCount={filteredFacts.length}
                 onPageChange={setFactPage}
-                onPageSizeChange={setFactPageSize}
-                pageSizeOptions={[6, 12, 24]}
                 itemLabel="Eco Fact"
               />
             </div>

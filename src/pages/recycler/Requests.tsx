@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { PageHead, RequiredMark, Status, Table, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { initApiLoading, initApiState } from "@/lib/hydration"
@@ -21,15 +21,35 @@ import {
   updateHandoverOrderStatus,
 } from "@/lib/recyclerWorkflowApi"
 import { ApiError } from "@/lib/api"
+import { hasLiveBackendAuth } from "@/lib/session"
 import {
   COMPLAINT_CATEGORY_LABELS,
+  fetchMyComplaints,
   submitComplaint,
   uploadComplaintEvidence,
   type ComplaintCategoryCode,
+  type ComplaintSummaryDto,
 } from "@/lib/reviewComplaintApi"
 
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
+
+const ALL_COMPLAINT_CATEGORIES: ComplaintCategoryCode[] = [
+  "NoShow",
+  "Misconduct",
+  "PaymentIssue",
+  "ScaleDiscrepancy",
+  "Other",
+]
+const CANCELLED_ONLY_CATEGORIES: ComplaintCategoryCode[] = ["NoShow", "Misconduct"]
+const COMPLAINT_STATUS_LABELS: Record<string, string> = {
+  Open: "Chờ tiếp nhận",
+  Investigating: "Đang xử lý",
+  Resolved: "Đã giải quyết",
+  Dismissed: "Đã bác bỏ",
+}
+const isCancelledOrder = (status: string, rawStatus?: string) =>
+  status === "broken" || rawStatus?.toLowerCase() === "cancelled"
 
 type IncomingView = HandoverItem & {
   displayCode: string
@@ -73,9 +93,11 @@ export default function Requests() {
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)
   const [pendingPage, setPendingPage] = useState(1)
-  const [pendingPageSize, setPendingPageSize] = useState(5)
+  const pendingPageSize = FIXED_PAGE_SIZE
   const [activePage, setActivePage] = useState(1)
-  const [activePageSize, setActivePageSize] = useState(10)
+  const activePageSize = FIXED_PAGE_SIZE
+  const [myComplaints, setMyComplaints] = useState<ComplaintSummaryDto[]>([])
+  const [cmpPage, setCmpPage] = useState(1)
 
   useEffect(() => {
     let active = true
@@ -114,6 +136,15 @@ export default function Requests() {
       .finally(() => {
         if (active) setLoading(false)
       })
+    if (hasLiveBackendAuth()) {
+      void fetchMyComplaints({ role: "all", pageSize: 100 })
+        .then((res) => {
+          if (active && res.success && res.data) {
+            setMyComplaints(res.data.items)
+          }
+        })
+        .catch(() => {})
+    }
     return () => {
       active = false
     }
@@ -194,6 +225,16 @@ export default function Requests() {
       setComplaintOrder(null)
       setCmpDesc("")
       setCmpFiles([])
+      if (hasLiveBackendAuth()) {
+        void fetchMyComplaints({ role: "all", pageSize: 100 })
+          .then((listRes) => {
+            if (listRes.success && listRes.data) {
+              setMyComplaints(listRes.data.items)
+              setCmpPage(1)
+            }
+          })
+          .catch(() => {})
+      }
     } catch (err) {
       setFlash(
         err instanceof ApiError
@@ -354,8 +395,6 @@ export default function Requests() {
             pageSize={pendingPageSize}
             totalCount={pending.length}
             onPageChange={setPendingPage}
-            onPageSizeChange={setPendingPageSize}
-            pageSizeOptions={[5, 10, 20]}
             itemLabel="yêu cầu chờ"
           />
           </>
@@ -388,16 +427,39 @@ export default function Requests() {
                     {VND(calc(h, priceForOrder(h)).gross)}
                   </Td>
                   <Td>
-                    <Status tone={TONE[h.status]}>{STATUS_LABEL[h.status]}</Status>
+                    {h.rawStatus?.toLowerCase() === "disputed" ? (
+                      <Status tone="wait">Đang tranh chấp</Status>
+                    ) : (
+                      <Status tone={TONE[h.status]}>{STATUS_LABEL[h.status]}</Status>
+                    )}
                   </Td>
                   <Td>
                     {h.status === "collected" ? (
-                      <Link
-                        to={`/recycler/receipt?orderId=${encodeURIComponent(h.id)}`}
-                        className="text-[13px] font-semibold text-brand hover:text-brand-deep"
-                      >
-                        Tạo biên nhận
-                      </Link>
+                      <div className="flex flex-wrap items-center gap-2 whitespace-nowrap">
+                        <Link
+                          to={`/recycler/receipt?orderId=${encodeURIComponent(h.id)}`}
+                          className="text-[13px] font-semibold text-brand hover:text-brand-deep"
+                        >
+                          Xem biên nhận
+                        </Link>
+                        {h.fromBackend && (
+                          <>
+                            <span className="text-muted">·</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setComplaintOrder(h)
+                                setCmpCategory("PaymentIssue")
+                                setCmpDesc("")
+                                setCmpFiles([])
+                              }}
+                              className="text-[13px] font-semibold text-warn hover:underline"
+                            >
+                              Khiếu nại
+                            </button>
+                          </>
+                        )}
+                      </div>
                     ) : h.status === "accepted" ? (
                       <div className="flex flex-wrap items-center gap-2 whitespace-nowrap">
                         <Link
@@ -440,12 +502,15 @@ export default function Requests() {
                           </>
                         )}
                       </div>
-                    ) : h.fromBackend && (h.status === "done" || h.status === "broken") ? (
+                    ) : h.fromBackend &&
+                      (h.status === "done" || h.status === "broken" || h.status === "cancelled") ? (
                       <button
                         type="button"
                         onClick={() => {
                           setComplaintOrder(h)
-                          setCmpCategory(h.status === "broken" ? "NoShow" : "Misconduct")
+                          setCmpCategory(
+                            isCancelledOrder(h.status, h.rawStatus) ? "NoShow" : "Misconduct",
+                          )
                           setCmpDesc("")
                           setCmpFiles([])
                         }}
@@ -465,7 +530,6 @@ export default function Requests() {
               pageSize={activePageSize}
               totalCount={active.length}
               onPageChange={setActivePage}
-              onPageSizeChange={setActivePageSize}
               itemLabel="lịch đã nhận"
             />
             </>
@@ -498,23 +562,37 @@ export default function Requests() {
             </button>
           </div>
 
+          <p className="rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-xs text-muted">
+            {isCancelledOrder(complaintOrder.status, complaintOrder.rawStatus)
+              ? "Đơn đã hủy (BR-DSP-01): chỉ hỗ trợ nhóm Không đến đúng hẹn (NoShow) hoặc Thái độ / hành vi thiếu chuẩn mực (Misconduct)."
+              : "Ràng buộc BR-DSP-01/02: khiếu nại hợp lệ trong vòng 7 ngày kể từ bàn giao/hủy, tối đa 1 phiếu đang xử lý trên mỗi đơn và mô tả tối thiểu 15 ký tự."}
+          </p>
+
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
             <span>
               Nhóm nguyên nhân
               <RequiredMark />
             </span>
             <select
-              value={cmpCategory}
+              value={
+                (isCancelledOrder(complaintOrder.status, complaintOrder.rawStatus)
+                  ? CANCELLED_ONLY_CATEGORIES
+                  : ALL_COMPLAINT_CATEGORIES
+                ).includes(cmpCategory)
+                  ? cmpCategory
+                  : "NoShow"
+              }
               onChange={(e) => setCmpCategory(e.target.value as ComplaintCategoryCode)}
               className="input h-10 text-sm"
             >
-              {(["NoShow", "Misconduct", "PaymentIssue", "ScaleDiscrepancy", "Other"] as ComplaintCategoryCode[]).map(
-                (cat) => (
-                  <option key={cat} value={cat}>
-                    {COMPLAINT_CATEGORY_LABELS[cat]}
-                  </option>
-                ),
-              )}
+              {(isCancelledOrder(complaintOrder.status, complaintOrder.rawStatus)
+                ? CANCELLED_ONLY_CATEGORIES
+                : ALL_COMPLAINT_CATEGORIES
+              ).map((cat) => (
+                <option key={cat} value={cat}>
+                  {COMPLAINT_CATEGORY_LABELS[cat]}
+                </option>
+              ))}
             </select>
           </label>
 
@@ -549,6 +627,50 @@ export default function Requests() {
             </button>
           </div>
         </form>
+      )}
+
+      {myComplaints.length > 0 && (
+        <section className="card flex flex-col gap-3 p-5">
+          <div>
+            <h2 className="text-base font-bold text-ink">
+              Khiếu nại giao dịch liên quan ({myComplaints.length})
+            </h2>
+            <p className="mt-1 text-xs text-muted">
+              Hạn khiếu nại: 7 ngày kể từ bàn giao/hủy · Tối đa 1 phiếu đang xử lý cho mỗi đơn · Mô tả từ 15–2000 ký tự.
+            </p>
+          </div>
+          <ul className="grid gap-3 md:grid-cols-2">
+            {paginateItems(myComplaints, cmpPage, FIXED_PAGE_SIZE).map((c) => (
+              <li
+                key={c.complaintId}
+                className="rounded-xl border border-line-soft bg-surface-2/60 p-3.5 text-xs"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-bold text-ink">{c.complaintCode}</span>
+                  <span className="rounded-full bg-surface-3 px-2.5 py-0.5 font-semibold text-brand-deep">
+                    {COMPLAINT_STATUS_LABELS[c.status] ?? c.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-muted">
+                  Đơn {c.requestCode} · {COMPLAINT_CATEGORY_LABELS[c.category] || c.category} · Bên gửi:{" "}
+                  <b>{c.complainantRole}</b>
+                </p>
+                <p className="mt-1.5 text-body">{c.description}</p>
+                {c.resolutionOutcome && (
+                  <div className="mt-2 rounded-lg border border-brand/20 bg-mint/10 p-2 text-brand-deep">
+                    <b>Kết luận ({c.resolutionOutcome}):</b> {c.resolutionNote}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+          <PaginationBar
+            page={cmpPage}
+            totalCount={myComplaints.length}
+            onPageChange={setCmpPage}
+            itemLabel="khiếu nại"
+          />
+        </section>
       )}
     </div>
   )

@@ -1,18 +1,22 @@
 import { useMemo } from "react"
 
+export const FIXED_PAGE_SIZE = 10
+
 export interface PaginationBarProps {
   page: number
-  pageSize: number
+  pageSize?: number
   totalCount: number
   onPageChange: (nextPage: number) => void
-  onPageSizeChange?: (nextPageSize: number) => void
-  pageSizeOptions?: number[]
   itemLabel?: string
   className?: string
 }
 
 /** Tiện ích cắt mảng dùng chung cho danh sách nhỏ hoặc chế độ ngoại tuyến. */
-export function paginateItems<T>(items: readonly T[], page: number, pageSize: number): T[] {
+export function paginateItems<T>(
+  items: readonly T[],
+  page: number,
+  pageSize: number = FIXED_PAGE_SIZE,
+): T[] {
   const safeSize = Math.max(1, pageSize)
   const totalPages = Math.max(1, Math.ceil(items.length / safeSize))
   const safePage = Math.max(1, Math.min(page, totalPages))
@@ -30,29 +34,24 @@ export function extractPagedMeta(raw: {
   totalPages?: number
 }) {
   const page = Math.max(1, raw.page ?? raw.pageNumber ?? 1)
-  const pageSize = Math.max(1, raw.pageSize ?? 20)
+  const pageSize = Math.max(1, raw.pageSize ?? FIXED_PAGE_SIZE)
   const totalCount = Math.max(0, raw.totalCount ?? raw.totalRecords ?? 0)
   const totalPages = Math.max(1, raw.totalPages ?? (Math.ceil(totalCount / pageSize) || 1))
   return { page, pageSize, totalCount, totalPages }
 }
 
-/** Thanh phân trang chuẩn toàn hệ thống EcoLink. */
+/** Thanh phân trang chuẩn toàn hệ thống EcoLink (cố định 10 mục/trang). */
 export default function PaginationBar({
   page,
-  pageSize,
+  pageSize = FIXED_PAGE_SIZE,
   totalCount,
   onPageChange,
-  onPageSizeChange,
-  pageSizeOptions = [10, 20, 50],
   itemLabel = "mục",
   className = "",
 }: PaginationBarProps) {
   const safeSize = Math.max(1, pageSize)
   const totalPages = Math.max(1, Math.ceil(totalCount / safeSize))
   const current = Math.max(1, Math.min(page, totalPages))
-
-  const startItem = totalCount === 0 ? 0 : (current - 1) * safeSize + 1
-  const endItem = Math.min(totalCount, current * safeSize)
 
   const pageTokens = useMemo<(number | "ellipsis-left" | "ellipsis-right")[]>(() => {
     if (totalPages <= 7) {
@@ -75,32 +74,14 @@ export default function PaginationBar({
       className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-white px-4 py-3 text-xs text-body ${className}`}
     >
       <p className="tabular-nums text-muted">
-        Hiển thị <span className="font-semibold text-ink">{startItem}–{endItem}</span> trên{" "}
-        <span className="font-semibold text-ink">{totalCount.toLocaleString("vi-VN")}</span>{" "}
-        {itemLabel}
+        Tổng <span className="font-semibold text-ink">{totalCount.toLocaleString("vi-VN")}</span>{" "}
+        {itemLabel} · Trang{" "}
+        <span className="font-semibold text-ink">
+          {current}/{totalPages}
+        </span>
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
-        {onPageSizeChange && (
-          <label className="flex items-center gap-1.5 text-muted">
-            <span>Hiển thị</span>
-            <select
-              className="input h-8 px-2 py-0 text-xs tabular-nums"
-              value={safeSize}
-              onChange={(e) => {
-                onPageSizeChange(Number(e.target.value))
-                onPageChange(1)
-              }}
-              aria-label="Số mục mỗi trang"
-            >
-              {pageSizeOptions.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}/trang
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
 
         <nav aria-label="Điều hướng phân trang" className="flex items-center gap-1">
           <button

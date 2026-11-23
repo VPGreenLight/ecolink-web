@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { PageHead, Field, Status } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
-import PaginationBar from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE } from "@/components/PaginationBar"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { ECO_FACTS, type EcoFact } from "@/data/ops"
 import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
@@ -25,7 +25,7 @@ export default function EcoFacts() {
   const [levelFilter, setLevelFilter] = useState<string>("")
   const [statusFilter, setStatusFilter] = useState<string>("")
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const pageSize = FIXED_PAGE_SIZE
   const [loading, setLoading] = useState(() => initApiLoading(true))
 
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -324,7 +324,6 @@ export default function EcoFacts() {
                 pageSize={pageSize}
                 totalCount={totalCount}
                 onPageChange={setPage}
-                onPageSizeChange={setPageSize}
                 itemLabel="Eco Fact"
               />
             </>

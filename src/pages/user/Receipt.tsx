@@ -495,8 +495,9 @@ export default function Receipt() {
                 <input
                   className="input h-9 w-28 tabular-nums"
                   type="number"
-                  min={0}
-                  step={0.1}
+                  min="0.01"
+                  step="0.01"
+                  inputMode="decimal"
                   aria-label={`Khối lượng thực tế ${a.wasteName || nameOf(a.wasteId)}`}
                   value={a.kg}
                   disabled={confirmed || disputed || processing}

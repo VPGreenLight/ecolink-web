@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { PageHead, Field, Status, Table, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { POSTS, type Post } from "@/data/ops"
@@ -47,7 +47,7 @@ export default function BlogEditor() {
   const [statusFilter, setStatusFilter] = useState<"all" | "Draft" | "Approved">("all")
   const [pendingPage, setPendingPage] = useState(1)
   const [restPage, setRestPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const pageSize = FIXED_PAGE_SIZE
 
   const loadStaffPosts = async () => {
     setLoading(true)
@@ -431,7 +431,6 @@ export default function BlogEditor() {
                     pageSize={pageSize}
                     totalCount={pendingLive.length}
                     onPageChange={setPendingPage}
-                    onPageSizeChange={setPageSize}
                     itemLabel="bài chờ duyệt"
                   />
                 </>
@@ -529,7 +528,6 @@ export default function BlogEditor() {
                 pageSize={pageSize}
                 totalCount={restLive.length}
                 onPageChange={setRestPage}
-                onPageSizeChange={setPageSize}
                 itemLabel="bài viết"
               />
             </div>
@@ -558,7 +556,6 @@ export default function BlogEditor() {
                 pageSize={pageSize}
                 totalCount={pendingOffline.length}
                 onPageChange={setPendingPage}
-                onPageSizeChange={setPageSize}
                 itemLabel="bài chờ duyệt"
               />
             </div>
@@ -587,7 +584,6 @@ export default function BlogEditor() {
                 pageSize={pageSize}
                 totalCount={restOffline.length}
                 onPageChange={setRestPage}
-                onPageSizeChange={setPageSize}
                 itemLabel="bài đã xử lý"
               />
             </div>

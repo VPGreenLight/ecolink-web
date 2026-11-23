@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { PageHead, Stat, Table, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { GIFTS } from "@/data/ops"
@@ -49,11 +49,11 @@ export default function Gamification() {
   const [factSearch, setFactSearch] = useState("")
   const debouncedFactSearch = useDebouncedValue(factSearch, 250)
   const [factPage, setFactPage] = useState(1)
-  const [factPageSize, setFactPageSize] = useState(6)
+  const factPageSize = FIXED_PAGE_SIZE
   const [giftSearch, setGiftSearch] = useState("")
   const debouncedGiftSearch = useDebouncedValue(giftSearch, 250)
   const [giftPage, setGiftPage] = useState(1)
-  const [giftPageSize, setGiftPageSize] = useState(8)
+  const giftPageSize = FIXED_PAGE_SIZE
 
   const loadAll = async () => {
     try {
@@ -127,7 +127,7 @@ export default function Gamification() {
     : "2 / 6"
   const factStatNote = liveMode
     ? tree
-      ? `Lượt chăm hôm nay: ${tree.dailyWaterCount}/${tree.dailyLimit}`
+      ? `Tưới: ${tree.dailyWaterCount}/${tree.dailyLimit} · Bón phân: ${tree.dailyFertilizeCount}/${tree.dailyFertilizeLimit}${tree.fertilizerPacks > 0 ? ` (+${tree.fertilizerPacks} túi)` : ""}`
       : "Mở khoá qua từng cấp cây"
     : "Cần thêm 4.500 điểm cho tất cả"
 
@@ -312,8 +312,6 @@ export default function Gamification() {
                       pageSize={factPageSize}
                       totalCount={filteredFacts.length}
                       onPageChange={setFactPage}
-                      onPageSizeChange={setFactPageSize}
-                      pageSizeOptions={[6, 12, 24]}
                       itemLabel="Eco Fact"
                     />
                   </>
@@ -412,8 +410,6 @@ export default function Gamification() {
                     pageSize={giftPageSize}
                     totalCount={filteredGifts.length}
                     onPageChange={setGiftPage}
-                    onPageSizeChange={setGiftPageSize}
-                    pageSizeOptions={[8, 16, 32]}
                     itemLabel="quà tặng"
                   />
                 </>
@@ -472,8 +468,6 @@ export default function Gamification() {
                     pageSize={giftPageSize}
                     totalCount={offlineGifts.length}
                     onPageChange={setGiftPage}
-                    onPageSizeChange={setGiftPageSize}
-                    pageSizeOptions={[8, 16, 32]}
                     itemLabel="quà tặng"
                   />
                 </>

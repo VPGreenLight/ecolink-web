@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { PageHead, Stat, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { FLOWS, KIND_LABEL } from "@/data/cashflow"
@@ -24,7 +24,7 @@ export default function Transactions() {
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const pageSize = FIXED_PAGE_SIZE
 
   useEffect(() => {
     let active = true
@@ -176,7 +176,6 @@ export default function Transactions() {
                   pageSize={pageSize}
                   totalCount={liveItems.length}
                   onPageChange={setPage}
-                  onPageSizeChange={setPageSize}
                   itemLabel="giao dịch"
                 />
               </>
@@ -235,7 +234,6 @@ export default function Transactions() {
                   pageSize={pageSize}
                   totalCount={offlineItems.length}
                   onPageChange={setPage}
-                  onPageSizeChange={setPageSize}
                   itemLabel="giao dịch"
                 />
               </>

@@ -94,7 +94,7 @@ export async function fetchRecyclerReviews(
 
 export async function fetchMyReviews(
   pageNumber = 1,
-  pageSize = 20,
+  pageSize = 10,
 ): Promise<ApiResponse<PagedResultDto<TransactionReviewDto>>> {
   return apiRequest<PagedResultDto<TransactionReviewDto>>(
     `/api/v1/reviews/me?pageNumber=${pageNumber}&pageSize=${pageSize}`,
@@ -292,7 +292,7 @@ export async function fetchMyComplaints(params?: {
   if (params?.role) qs.set("role", params.role)
   if (params?.status) qs.set("status", params.status)
   qs.set("pageNumber", String(params?.pageNumber ?? 1))
-  qs.set("pageSize", String(params?.pageSize ?? 20))
+  qs.set("pageSize", String(params?.pageSize ?? 10))
   return apiRequest<PagedResultDto<ComplaintSummaryDto>>(
     `/api/v1/complaints/me?${qs.toString()}`,
     { method: "GET" },
@@ -316,7 +316,7 @@ export async function fetchStaffComplaints(params?: {
     String(params?.includeReportedReviews ?? true),
   )
   qs.set("pageNumber", String(params?.pageNumber ?? 1))
-  qs.set("pageSize", String(params?.pageSize ?? 20))
+  qs.set("pageSize", String(params?.pageSize ?? 10))
   return apiRequest<StaffComplaintQueueResponseDto>(
     `/api/v1/staff/complaints?${qs.toString()}`,
     { method: "GET" },

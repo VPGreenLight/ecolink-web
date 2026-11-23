@@ -488,7 +488,7 @@ export async function getMyServiceOrders(query: {
   const qs = buildQuery({
     status: query.status,
     pageNumber: query.pageNumber ?? 1,
-    pageSize: query.pageSize ?? 20,
+    pageSize: query.pageSize ?? 10,
   })
   return apiRequest<PagedOrdersResult>(`/api/v1/service-payments/orders${qs}`)
 }
@@ -597,7 +597,7 @@ export async function getAdminReconciliationLedger(query: {
     fromDate: query.fromDate,
     toDate: query.toDate,
     pageNumber: query.pageNumber ?? 1,
-    pageSize: query.pageSize ?? 20,
+    pageSize: query.pageSize ?? 10,
   })
   return apiRequest<ReconciliationLedgerResponseDto>(
     `/api/v1/admin/reconciliations/ledger${qs}`,

@@ -3,7 +3,7 @@ import { fmt, LEADERBOARD, type Rank } from "@/data/rewards"
 import { fetchLeaderboard, type LeaderboardCycleDto } from "@/lib/gamificationApi"
 import { initApiLoading, initApiState, isSsrSmokeTest } from "@/lib/hydration"
 import SearchFilterBar from "@/components/SearchFilterBar"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 
 type BoardRow = Rank & {
@@ -58,7 +58,7 @@ export default function Leaderboard() {
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
+  const pageSize = FIXED_PAGE_SIZE
 
   const [rows, setRows] = useState<BoardRow[]>(() => initApiState([], LEADERBOARD))
   const [cycle, setCycle] = useState<LeaderboardCycleDto | null>(null)
@@ -333,8 +333,6 @@ export default function Leaderboard() {
           pageSize={pageSize}
           totalCount={filteredRest.length}
           onPageChange={setPage}
-          onPageSizeChange={setPageSize}
-          pageSizeOptions={[10, 20, 50]}
           itemLabel="thành viên"
           className="mt-0"
         />

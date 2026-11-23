@@ -16,6 +16,7 @@ import {
   COOKIE_REFRESH_SENTINEL,
   clearAuthStorage,
   getAccessToken,
+  getInMemoryJwtRole,
   getRefreshToken,
   getSession,
   hasSessionCookieFlag,
@@ -159,6 +160,11 @@ export async function fetchWithAutoHost(path: string, init: RequestInit): Promis
   })
 }
 
+function clearStoredAuthAndCooldown(): void {
+  clearAuthStorage()
+  lastSessionVerifiedAt = 0
+}
+
 /**
  * Xoay vòng cặp Access Token + Refresh Token theo cơ chế Single-Flight (BR-AUTH-05).
  * Nhiều request cùng gặp 401 đồng thời sẽ dùng chung 1 tiến trình làm mới duy nhất.
@@ -187,7 +193,7 @@ export async function rotateRefreshTokenSingleFlight(): Promise<string | null> {
 
       if (!res.ok) {
         if (res.status === 400 || res.status === 401 || res.status === 403) {
-          clearAuthStorage()
+          clearStoredAuthAndCooldown()
         }
         return null
       }
@@ -199,7 +205,7 @@ export async function rotateRefreshTokenSingleFlight(): Promise<string | null> {
           : (raw as RefreshAuthDto)
 
       if (!dto?.accessToken) {
-        clearAuthStorage()
+        clearStoredAuthAndCooldown()
         return null
       }
 
@@ -267,9 +273,11 @@ async function verifySessionWithBackend(): Promise<boolean> {
             : (raw as RefreshAuthDto["user"])
 
         if (user?.id) {
+          const previousRole = getSession()?.role ?? null
+          const currentJwtRole = getInMemoryJwtRole()
           const resolvedRole = mapBackendRole(user.role)
           if (user.status && (user.status === "Suspended" || user.status === "Deactivated")) {
-            clearAuthStorage()
+            clearStoredAuthAndCooldown()
             return false
           }
 
@@ -305,6 +313,14 @@ async function verifySessionWithBackend(): Promise<boolean> {
             })
           }
           lastSessionVerifiedAt = Date.now()
+
+          if (
+            (previousRole && previousRole !== resolvedRole) ||
+            (currentJwtRole && currentJwtRole !== resolvedRole)
+          ) {
+            await rotateRefreshTokenSingleFlight()
+          }
+
           return true
         }
       }
@@ -315,7 +331,7 @@ async function verifySessionWithBackend(): Promise<boolean> {
           lastSessionVerifiedAt = Date.now()
           return true
         }
-        clearAuthStorage()
+        clearStoredAuthAndCooldown()
         return false
       }
 
@@ -349,10 +365,11 @@ export async function ensureActiveAuthSession(forceVerify = false): Promise<void
     return
   }
 
+  const hasCookieAuth = hasCookie || Boolean(session?.fromBackend)
   const shouldVerifyWithBackend =
     forceVerify ||
-    !token ||
     !session ||
+    (!token && !hasCookieAuth) ||
     Date.now() - lastSessionVerifiedAt > SESSION_VERIFY_COOLDOWN_MS
 
   if (shouldVerifyWithBackend) {
@@ -367,7 +384,7 @@ export async function ensureActiveAuthSession(forceVerify = false): Promise<void
 export function clearSessionOnUnauthorized(): void {
   if (typeof window === "undefined") return
   if (getSession()?.fromBackend || hasSessionCookieFlag() || isRealJwt(getAccessToken())) {
-    clearAuthStorage()
+    clearStoredAuthAndCooldown()
   }
 }
 
@@ -411,9 +428,15 @@ export async function apiRequest<T>(
     })
   }
 
-  // Tự động thử xoay vòng Refresh Token 1 lần duy nhất nếu Access Token vừa hết hạn (401)
+  // Tự động xoay vòng Refresh Token 1 lần duy nhất nếu Access Token hết hạn (401)
+  // hoặc vừa được nâng cấp vai trò trên DB (403 với JWT claim vai trò cũ / cookie reload)
+  const sessionRole = getSession()?.role ?? null
+  const jwtRole = getInMemoryJwtRole()
+  const mayHaveStaleRoleToken =
+    Boolean(sessionRole) && (!token || (jwtRole !== null && jwtRole !== sessionRole))
+
   if (
-    res.status === 401 &&
+    (res.status === 401 || (res.status === 403 && mayHaveStaleRoleToken)) &&
     !_retriedAfterRefresh &&
     usesActiveSessionAuth &&
     shouldAttemptRefresh(path) &&

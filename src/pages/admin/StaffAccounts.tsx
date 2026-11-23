@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { Field, FormRequiredLegend, PageHead, Status, Table, TableSkeleton, Td } from "@/components/admin/ui"
 import { STAFF, type Staff } from "@/data/ops"
@@ -80,7 +80,7 @@ export default function StaffAccounts() {
   const debouncedSearch = useDebouncedValue(search, 250)
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "locked">("all")
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const pageSize = FIXED_PAGE_SIZE
 
   const staffKeyword = debouncedSearch.trim().toLowerCase()
   const filteredStaff = list.filter((s) => {
@@ -432,7 +432,6 @@ export default function StaffAccounts() {
           pageSize={pageSize}
           totalCount={filteredStaff.length}
           onPageChange={setPage}
-          onPageSizeChange={setPageSize}
           itemLabel="nhân viên"
         />
         </>

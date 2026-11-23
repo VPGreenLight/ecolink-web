@@ -8,6 +8,7 @@ import {
 import type { CollectionPartnerDto } from "@/lib/recyclerDiscoveryApi"
 import {
   getAccessToken,
+  getInMemoryJwtRole,
   getRefreshToken,
   getSession,
   hasLiveBackendAuth,
@@ -278,6 +279,11 @@ export interface TradeOrderApiDto {
   lines?: TradeOrderLineApiDto[] | null
   isInquiryOnly?: boolean
   qrCodeValue: string
+  lastMessagePreview?: string | null
+  lastMessageSenderId?: string | null
+  lastMessageSenderRole?: string | null
+  lastMessageAt?: string | null
+  unreadCount?: number | null
 }
 
 export interface StaffApplicationView extends Application {
@@ -395,7 +401,10 @@ export async function ensureRoleJwt(role: Role): Promise<string | null> {
 
   if (roleMatches && existingToken) {
     if (isRealJwt(existingToken)) {
-      if (isStoredAccessTokenExpired(10)) {
+      const jwtRole = getInMemoryJwtRole()
+      const jwtRoleMatches =
+        !jwtRole || jwtRole === role || (role === "staff" && jwtRole === "admin")
+      if (isStoredAccessTokenExpired(10) || !jwtRoleMatches) {
         if (getRefreshToken()) {
           return rotateRefreshTokenSingleFlight()
         }
@@ -1105,6 +1114,11 @@ export interface SyncedHandoverOrder {
   isInquiryOnly?: boolean
   reason?: string
   fromBackend?: boolean
+  lastMessagePreview?: string
+  lastMessageSenderId?: string
+  lastMessageSenderRole?: string
+  lastMessageAt?: string
+  unreadCount?: number
 }
 
 function mapBackendOrderStatus(rawStatus?: string | null, hasReason?: boolean): HandoverUiStatus {
@@ -1160,6 +1174,11 @@ function mapApiOrderToSynced(o: TradeOrderApiDto): SyncedHandoverOrder {
     isInquiryOnly: Boolean(o.isInquiryOnly),
     reason: o.cancelReason ?? undefined,
     fromBackend: true,
+    lastMessagePreview: o.lastMessagePreview?.trim() || undefined,
+    lastMessageSenderId: o.lastMessageSenderId ?? undefined,
+    lastMessageSenderRole: o.lastMessageSenderRole ?? undefined,
+    lastMessageAt: o.lastMessageAt ?? undefined,
+    unreadCount: typeof o.unreadCount === "number" ? o.unreadCount : 0,
   }
 }
 

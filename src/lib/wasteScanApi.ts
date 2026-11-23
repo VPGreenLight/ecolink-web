@@ -184,6 +184,7 @@ export const DEFAULT_AI_MODELS: AiModelOption[] = [
 export interface WasteCategoryMeta {
   code: string
   shortName: string
+  boxLabel: string
   group: "Nhựa" | "Giấy" | "Kim loại" | "Thủy tinh" | "Điện tử" | "Hữu cơ" | "Vải & Đồ cũ"
   badge: string
   priceRange: string
@@ -198,6 +199,7 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
   plastic: {
     code: "plastic",
     shortName: "Nhựa tái chế (PET / HDPE)",
+    boxLabel: "Nhựa",
     group: "Nhựa",
     badge: "Vật liệu có giá trị thu mua",
     priceRange: "5.000 – 7.500",
@@ -213,6 +215,7 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
   paper: {
     code: "paper",
     shortName: "Giấy báo & Văn phòng",
+    boxLabel: "Giấy",
     group: "Giấy",
     badge: "Vật liệu có giá trị thu mua",
     priceRange: "3.800 – 5.000",
@@ -228,6 +231,7 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
   cardboard: {
     code: "cardboard",
     shortName: "Bìa Carton (OCC)",
+    boxLabel: "Bìa carton",
     group: "Giấy",
     badge: "Vật liệu dễ thu gom tận nơi",
     priceRange: "3.200 – 4.500",
@@ -243,6 +247,7 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
   metal: {
     code: "metal",
     shortName: "Kim loại & Vỏ lon nhôm",
+    boxLabel: "Kim loại",
     group: "Kim loại",
     badge: "Phế liệu giá trị cao",
     priceRange: "14.000 – 28.000",
@@ -258,6 +263,7 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
   glass: {
     code: "glass",
     shortName: "Chai lọ Thủy tinh",
+    boxLabel: "Thủy tinh",
     group: "Thủy tinh",
     badge: "Vật liệu tái chế tuần hoàn",
     priceRange: "1.500 – 2.500",
@@ -273,6 +279,7 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
   trash: {
     code: "trash",
     shortName: "Rác sinh hoạt thông thường",
+    boxLabel: "Rác sinh hoạt",
     group: "Hữu cơ",
     badge: "Chỉ áp dụng hướng dẫn xử lý — Không thu mua",
     priceRange: "Không thu mua",
@@ -288,6 +295,7 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
   battery: {
     code: "battery",
     shortName: "Pin & Rác thải nguy hại",
+    boxLabel: "Pin nguy hại",
     group: "Điện tử",
     badge: "Rác thải nguy hại — Đồng nát không thu mua",
     priceRange: "Không thu mua",
@@ -303,6 +311,7 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
   biological: {
     code: "biological",
     shortName: "Rác hữu cơ & Thực phẩm",
+    boxLabel: "Rác hữu cơ",
     group: "Hữu cơ",
     badge: "Rác hữu cơ dễ phân hủy — Không thu mua",
     priceRange: "Không thu mua",
@@ -318,6 +327,7 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
   clothes: {
     code: "clothes",
     shortName: "Vải vóc & Quần áo cũ",
+    boxLabel: "Quần áo cũ",
     group: "Vải & Đồ cũ",
     badge: "Đồ tái sử dụng cộng đồng — Không thu mua",
     priceRange: "Không thu mua",
@@ -333,6 +343,7 @@ export const WASTE_CATEGORY_META: Record<string, WasteCategoryMeta> = {
   shoes: {
     code: "shoes",
     shortName: "Giày dép cũ",
+    boxLabel: "Giày dép cũ",
     group: "Vải & Đồ cũ",
     badge: "Đồ tái sử dụng cộng đồng — Không thu mua",
     priceRange: "Không thu mua",
@@ -370,6 +381,7 @@ export function getCategoryMeta(code?: string | null): WasteCategoryMeta {
     WASTE_CATEGORY_META[normalized] ?? {
       code: normalized || "unknown",
       shortName: code || "Chưa xác định",
+      boxLabel: code || "Chưa xác định",
       group: "Nhựa",
       badge: "Cần kiểm tra phân loại",
       priceRange: "Theo thỏa thuận",
@@ -498,7 +510,7 @@ export async function fetchMyScanHistory(params?: {
   if (params?.fromDate) qs.set("fromDate", params.fromDate)
   if (params?.toDate) qs.set("toDate", params.toDate)
   qs.set("pageNumber", String(params?.pageNumber ?? 1))
-  qs.set("pageSize", String(params?.pageSize ?? 20))
+  qs.set("pageSize", String(params?.pageSize ?? 10))
   return apiRequest<PagedScanHistoryResult>(`/api/v1/waste-scan/history?${qs.toString()}`, {
     method: "GET",
   })

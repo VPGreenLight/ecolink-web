@@ -146,12 +146,12 @@ export default function Rewards() {
   const [giftTypeFilter, setGiftTypeFilter] = useState("")
   const [giftSort, setGiftSort] = useState<"points_asc" | "points_desc" | "newest">("points_asc")
   const [giftPage, setGiftPage] = useState(1)
-  const [giftPageSize, setGiftPageSize] = useState(6)
+  const giftPageSize = 10
 
   const [redemptions, setRedemptions] = useState<RedemptionDto[]>([])
   const [redTotal, setRedTotal] = useState(0)
   const [redPage, setRedPage] = useState(1)
-  const [redPageSize, setRedPageSize] = useState(5)
+  const redPageSize = 10
 
   const [tree, setTree] = useState<VirtualTreeDto | null>(null)
   const [loading, setLoading] = useState(liveRewardsUser)
@@ -589,8 +589,6 @@ export default function Rewards() {
                 pageSize={giftPageSize}
                 totalCount={filteredLiveGifts.length}
                 onPageChange={setGiftPage}
-                onPageSizeChange={setGiftPageSize}
-                pageSizeOptions={[6, 12, 24]}
                 itemLabel="phần quà"
               />
             </>
@@ -676,8 +674,6 @@ export default function Rewards() {
               pageSize={giftPageSize}
               totalCount={offlineSorted.length}
               onPageChange={setGiftPage}
-              onPageSizeChange={setGiftPageSize}
-              pageSizeOptions={[6, 12, 24]}
               itemLabel="phần quà"
             />
           </>
@@ -749,8 +745,6 @@ export default function Rewards() {
             pageSize={redPageSize}
             totalCount={redTotal}
             onPageChange={setRedPage}
-            onPageSizeChange={setRedPageSize}
-            pageSizeOptions={[5, 10, 20]}
             itemLabel="đơn đổi quà"
           />
         </section>

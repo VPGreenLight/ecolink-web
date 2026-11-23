@@ -133,6 +133,28 @@ export function mapBackendRole(rawRole?: string | null): Role {
 let cached: Session | null = null
 let primed = false
 
+function normalizeSessionObject(
+  v: Partial<Session> & { name: string; role: Role },
+): Session {
+  return {
+    name: v.name,
+    role: v.role,
+    ...(typeof v.id === "string" ? { id: v.id } : {}),
+    ...(typeof v.username === "string" ? { username: v.username } : {}),
+    ...(typeof v.email === "string" ? { email: v.email } : {}),
+    ...(v.phoneNumber !== undefined ? { phoneNumber: v.phoneNumber } : {}),
+    ...(v.avatarUrl !== undefined ? { avatarUrl: v.avatarUrl } : {}),
+    ...(typeof v.status === "string" ? { status: v.status } : {}),
+    ...(typeof v.isGoogleAuth === "boolean" ? { isGoogleAuth: v.isGoogleAuth } : {}),
+    ...(typeof v.currentGreenPoints === "number"
+      ? { currentGreenPoints: v.currentGreenPoints }
+      : {}),
+    ...(typeof v.treeLevel === "number" ? { treeLevel: v.treeLevel } : {}),
+    ...(typeof v.totalRecycledKg === "number" ? { totalRecycledKg: v.totalRecycledKg } : {}),
+    ...(typeof v.fromBackend === "boolean" ? { fromBackend: v.fromBackend } : {}),
+  }
+}
+
 function readSession(): Session | null {
   // Máy chủ thật không có localStorage. Guard ở đây (thay vì chỉ ở nhánh
   // server) để getSnapshot và getServerSnapshot đọc CÙNG một nguồn — hai
@@ -148,23 +170,11 @@ function readSession(): Session | null {
       ? (v.role as Role)
       : mapBackendRole(typeof v.role === "string" ? v.role : undefined)
 
-    return {
+    return normalizeSessionObject({
+      ...v,
       name: v.name,
       role: resolvedRole,
-      ...(typeof v.id === "string" ? { id: v.id } : {}),
-      ...(typeof v.username === "string" ? { username: v.username } : {}),
-      ...(typeof v.email === "string" ? { email: v.email } : {}),
-      ...(v.phoneNumber !== undefined ? { phoneNumber: v.phoneNumber } : {}),
-      ...(v.avatarUrl !== undefined ? { avatarUrl: v.avatarUrl } : {}),
-      ...(typeof v.status === "string" ? { status: v.status } : {}),
-      ...(typeof v.isGoogleAuth === "boolean" ? { isGoogleAuth: v.isGoogleAuth } : {}),
-      ...(typeof v.currentGreenPoints === "number"
-        ? { currentGreenPoints: v.currentGreenPoints }
-        : {}),
-      ...(typeof v.treeLevel === "number" ? { treeLevel: v.treeLevel } : {}),
-      ...(typeof v.totalRecycledKg === "number" ? { totalRecycledKg: v.totalRecycledKg } : {}),
-      ...(typeof v.fromBackend === "boolean" ? { fromBackend: v.fromBackend } : {}),
-    }
+    })
   } catch {
     return null
   }
@@ -206,6 +216,35 @@ export function getRefreshToken(): string | null {
 
 export function hasLiveBackendAuth(): boolean {
   return Boolean(getSession()?.fromBackend || hasSessionCookieFlag() || inMemoryAccessToken)
+}
+
+export function getJwtRole(token?: string | null): Role | null {
+  if (!isRealJwt(token)) return null
+  const parts = token!.split(".")
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/")
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")
+    if (typeof atob !== "function") return null
+    const json = atob(padded)
+    const payload = JSON.parse(json) as Record<string, unknown>
+    const rawRole =
+      payload.role ??
+      payload["http://schemas.microsoft.com/ws/2008/06/identity/claims/role"]
+    if (typeof rawRole === "string" && rawRole.trim()) {
+      return mapBackendRole(rawRole)
+    }
+    if (Array.isArray(rawRole)) {
+      const first = rawRole.find((r) => typeof r === "string" && r.trim())
+      if (typeof first === "string") return mapBackendRole(first)
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+export function getInMemoryJwtRole(): Role | null {
+  return getJwtRole(inMemoryAccessToken)
 }
 
 /**
@@ -263,11 +302,11 @@ export function setAuthTokens(tokens: {
 
 export function signIn(name: string, role: Role = "user", extra?: SessionExtra) {
   if (typeof localStorage === "undefined") return
-  const payload: Session = {
+  const payload = normalizeSessionObject({
     ...(extra ?? {}),
     name,
     role,
-  }
+  })
   localStorage.setItem(KEY, JSON.stringify(payload))
   invalidate()
   emit()
@@ -277,13 +316,17 @@ export function updateSession(patch: Partial<Session>) {
   if (typeof localStorage === "undefined") return
   const current = getSession()
   if (!current) return
-  const next: Session = {
+  const next = normalizeSessionObject({
     ...current,
     ...patch,
     name: patch.name ?? current.name,
     role: patch.role ?? current.role,
-  }
-  localStorage.setItem(KEY, JSON.stringify(next))
+  })
+  const prevJson = JSON.stringify(normalizeSessionObject(current))
+  const nextJson = JSON.stringify(next)
+  if (prevJson === nextJson) return
+
+  localStorage.setItem(KEY, nextJson)
   invalidate()
   emit()
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { CardListSkeleton } from "@/components/Portal"
 import { CTA, MATERIAL_TYPES, PARTNERS, REGIONS, type Partner } from "@/data/partners"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
@@ -23,9 +23,9 @@ export default function Partners() {
   const [material, setMaterial] = useState(MATERIAL_TYPES[0])
   const [region, setRegion] = useState(REGIONS[0])
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(6)
+  const pageSize = FIXED_PAGE_SIZE
   const [livePage, setLivePage] = useState(1)
-  const [livePageSize] = useState(4)
+  const livePageSize = FIXED_PAGE_SIZE
   const [liveRecyclers, setLiveRecyclers] = useState<CollectionPartnerDto[]>([])
   const [loadingLive, setLoadingLive] = useState(() => initApiLoading(true))
   const [reviewSummaries, setReviewSummaries] = useState<Record<string, RecyclerReviewsSummaryDto>>({})
@@ -283,8 +283,6 @@ export default function Partners() {
               pageSize={pageSize}
               totalCount={filtered.length}
               onPageChange={setPage}
-              onPageSizeChange={setPageSize}
-              pageSizeOptions={[6, 12, 24]}
               itemLabel="đối tác"
             />
           </>

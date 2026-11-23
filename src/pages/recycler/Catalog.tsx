@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { PageHead, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { VND, WASTES } from "@/data/waste"
@@ -55,7 +55,7 @@ export default function Catalog() {
   const debouncedSearch = useDebouncedValue(search, 250)
   const [activeFilter, setActiveFilter] = useState<"all" | "on" | "off">("all")
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const pageSize = FIXED_PAGE_SIZE
 
   useEffect(() => {
     let active = true
@@ -273,7 +273,6 @@ export default function Catalog() {
               pageSize={pageSize}
               totalCount={filteredRows.length}
               onPageChange={setPage}
-              onPageSizeChange={setPageSize}
               itemLabel="loại rác"
             />
             </>

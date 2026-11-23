@@ -148,6 +148,21 @@ export interface VirtualTreeDto {
   totalWatered: number
   dailyWaterCount: number
   dailyLimit: number
+  hydrationPercent: number
+  isWilted: boolean
+  inOptimalHydrationZone: boolean
+  careExp: number
+  maxCareExp: number
+  harvestReady: boolean
+  harvestRewardPreview: number
+  totalFertilized: number
+  dailyFertilizeCount: number
+  dailyFertilizeLimit: number
+  fertilizerPacks: number
+  totalHarvested: number
+  canWater: boolean
+  canFertilize: boolean
+  lastCareEffect?: string | null
   nextLevel?: number | null
   nextLevelTitle?: string | null
   upgradeCost?: number | null
@@ -163,6 +178,12 @@ export interface WaterTreeResultDto {
   tree: VirtualTreeDto
   pointsSpent: number
   unlockedFacts: EcoFactItemDto[]
+}
+
+export interface HarvestTreeResultDto {
+  tree: VirtualTreeDto
+  pointsAwarded: number
+  limitedByDailyCap: boolean
 }
 
 export interface EcoProfileDto {
@@ -392,6 +413,16 @@ export async function careVirtualTree(
 
 export async function upgradeVirtualTree(): Promise<ApiResponse<WaterTreeResultDto>> {
   const res = await apiRequest<WaterTreeResultDto>("/api/v1/gamification/tree/upgrade", {
+    method: "POST",
+  })
+  if (typeof res.data?.tree?.walletBalance === "number") {
+    setSpendPoints(res.data.tree.walletBalance)
+  }
+  return res
+}
+
+export async function harvestVirtualTree(): Promise<ApiResponse<HarvestTreeResultDto>> {
+  const res = await apiRequest<HarvestTreeResultDto>("/api/v1/gamification/tree/harvest", {
     method: "POST",
   })
   if (typeof res.data?.tree?.walletBalance === "number") {

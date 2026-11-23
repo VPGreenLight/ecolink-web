@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { ApiError } from "@/lib/api"
 import { Field, FormRequiredLegend, PageHead, Status } from "@/components/admin/ui"
@@ -87,7 +87,7 @@ export default function LeaderboardConfig() {
   const debouncedBoardSearch = useDebouncedValue(boardSearch, 250)
   const [boardRoleFilter, setBoardRoleFilter] = useState<"all" | "User" | "Recycler">("all")
   const [boardPage, setBoardPage] = useState(1)
-  const [boardPageSize, setBoardPageSize] = useState(10)
+  const boardPageSize = FIXED_PAGE_SIZE
 
   const loadData = useCallback(async (preferredCycleId?: string) => {
     setLoading(true)
@@ -590,7 +590,6 @@ export default function LeaderboardConfig() {
                         pageSize={boardPageSize}
                         totalCount={filteredItems.length}
                         onPageChange={setBoardPage}
-                        onPageSizeChange={setBoardPageSize}
                         itemLabel="tài khoản"
                       />
                     </>
@@ -692,7 +691,6 @@ export default function LeaderboardConfig() {
                     pageSize={boardPageSize}
                     totalCount={filteredOffline.length}
                     onPageChange={setBoardPage}
-                    onPageSizeChange={setBoardPageSize}
                     itemLabel="tài khoản"
                   />
                 </>

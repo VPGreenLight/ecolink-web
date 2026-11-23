@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import PaginationBar, { extractPagedMeta } from "@/components/PaginationBar"
+import PaginationBar, { extractPagedMeta, FIXED_PAGE_SIZE } from "@/components/PaginationBar"
 import { Empty, Field, PageHead, Stat, Status, Table, Td } from "@/components/admin/ui"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { FLOWS } from "@/data/cashflow"
@@ -210,7 +210,7 @@ export default function Reports() {
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
       pageNumber: targetPage,
-      pageSize: 15,
+      pageSize: FIXED_PAGE_SIZE,
     })
       .then((res) => {
         if (!res.data) return
@@ -532,7 +532,7 @@ export default function Reports() {
 
           <PaginationBar
             page={page}
-            pageSize={15}
+            pageSize={FIXED_PAGE_SIZE}
             totalCount={auditTotal}
             onPageChange={setPage}
             itemLabel="bản ghi"

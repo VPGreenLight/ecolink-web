@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
 import { FormRequiredLegend, PageHead, RequiredMark } from "@/components/Portal"
-import { ApiError } from "@/lib/api"
+import { ApiError, rotateRefreshTokenSingleFlight } from "@/lib/api"
 import { LOCATION_PRESETS } from "@/lib/recyclerDiscoveryApi"
 import {
   fetchMyRecyclerApplication,
@@ -11,7 +11,7 @@ import {
   type RecyclerApplicationDetailDto,
   type SubmitRecyclerOnboardingResult,
 } from "@/lib/recyclerWorkflowApi"
-import { hasLiveBackendAuth, useSession } from "@/lib/session"
+import { hasLiveBackendAuth, updateSession, useSession } from "@/lib/session"
 
 const MATERIALS = [
   "Nhựa",
@@ -28,6 +28,7 @@ const MATERIALS = [
  *  ảnh mặt tiền kho bãi và toạ độ thu gom cố định trên bản đồ (`BR-MTH-01`).
  *  Chỉ sau khi Nhân viên EcoLink (`S-04`) phê duyệt, ghim kho bãi mới hiển thị trên `/map`. */
 export default function JoinRecycler() {
+  const navigate = useNavigate()
   const session = useSession()
   const [permitFile, setPermitFile] = useState<File | null>(null)
   const [facilityPhotoFile, setFacilityPhotoFile] = useState<File | null>(null)
@@ -40,10 +41,24 @@ export default function JoinRecycler() {
   const [lng, setLng] = useState<number>(LOCATION_PRESETS[0].lng)
   const [mats, setMats] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [openingPortal, setOpeningPortal] = useState(false)
   const [doneResult, setDoneResult] = useState<SubmitRecyclerOnboardingResult | null>(null)
   const [existingApp, setExistingApp] = useState<RecyclerApplicationDetailDto | null>(null)
   const [err, setErr] = useState("")
   const hasTouchedPinRef = useRef(false)
+
+  const handleOpenRecyclerPortal = async () => {
+    setOpeningPortal(true)
+    try {
+      if (hasLiveBackendAuth()) {
+        await rotateRefreshTokenSingleFlight()
+      }
+      updateSession({ role: "recycler" })
+      navigate("/recycler")
+    } finally {
+      setOpeningPortal(false)
+    }
+  }
 
   useEffect(() => {
     if (!session) return
@@ -274,9 +289,14 @@ export default function JoinRecycler() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link to="/recycler" className="btn-primary h-9 px-4 text-xs">
-              Mở cổng Cơ sở thu mua
-            </Link>
+            <button
+              type="button"
+              disabled={openingPortal}
+              onClick={() => void handleOpenRecyclerPortal()}
+              className="btn-primary h-9 px-4 text-xs"
+            >
+              {openingPortal ? "Đang đồng bộ quyền..." : "Mở cổng Cơ sở thu mua"}
+            </button>
             <Link to="/map" className="btn-outline h-9 px-4 text-xs">
               Xem trên Bản đồ
             </Link>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { FormRequiredLegend, RequiredMark } from "@/components/Portal"
 import { ApiError } from "@/lib/api"
 import {
@@ -32,7 +33,7 @@ import {
 import { SUPPORT } from "@/data/nav"
 import { isSsrSmokeTest } from "@/lib/hydration"
 import { openAuthPopup } from "@/lib/popupAuth"
-import { getAccessToken, useSession, useUser } from "@/lib/session"
+import { hasLiveBackendAuth, useSession, useUser } from "@/lib/session"
 
 export default function Feedback() {
   const [searchParams] = useSearchParams()
@@ -56,19 +57,47 @@ export default function Feedback() {
   const [backendCategory, setBackendCategory] =
     useState<ComplaintCategoryCode>("ScaleDiscrepancy")
   const [myComplaints, setMyComplaints] = useState<ComplaintSummaryDto[]>([])
+  const [cmpPage, setCmpPage] = useState(1)
 
   useEffect(() => {
-    if (!getAccessToken()) return
+    if (!hasLiveBackendAuth()) return
     const scope = session?.role === "recycler" ? "recycler" : "user"
     void fetchSyncedHandoverOrders(scope).then((orders) => {
-      setHandoverOrders(orders.filter((o) => /^[0-9a-f-]{36}$/i.test(o.id)))
+      const eligible = orders.filter((o) => {
+        if (!/^[0-9a-f-]{36}$/i.test(o.id)) return false
+        if (o.id === urlOrderId) return true
+        if (o.isInquiryOnly) return false
+        const raw = o.rawStatus?.trim().toLowerCase() ?? ""
+        if (
+          raw === "pending" ||
+          raw === "negotiating" ||
+          raw === "rejected" ||
+          raw === "declined" ||
+          raw === "expired"
+        ) {
+          return false
+        }
+        return o.status !== "pending" && o.status !== "declined"
+      })
+      setHandoverOrders(eligible)
+      if (urlOrderId) {
+        const pre = eligible.find((o) => o.id === urlOrderId)
+        const preRaw = pre?.rawStatus?.trim().toLowerCase() ?? ""
+        const preCancelled =
+          preRaw !== "disputed" &&
+          (preRaw === "cancelled" ||
+            preRaw === "canceled" ||
+            pre?.status === "cancelled" ||
+            pre?.status === "broken")
+        if (preCancelled) setBackendCategory("NoShow")
+      }
     })
-    void fetchMyComplaints({ role: "all", pageSize: 20 })
+    void fetchMyComplaints({ role: "all", pageSize: 100 })
       .then((res) => {
         if (res.success && res.data) setMyComplaints(res.data.items)
       })
       .catch(() => {})
-  }, [session?.role])
+  }, [session?.role, urlOrderId])
 
   const list = ISSUES[cat]
   const pickCat = (c: Category) => {
@@ -76,6 +105,7 @@ export default function Feedback() {
     setCat(c)
     setIssue("") // id của 2 nhóm không trùng nhau, giữ lại sẽ gửi sai loại
     setErrs((e) => ({ ...e, issue: undefined }))
+    setSubmitError("")
   }
 
   const send = async (e: React.FormEvent) => {
@@ -92,6 +122,18 @@ export default function Feedback() {
         setErrs({ desc: "Nội dung mô tả khiếu nại giao dịch tối thiểu 15 ký tự." })
         return
       }
+      const matched = handoverOrders.find((x) => x.id === selectedOrderId)
+      const matchedRaw = matched?.rawStatus?.trim().toLowerCase() ?? ""
+      const matchedCancelled =
+        matchedRaw !== "disputed" &&
+        (matchedRaw === "cancelled" ||
+          matchedRaw === "canceled" ||
+          matched?.status === "cancelled" ||
+          matched?.status === "broken")
+      const effectiveCategory: ComplaintCategoryCode =
+        matchedCancelled && backendCategory !== "NoShow" && backendCategory !== "Misconduct"
+          ? "NoShow"
+          : backendCategory
       setSubmitting(true)
       try {
         const evidenceUrls: string[] = []
@@ -101,11 +143,16 @@ export default function Feedback() {
         }
         const created = await submitComplaint({
           handoverRequestId: selectedOrderId,
-          category: backendCategory,
+          category: effectiveCategory,
           description: cleanDesc,
           evidencePhotoUrls: evidenceUrls,
         })
         setRef(created.data.complaintCode)
+        void fetchMyComplaints({ role: "all", pageSize: 100 })
+          .then((res) => {
+            if (res.success && res.data) setMyComplaints(res.data.items)
+          })
+          .catch(() => {})
       } catch (err) {
         setSubmitError(
           err instanceof ApiError
@@ -115,6 +162,13 @@ export default function Feedback() {
       } finally {
         setSubmitting(false)
       }
+      return
+    }
+
+    if (hasLiveBackendAuth() && cat === "complaint" && !selectedOrderId && handoverOrders.length > 0) {
+      setSubmitError(
+        'Bạn đang chọn "Khiếu nại dịch vụ / giao dịch" và có đơn bàn giao khả dụng. Vui lòng chọn mã đơn trong mục Đính kèm đơn để gửi thẳng tới Staff xử lý, hoặc chuyển sang "Góp ý vận hành chung".',
+      )
       return
     }
 
@@ -196,38 +250,75 @@ export default function Feedback() {
               <select
                 id="fb-order"
                 value={selectedOrderId}
-                onChange={(e) => setSelectedOrderId(e.target.value)}
+                onChange={(e) => {
+                  const nextId = e.target.value
+                  setSelectedOrderId(nextId)
+                  setSubmitError("")
+                  const matched = handoverOrders.find((x) => x.id === nextId)
+                  const raw = matched?.rawStatus?.trim().toLowerCase() ?? ""
+                  const isCancelled =
+                    raw !== "disputed" &&
+                    (raw === "cancelled" ||
+                      raw === "canceled" ||
+                      matched?.status === "cancelled" ||
+                      matched?.status === "broken")
+                  if (isCancelled && backendCategory !== "NoShow" && backendCategory !== "Misconduct") {
+                    setBackendCategory("NoShow")
+                  }
+                }}
                 className="input mt-2 h-10 bg-white text-sm"
               >
                 <option value="">— Không chọn đơn (chỉ gửi phản hồi chung) —</option>
                 {handoverOrders.map((o) => (
                   <option key={o.id} value={o.id}>
-                    {o.displayCode} · {o.recycler || o.citizenName || "Đối tác"} · {o.status}
+                    {o.displayCode} · {o.recycler || o.citizenName || "Đối tác"} · {o.rawStatus || o.status}
                   </option>
                 ))}
               </select>
 
-              {selectedOrderId && (
-                <div className="mt-3">
-                  <label htmlFor="fb-cat-code" className="text-xs font-semibold text-ink">
-                    Nhóm nguyên nhân khiếu nại chính thức (BR-DSP-02)
-                  </label>
-                  <select
-                    id="fb-cat-code"
-                    value={backendCategory}
-                    onChange={(e) =>
-                      setBackendCategory(e.target.value as ComplaintCategoryCode)
-                    }
-                    className="input mt-1 h-10 bg-white text-sm"
-                  >
-                    {Object.entries(COMPLAINT_CATEGORY_LABELS).map(([k, v]) => (
-                      <option key={k} value={k}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {selectedOrderId &&
+                (() => {
+                  const matched = handoverOrders.find((x) => x.id === selectedOrderId)
+                  const raw = matched?.rawStatus?.trim().toLowerCase() ?? ""
+                  const isCancelled =
+                    raw !== "disputed" &&
+                    (raw === "cancelled" ||
+                      raw === "canceled" ||
+                      matched?.status === "cancelled" ||
+                      matched?.status === "broken")
+                  const allowedKeys: ComplaintCategoryCode[] = isCancelled
+                    ? ["NoShow", "Misconduct"]
+                    : ["ScaleDiscrepancy", "PaymentIssue", "NoShow", "Misconduct", "Other"]
+                  const safeCategory = allowedKeys.includes(backendCategory)
+                    ? backendCategory
+                    : allowedKeys[0]
+                  return (
+                    <div className="mt-3">
+                      <label htmlFor="fb-cat-code" className="text-xs font-semibold text-ink">
+                        Nhóm nguyên nhân khiếu nại chính thức (BR-DSP-02)
+                      </label>
+                      <select
+                        id="fb-cat-code"
+                        value={safeCategory}
+                        onChange={(e) =>
+                          setBackendCategory(e.target.value as ComplaintCategoryCode)
+                        }
+                        className="input mt-1 h-10 bg-white text-sm"
+                      >
+                        {allowedKeys.map((k) => (
+                          <option key={k} value={k}>
+                            {COMPLAINT_CATEGORY_LABELS[k]}
+                          </option>
+                        ))}
+                      </select>
+                      {isCancelled && (
+                        <p className="mt-1.5 text-xs text-muted">
+                          Đơn đã hủy (BR-DSP-01): chỉ hỗ trợ Không đến đúng hẹn hoặc Thái độ / hành vi thiếu chuẩn mực.
+                        </p>
+                      )}
+                    </div>
+                  )
+                })()}
             </div>
           )}
 
@@ -457,7 +548,7 @@ export default function Feedback() {
             Theo dõi trạng thái xử lý và biên bản phán quyết trọng tài từ bộ phận vận hành EcoLink (STT 111).
           </p>
           <ul className="mt-4 grid gap-3 md:grid-cols-2">
-            {myComplaints.map((c) => (
+            {paginateItems(myComplaints, cmpPage, FIXED_PAGE_SIZE).map((c) => (
               <li key={c.complaintId} className="rounded-xl border border-line-soft bg-white p-4 text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-bold text-ink">{c.complaintCode}</span>
@@ -478,6 +569,12 @@ export default function Feedback() {
               </li>
             ))}
           </ul>
+          <PaginationBar
+            page={cmpPage}
+            totalCount={myComplaints.length}
+            onPageChange={setCmpPage}
+            itemLabel="khiếu nại"
+          />
         </section>
       )}
     </div>

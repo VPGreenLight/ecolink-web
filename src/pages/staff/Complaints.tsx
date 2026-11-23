@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import PaginationBar, { extractPagedMeta, paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { extractPagedMeta, FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { COMPLAINTS, type Complaint } from "@/data/ops"
@@ -45,17 +45,17 @@ export default function Complaints() {
   const [search, setSearch] = useState<string>("")
   const debouncedSearch = useDebouncedValue(search, 300)
   const [complaintPage, setComplaintPage] = useState(1)
-  const [complaintPageSize, setComplaintPageSize] = useState(10)
+  const complaintPageSize = FIXED_PAGE_SIZE
   const [complaintTotal, setComplaintTotal] = useState(0)
   const [reviewSearch, setReviewSearch] = useState("")
   const debouncedReviewSearch = useDebouncedValue(reviewSearch, 250)
   const [reviewPage, setReviewPage] = useState(1)
-  const [reviewPageSize, setReviewPageSize] = useState(10)
+  const reviewPageSize = FIXED_PAGE_SIZE
   const [offlineSearch, setOfflineSearch] = useState("")
   const debouncedOfflineSearch = useDebouncedValue(offlineSearch, 250)
   const [offlineOpenPage, setOfflineOpenPage] = useState(1)
   const [offlineClosedPage, setOfflineClosedPage] = useState(1)
-  const [offlinePageSize, setOfflinePageSize] = useState(5)
+  const offlinePageSize = FIXED_PAGE_SIZE
 
   const [liveComplaints, setLiveComplaints] = useState<ComplaintSummaryDto[]>([])
   const [reportedReviews, setReportedReviews] = useState<TransactionReviewDto[]>([])
@@ -553,7 +553,6 @@ export default function Complaints() {
                   pageSize={complaintPageSize}
                   totalCount={complaintTotal}
                   onPageChange={setComplaintPage}
-                  onPageSizeChange={setComplaintPageSize}
                   itemLabel="khiếu nại"
                 />
                 </>
@@ -643,7 +642,6 @@ export default function Complaints() {
                         pageSize={reviewPageSize}
                         totalCount={filteredReviews.length}
                         onPageChange={setReviewPage}
-                        onPageSizeChange={setReviewPageSize}
                         itemLabel="đánh giá"
                       />
                     </>
@@ -734,8 +732,6 @@ export default function Complaints() {
                 pageSize={offlinePageSize}
                 totalCount={filteredOpen.length}
                 onPageChange={setOfflineOpenPage}
-                onPageSizeChange={setOfflinePageSize}
-                pageSizeOptions={[5, 10, 20]}
                 itemLabel="khiếu nại mở"
               />
 
@@ -758,8 +754,6 @@ export default function Complaints() {
                       pageSize={offlinePageSize}
                       totalCount={filteredClosed.length}
                       onPageChange={setOfflineClosedPage}
-                      onPageSizeChange={setOfflinePageSize}
-                      pageSizeOptions={[5, 10, 20]}
                       itemLabel="khiếu nại đã đóng"
                     />
                   </div>

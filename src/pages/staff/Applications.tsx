@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
@@ -33,9 +33,9 @@ export default function Applications() {
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)
   const [pendingPage, setPendingPage] = useState(1)
-  const [pendingPageSize, setPendingPageSize] = useState(5)
+  const pendingPageSize = FIXED_PAGE_SIZE
   const [donePage, setDonePage] = useState(1)
-  const [donePageSize, setDonePageSize] = useState(10)
+  const donePageSize = FIXED_PAGE_SIZE
 
   const reloadApplications = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true)
@@ -348,8 +348,6 @@ export default function Applications() {
             pageSize={pendingPageSize}
             totalCount={pending.length}
             onPageChange={setPendingPage}
-            onPageSizeChange={setPendingPageSize}
-            pageSizeOptions={[5, 10, 20]}
             itemLabel="hồ sơ chờ"
           />
           </>
@@ -393,7 +391,6 @@ export default function Applications() {
             pageSize={donePageSize}
             totalCount={done.length}
             onPageChange={setDonePage}
-            onPageSizeChange={setDonePageSize}
             itemLabel="hồ sơ đã xử lý"
           />
         </div>

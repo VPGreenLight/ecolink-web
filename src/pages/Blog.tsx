@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import PaginationBar, { paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { ARTICLES, FEATURED, METRICS } from "@/data/insights"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
@@ -27,7 +27,7 @@ export default function Blog() {
   const [activeTag, setActiveTag] = useState("")
   const [queryText, setQueryText] = useState("")
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(6)
+  const pageSize = FIXED_PAGE_SIZE
 
   useEffect(() => {
     setQueryText(debouncedSearch.trim())
@@ -320,8 +320,6 @@ export default function Blog() {
                 pageSize={pageSize}
                 totalCount={restLive.length}
                 onPageChange={setPage}
-                onPageSizeChange={setPageSize}
-                pageSizeOptions={[6, 12, 24]}
                 itemLabel="bài viết"
               />
             </>
@@ -369,8 +367,6 @@ export default function Blog() {
               pageSize={pageSize}
               totalCount={filteredOfflineArticles.length}
               onPageChange={setPage}
-              onPageSizeChange={setPageSize}
-              pageSizeOptions={[6, 12, 24]}
               itemLabel="bài viết"
             />
           </>
