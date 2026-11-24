@@ -71,41 +71,35 @@ export default function Catalog() {
         ])
         if (!active) return
 
-        if (catsRes.items.length > 0) {
+        if (catsRes.items.length > 0 || catsRes.fromBackend) {
           setCategories(catsRes.items)
         }
 
-        const baseRows: Row[] =
-          catsRes.items.length > 0
-            ? INITIAL_SEED_ROWS.map((r) => {
-                const matched = pricesRes.items.find(
-                  (p) =>
-                    p.wasteCategoryCode.toLowerCase() === r.categoryCode.toLowerCase() ||
-                    p.wasteCategoryName.toLowerCase().includes(r.categoryCode.toLowerCase()),
-                )
-                if (matched) {
-                  return {
-                    ...r,
-                    on: matched.isActive,
-                    price: matched.pricePerKg > 0 ? matched.pricePerKg : r.price,
-                  }
-                }
-                return r
-              })
-            : INITIAL_SEED_ROWS.map((r) => {
-                const matched = pricesRes.items.find(
-                  (p) =>
-                    p.wasteCategoryCode.toLowerCase() === r.categoryCode.toLowerCase() ||
-                    p.wasteCategoryName.toLowerCase().includes(r.categoryCode.toLowerCase()),
-                )
-                return matched
-                  ? {
-                      ...r,
-                      on: matched.isActive,
-                      price: matched.pricePerKg > 0 ? matched.pricePerKg : r.price,
-                    }
-                  : r
-              })
+        const activeCategoryCodes = catsRes.fromBackend
+          ? new Set(catsRes.items.map((c) => c.code.toLowerCase()))
+          : null
+
+        const candidateSeedRows = activeCategoryCodes
+          ? INITIAL_SEED_ROWS.filter((r) =>
+              activeCategoryCodes.has(r.categoryCode.toLowerCase()),
+            )
+          : INITIAL_SEED_ROWS
+
+        const baseRows: Row[] = candidateSeedRows.map((r) => {
+          const matched = pricesRes.items.find(
+            (p) =>
+              p.wasteCategoryCode.toLowerCase() === r.categoryCode.toLowerCase() ||
+              p.wasteCategoryName.toLowerCase().includes(r.categoryCode.toLowerCase()),
+          )
+          if (matched) {
+            return {
+              ...r,
+              on: matched.isActive,
+              price: matched.pricePerKg > 0 ? matched.pricePerKg : r.price,
+            }
+          }
+          return r
+        })
         setRows(baseRows)
       } catch (err) {
         if (!active) return
@@ -137,6 +131,10 @@ export default function Catalog() {
     if (saving) return
     setErrMsg("")
     setFlash(null)
+    if (rows.length === 0) {
+      setErrMsg("Hiện không có danh mục phế liệu nào đang hoạt động trên hệ thống.")
+      return
+    }
     const invalidRow = rows.find((r) => r.on && (!Number.isFinite(r.price) || r.price <= 0))
     if (invalidRow) {
       const wasteName = WASTES.find((w) => w.id === invalidRow.id)?.name ?? invalidRow.id

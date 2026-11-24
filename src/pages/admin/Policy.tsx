@@ -236,6 +236,12 @@ export default function Policy() {
       setErrMsg("Chỉ hỗ trợ công bố quy tắc khi đã kết nối máy chủ Admin.")
       return
     }
+    if (r.categoryStatus.toLowerCase() === "inactive") {
+      setErrMsg(
+        `Danh mục '${r.categoryCode}' đang tạm ngưng (Inactive). Vui lòng mở lại danh mục trước khi công bố quy tắc.`,
+      )
+      return
+    }
     setBusyId(r.id)
     try {
       let targetRuleId = r.ruleId && r.ruleId !== EMPTY_GUID ? r.ruleId : ""
@@ -505,9 +511,14 @@ export default function Policy() {
                       </button>
                       <button
                         type="button"
-                        disabled={busyId === r.id}
+                        disabled={busyId === r.id || r.categoryStatus.toLowerCase() === "inactive"}
+                        title={
+                          r.categoryStatus.toLowerCase() === "inactive"
+                            ? "Danh mục gốc đang tạm ngưng (Inactive) — không thể công bố"
+                            : "Công bố quy tắc & đồng bộ AI Service"
+                        }
                         onClick={() => void handlePublishRule(r)}
-                        className="btn-primary h-9 px-3.5 text-xs font-semibold"
+                        className="btn-primary h-9 px-3.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Công bố &amp; Đồng bộ AI
                       </button>

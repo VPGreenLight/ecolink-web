@@ -26,7 +26,7 @@ import {
   type DiscoveryFallbackSuggestionDto,
   type RecyclerSortBy,
 } from "@/lib/recyclerDiscoveryApi"
-import { getCategoryMeta, parsePreparationSteps } from "@/lib/wasteScanApi"
+import { fetchWasteCategories, getCategoryMeta, parsePreparationSteps } from "@/lib/wasteScanApi"
 import { applyOfflineWorkflowToPartners } from "@/lib/recyclerWorkflowApi"
 import {
   fetchRecyclerReviews,
@@ -283,10 +283,38 @@ export default function MapPage() {
   const [locatingGps, setLocatingGps] = useState<boolean>(false)
 
   const [category, setCategory] = useState<"" | DiscoverableCategory>(initialCat)
+  const [activeCatCodes, setActiveCatCodes] = useState<Set<string> | null>(null)
   const [radiusKm, setRadiusKm] = useState<number>(10)
   const [keyword, setKeyword] = useState<string>("")
   const [debouncedKeyword, setDebouncedKeyword] = useState<string>("")
   const [sortBy, setSortBy] = useState<RecyclerSortBy>("distance")
+
+  useEffect(() => {
+    if (isSsrSmokeTest()) return
+    let active = true
+    fetchWasteCategories()
+      .then((cats) => {
+        if (!active) return
+        setActiveCatCodes(new Set(cats.map((c) => c.code.toLowerCase())))
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const visibleCategories = activeCatCodes
+    ? DISCOVERY_CATEGORIES.filter((c) => c.value === "" || activeCatCodes.has(c.value))
+    : DISCOVERY_CATEGORIES
+
+  useEffect(() => {
+    if (activeCatCodes && category && !activeCatCodes.has(category)) {
+      setCategory("")
+      const next = new URLSearchParams(searchParams)
+      next.delete("category")
+      setSearchParams(next, { replace: true })
+    }
+  }, [activeCatCodes, category, searchParams, setSearchParams])
 
   const [loading, setLoading] = useState<boolean>(false)
   const [isOfflineDemo, setIsOfflineDemo] = useState<boolean>(false)
@@ -854,9 +882,9 @@ export default function MapPage() {
           <div
             role="group"
             aria-label="Lọc theo loại phế liệu"
-            className="mt-2.5 grid grid-cols-6 gap-1"
+            className="mt-2.5 flex flex-wrap gap-1"
           >
-            {DISCOVERY_CATEGORIES.map((c) => {
+            {visibleCategories.map((c) => {
               const on = category === c.value
               const short = CATEGORY_SHORT[c.value] ?? c.label.replace(/\s*\(.*\)/, "")
               return (
@@ -866,7 +894,7 @@ export default function MapPage() {
                   onClick={() => changeCategory(c.value)}
                   aria-pressed={on}
                   title={c.label.replace(/\s*\(.*\)/, "")}
-                  className={`h-7 truncate rounded-lg px-1 text-[11px] transition-colors ${
+                  className={`h-7 flex-1 min-w-[60px] truncate rounded-lg px-1.5 text-[11px] transition-colors ${
                     on
                       ? "bg-brand-deep font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
                       : "font-medium text-body hover:bg-surface-2 hover:text-ink"

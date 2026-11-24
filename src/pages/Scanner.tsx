@@ -16,6 +16,7 @@ import {
   classifyWasteImage,
   fetchAiModels,
   fetchMyScanHistory,
+  fetchSortingRules,
   getCategoryMeta,
   loadSampleImageAsFile,
   parsePreparationSteps,
@@ -97,34 +98,63 @@ function buildBoxItem(
   const bbox = toValidBbox(dto.bbox)
   if (!bbox) return null
 
-  const code = (dto.sortingGuide?.categoryCode || dto.label || "unknown").toLowerCase()
-  const meta = getCategoryMeta(code)
+  const rawCode = (dto.sortingGuide?.categoryCode || dto.label || "unknown").toLowerCase()
   const guide =
     dto.sortingGuide ??
-    (fallbackGuide && fallbackGuide.categoryCode?.toLowerCase() === code
+    (fallbackGuide && fallbackGuide.categoryCode?.toLowerCase() === rawCode
       ? fallbackGuide
       : null)
 
   const rawConf = dto.confidence ?? 0
-  const isOod = rawConf < threshold
+  const isUnsupported = rawConf >= threshold && (!guide || rawCode === "unknown")
+  const isOod = rawConf < threshold || isUnsupported
+  if (isOod) {
+    return {
+      id: dto.id || 1,
+      categoryCode: "unknown",
+      shortGroup: isUnsupported ? "Không hỗ trợ" : "Chưa rõ",
+      displayName: isUnsupported ? "Loại rác không hỗ trợ" : "Chưa đủ cơ sở kết luận",
+      rawConfidence: rawConf,
+      isPrimary: Boolean(dto.isPrimary),
+      isOod: true,
+      recyclable: false,
+      bbox,
+      material: "Không thể kết luận loại vật liệu",
+      badge: isUnsupported
+        ? "Danh mục tạm ngưng hoặc chưa hỗ trợ — Vui lòng quét loại rác khác"
+        : "Chưa đủ rõ để kết luận — Cần chụp gần hơn",
+      description: isUnsupported
+        ? "Loại rác tại vị trí này hiện không nằm trong danh mục hỗ trợ phân loại của hệ thống. Vui lòng quét loại rác khác."
+        : `Vật thể #${dto.id || 1} bị mờ hoặc khuất sáng nên hệ thống chưa đưa ra kết luận. Bạn có thể chọn khung khác hoặc chụp gần hơn.`,
+      binColor: undefined,
+      hazardWarning: null,
+      steps: [],
+      price: {
+        label: "TRẠNG THÁI",
+        value: isUnsupported ? "Chưa hỗ trợ" : "Chưa rõ",
+        unit: "",
+      },
+    }
+  }
+
+  const meta = getCategoryMeta(rawCode)
   const parsedSteps = parsePreparationSteps(guide?.preparationSteps)
 
   return {
     id: dto.id || 1,
-    categoryCode: code,
-    shortGroup: isOod ? "Chưa rõ" : meta.boxLabel,
+    categoryCode: rawCode,
+    shortGroup: meta.boxLabel,
     displayName: dto.displayName || meta.shortName,
     rawConfidence: rawConf,
     isPrimary: Boolean(dto.isPrimary),
-    isOod,
-    recyclable: !isOod && meta.recyclable,
+    isOod: false,
+    recyclable: meta.recyclable,
     bbox,
     material: guide?.categoryName || dto.displayName || meta.shortName,
-    badge: isOod ? "Chưa đủ rõ để kết luận — Cần chụp gần hơn" : meta.badge,
-    description: isOod
-      ? `Vật thể #${dto.id || 1} bị mờ hoặc khuất sáng nên hệ thống chưa đưa ra kết luận. Bạn có thể chọn khung khác hoặc chụp gần hơn.`
-      : guide?.handlingAction ||
-        "Phân loại đúng quy định giúp tăng giá trị thu mua và tích Điểm Xanh.",
+    badge: meta.badge,
+    description:
+      guide?.handlingAction ||
+      "Phân loại đúng quy định giúp tăng giá trị thu mua và tích Điểm Xanh.",
     binColor: guide?.standardBinColor || meta.defaultBinColor,
     hazardWarning: guide?.hazardWarning,
     steps: parsedSteps.length > 0 ? parsedSteps : meta.defaultSteps,
@@ -144,14 +174,18 @@ function mapApiToViewModel(
   const threshold = aiResult.confidenceThreshold || 0.6
   const top = aiResult.topPrediction
   const rawConf = top?.confidence ?? 0
+  const rawCode = (sortingGuide?.categoryCode || top?.label || "unknown").toLowerCase()
+  const isUnsupported =
+    !aiResult.isOutOfDistribution &&
+    Boolean(top) &&
+    rawConf >= threshold &&
+    (!sortingGuide || rawCode === "unknown")
   const isOod =
     messageCode === "MSG-CLS-02" ||
     aiResult.isOutOfDistribution ||
     !top ||
-    rawConf < threshold
-
-  const code = (sortingGuide?.categoryCode || top?.label || "unknown").toLowerCase()
-  const meta = getCategoryMeta(code)
+    rawConf < threshold ||
+    isUnsupported
 
   // Dựng danh sách vật thể đóng khung (hỗ trợ cả multi-object mới lẫn fallback croppedBbox đơn lẻ)
   const mappedObjects: DetectedBoxItem[] = []
@@ -182,11 +216,53 @@ function mapApiToViewModel(
     }
   }
 
+  if (isOod) {
+    return {
+      scanId: payload.scanId ?? null,
+      imageUrl: payload.imageUrl ?? null,
+      isOod: true,
+      confidenceThreshold: threshold,
+      messageCode: messageCode || "MSG-CLS-02",
+      message: isUnsupported
+        ? payload.message ||
+          "Loại rác trong ảnh hiện không nằm trong danh mục hỗ trợ phân loại của hệ thống. Vui lòng quét loại rác khác."
+        : payload.message,
+      categoryCode: "unknown",
+      material: "Không thể kết luận loại vật liệu",
+      tag: "Chưa xác định",
+      badge: isUnsupported
+        ? "Danh mục tạm ngưng hoặc chưa hỗ trợ"
+        : "Chưa đủ rõ để kết luận — Cần chụp gần hơn",
+      description: isUnsupported
+        ? "Loại rác trong ảnh hiện không nằm trong danh mục hỗ trợ phân loại của hệ thống. Vui lòng quét loại rác khác."
+        : payload.message,
+      binColor: undefined,
+      hazardWarning: null,
+      steps: [],
+      price: {
+        label: "TRẠNG THÁI",
+        value: isUnsupported ? "Chưa hỗ trợ" : "Chưa rõ",
+        unit: "",
+      },
+      rawConfidence: rawConf,
+      recyclable: false,
+      imageWidth: aiResult.imageWidth || undefined,
+      imageHeight: aiResult.imageHeight || undefined,
+      detectedCount: 0,
+      categorySummary: {},
+      objects: mappedObjects,
+      activeRank: mappedObjects.length > 0 ? 1 : undefined,
+    }
+  }
+
+  const meta = getCategoryMeta(rawCode)
   const summary: Record<string, number> =
     aiResult.categorySummary && Object.keys(aiResult.categorySummary).length > 0
       ? aiResult.categorySummary
       : mappedObjects.reduce<Record<string, number>>((acc, item) => {
-          acc[item.categoryCode] = (acc[item.categoryCode] ?? 0) + 1
+          if (!item.isOod && item.categoryCode !== "unknown") {
+            acc[item.categoryCode] = (acc[item.categoryCode] ?? 0) + 1
+          }
           return acc
         }, {})
 
@@ -195,18 +271,17 @@ function mapApiToViewModel(
   return {
     scanId: payload.scanId ?? null,
     imageUrl: payload.imageUrl ?? null,
-    isOod,
+    isOod: false,
     confidenceThreshold: threshold,
     messageCode,
     message: payload.message,
-    categoryCode: code,
+    categoryCode: rawCode,
     material: sortingGuide?.categoryName || top?.displayName || meta.shortName,
     tag: top?.displayName || meta.shortName,
-    badge: isOod ? "Chưa đủ rõ để kết luận — Cần chụp gần hơn" : meta.badge,
-    description: isOod
-      ? payload.message
-      : sortingGuide?.handlingAction ||
-        "Phân loại đúng quy định giúp tăng giá trị thu mua và tích Điểm Xanh.",
+    badge: meta.badge,
+    description:
+      sortingGuide?.handlingAction ||
+      "Phân loại đúng quy định giúp tăng giá trị thu mua và tích Điểm Xanh.",
     binColor: sortingGuide?.standardBinColor || meta.defaultBinColor,
     hazardWarning: sortingGuide?.hazardWarning,
     steps: steps.length > 0 ? steps : meta.defaultSteps,
@@ -216,7 +291,7 @@ function mapApiToViewModel(
       unit: meta.priceUnit,
     },
     rawConfidence: rawConf,
-    recyclable: !isOod && meta.recyclable,
+    recyclable: meta.recyclable,
     imageWidth: aiResult.imageWidth || undefined,
     imageHeight: aiResult.imageHeight || undefined,
     detectedCount: aiResult.detectedCount ?? mappedObjects.length,
@@ -1504,6 +1579,8 @@ function OodResult({
   onSelectPrimary?: () => void
 }) {
   const conf = getConfidenceDisplay(result.rawConfidence, result.confidenceThreshold)
+  const isLowConfidence =
+    result.rawConfidence > 0 && result.rawConfidence < result.confidenceThreshold
   return (
     <div
       data-message-code={result.messageCode || "MSG-CLS-02"}
@@ -1512,17 +1589,22 @@ function OodResult({
       <div className="rounded-xl border border-warn/30 bg-warn/5 p-4">
         <p className="flex items-center justify-between gap-2 text-xs font-semibold text-warn">
           <span>
-            Chưa đủ cơ sở kết luận
+            {isLowConfidence ? "Chưa đủ cơ sở kết luận" : "Không thể kết luận loại vật liệu"}
             {result.activeRank ? ` • Khung #${result.activeRank}` : ""}
           </span>
-          <span>Cần chụp rõ hơn</span>
+          <span>{isLowConfidence ? "Cần chụp rõ hơn" : "Vui lòng quét loại rác khác"}</span>
         </p>
-        <p className="mt-1.5 text-[13px] leading-5 text-ink">{result.message}</p>
-        <p className="mt-2 rounded-lg border border-warn/25 bg-white/80 px-3 py-2 text-xs font-medium text-ink">
-          Độ tin cậy cao nhất AI đo được:{" "}
-          <b className="tabular-nums text-warn">{conf.pctText}</b> (thấp hơn ngưỡng an toàn tối thiểu{" "}
-          {Math.round(result.confidenceThreshold * 100)}%).
+        <p className="mt-1.5 text-[13px] leading-5 text-ink">
+          {result.message ||
+            "Loại rác trong ảnh hiện đang tạm ngưng hỗ trợ hoặc không nằm trong danh mục phân loại hiện hành. Vui lòng quét loại rác khác."}
         </p>
+        {isLowConfidence && (
+          <p className="mt-2 rounded-lg border border-warn/25 bg-white/80 px-3 py-2 text-xs font-medium text-ink">
+            Độ tin cậy cao nhất AI đo được:{" "}
+            <b className="tabular-nums text-warn">{conf.pctText}</b> (thấp hơn ngưỡng an toàn tối thiểu{" "}
+            {Math.round(result.confidenceThreshold * 100)}%).
+          </p>
+        )}
         {onSelectPrimary && (
           <button
             type="button"
@@ -1535,11 +1617,24 @@ function OodResult({
       </div>
 
       <div className="rounded-xl border border-line-soft bg-surface-2 p-3.5 text-[13px] leading-5 text-body">
-        <p className="font-semibold text-ink">Mẹo chụp lại để hệ thống kết luận chính xác:</p>
+        <p className="font-semibold text-ink">
+          {isLowConfidence
+            ? "Mẹo chụp lại để hệ thống kết luận chính xác:"
+            : "Gợi ý tiếp theo:"}
+        </p>
         <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-body">
-          <li>Đặt món rác vào giữa khung hình camera, cách 20–40 cm.</li>
-          <li>Tránh chụp ngược sáng hoặc để tay che khuất phần lớn nhãn/thân chai.</li>
-          <li>Đặt vật rác trên nền thoáng, đủ sáng để hệ thống nhận diện chính xác nhất.</li>
+          {isLowConfidence ? (
+            <>
+              <li>Đặt món rác vào giữa khung hình camera, cách 20–40 cm.</li>
+              <li>Tránh chụp ngược sáng hoặc để tay che khuất phần lớn nhãn/thân chai.</li>
+              <li>Đặt vật rác trên nền thoáng, đủ sáng để hệ thống nhận diện chính xác nhất.</li>
+            </>
+          ) : (
+            <>
+              <li>Hệ thống không áp dụng quy tắc phân loại hoặc thu mua cho danh mục đang tạm ngưng.</li>
+              <li>Bạn có thể chụp ảnh một loại rác khác thuộc danh mục đang hỗ trợ trên EcoLink.</li>
+            </>
+          )}
         </ul>
       </div>
 
@@ -1572,10 +1667,31 @@ function InlineFeedbackReport({
   const isGuest = !session && !isSsrSmokeTest()
   const [open, setOpen] = useState(defaultOpen)
   const [reportedLabel, setReportedLabel] = useState("")
+  const [activeClassOptions, setActiveClassOptions] =
+    useState<readonly { code: string; label: string }[]>(AI_CLASS_OPTIONS)
   const [note, setNote] = useState("")
   const [sending, setSending] = useState(false)
   const [doneMsg, setDoneMsg] = useState("")
   const [errMsg, setErrMsg] = useState("")
+
+  useEffect(() => {
+    if (!open || isSsrSmokeTest()) return
+    const controller = new AbortController()
+    fetchSortingRules(controller.signal)
+      .then((rules) => {
+        if (controller.signal.aborted) return
+        const activeCodes = new Set(rules.map((r) => r.categoryCode.toLowerCase()))
+        const filtered = AI_CLASS_OPTIONS.filter((opt) =>
+          activeCodes.has(opt.code.toLowerCase()),
+        )
+        setActiveClassOptions(filtered)
+        setReportedLabel((prev) =>
+          prev && filtered.some((o) => o.code === prev) ? prev : "",
+        )
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [open])
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault()
@@ -1676,7 +1792,7 @@ function InlineFeedbackReport({
             className="h-9 rounded-lg border border-sage-line bg-white px-2.5 text-xs font-normal text-ink focus:border-brand focus:outline-none"
           >
             <option value="">-- Chọn loại rác đúng --</option>
-            {AI_CLASS_OPTIONS.map((opt) => (
+            {activeClassOptions.map((opt) => (
               <option key={opt.code} value={opt.code}>
                 {opt.label}
               </option>

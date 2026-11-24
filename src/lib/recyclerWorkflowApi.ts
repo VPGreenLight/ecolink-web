@@ -1569,7 +1569,7 @@ export async function fetchWasteCategories(): Promise<{
       "/api/v1/waste-categories",
       { method: "GET" },
     )
-    if (Array.isArray(res.data) && res.data.length > 0) {
+    if (Array.isArray(res.data)) {
       return { items: res.data, fromBackend: true }
     }
   } catch {

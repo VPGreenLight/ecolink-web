@@ -5,10 +5,12 @@ import { WASTE_GROUPS, WASTES, VND, type Waste as WasteItem } from "@/data/waste
 import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   fetchSortingRules,
+  fetchWasteCategories,
   getCategoryMeta,
   parsePreparationSteps,
 } from "@/lib/wasteScanApi"
 import { isDiscoverableCategory } from "@/lib/recyclerDiscoveryApi"
+import { hasLiveBackendAuth } from "@/lib/session"
 
 interface ExtendedWasteItem extends WasteItem {
   binColor?: string
@@ -47,35 +49,36 @@ export default function Waste() {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchSortingRules(controller.signal)
-      .then((rules) => {
-        if (rules.length === 0) {
-          setItems(SEED_ITEMS)
-          return
-        }
+    Promise.all([fetchSortingRules(controller.signal), fetchWasteCategories()])
+      .then(([rules, categories]) => {
         const byCode = new Map(
           rules.map((r) => [r.categoryCode.toLowerCase(), r] as const),
         )
+        const activeTradableSet = new Set(
+          categories.map((c) => c.code.toLowerCase()),
+        )
         setItems(
-          WASTES.map((w) => {
+          WASTES.map((w): ExtendedWasteItem | null => {
             const code = WASTE_TO_API_CATEGORY[w.id]
             const rule = code ? byCode.get(code) : undefined
-            if (!rule) return { ...w, categoryCode: code }
+            if (!code || !rule) return null
             const steps = parsePreparationSteps(rule.preparationSteps)
             return {
               ...w,
               categoryCode: code,
+              recyclable: w.recyclable && activeTradableSet.has(code),
               binColor: rule.standardBinColor,
               rule: rule.handlingAction || w.rule,
               prep: steps.length > 0 ? steps.join(" • ") : w.prep,
               group: getCategoryMeta(code).group,
             }
-          }),
+          }).filter((item): item is ExtendedWasteItem => item !== null),
         )
       })
       .catch(() => {
-        // Fallback nếu Backend chưa bật
-        setItems(SEED_ITEMS)
+        if (!controller.signal.aborted && !hasLiveBackendAuth()) {
+          setItems(SEED_ITEMS)
+        }
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)

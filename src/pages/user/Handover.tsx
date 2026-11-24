@@ -5,7 +5,8 @@ import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/Pagi
 import { FormRequiredLegend, PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { ApiError } from "@/lib/api"
-import { initApiLoading, initApiState } from "@/lib/hydration"
+import { initApiLoading, initApiState, isSsrSmokeTest } from "@/lib/hydration"
+import { fetchWasteCategories } from "@/lib/wasteScanApi"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   MY_HANDOVERS,
@@ -642,11 +643,45 @@ function CreateForm({
   initialWasteId?: string
   onDone: (d: Draft) => void
 }) {
-  const validInitialWaste = WASTES.some((w) => w.recyclable && w.id === initialWasteId)
+  const [activeCatCodes, setActiveCatCodes] = useState<Set<string> | null>(null)
+  const availableWastes = activeCatCodes
+    ? WASTES.filter(
+        (w) => w.recyclable && activeCatCodes.has((WASTE_TO_CAT[w.id] ?? w.id).toLowerCase()),
+      )
+    : WASTES.filter((w) => w.recyclable)
+
+  const validInitialWaste = availableWastes.some((w) => w.id === initialWasteId)
     ? (initialWasteId as string)
-    : "pet"
+    : (availableWastes[0]?.id ?? "pet")
 
   const [rows, setRows] = useState([{ wasteId: validInitialWaste, kg: 5 }])
+
+  useEffect(() => {
+    if (isSsrSmokeTest()) return
+    let active = true
+    fetchWasteCategories()
+      .then((cats) => {
+        if (!active) return
+        const codeSet = new Set(cats.map((c) => c.code.toLowerCase()))
+        setActiveCatCodes(codeSet)
+        const nextAvailable = WASTES.filter(
+          (w) => w.recyclable && codeSet.has((WASTE_TO_CAT[w.id] ?? w.id).toLowerCase()),
+        )
+        const firstId = nextAvailable[0]?.id
+        if (firstId) {
+          const validIds = new Set(nextAvailable.map((w) => w.id))
+          setRows((prev) =>
+            prev.map((row) =>
+              validIds.has(row.wasteId) ? row : { ...row, wasteId: firstId },
+            ),
+          )
+        }
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
   const [appointmentDate, setAppointmentDate] = useState<string>(
     () => getDefaultAppointmentDateAndSlot().dateIso,
   )
@@ -712,6 +747,10 @@ function CreateForm({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (availableWastes.length === 0) {
+      setErr("Hiện chưa có danh mục phế liệu nào đang hoạt động để đặt lịch thu gom.")
+      return
+    }
     if (rows.length === 0) {
       setErr("Cần ít nhất một loại rác bàn giao.")
       return
@@ -831,13 +870,18 @@ function CreateForm({
               <select
                 className="input"
                 value={r.wasteId}
+                disabled={availableWastes.length === 0}
                 onChange={(e) => set(i, { wasteId: e.target.value })}
               >
-                {WASTES.filter((w) => w.recyclable).map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name} · {VND(partnerPriceOf(w.id))}/kg
-                  </option>
-                ))}
+                {availableWastes.length === 0 ? (
+                  <option value="">Hiện không có loại phế liệu khả dụng</option>
+                ) : (
+                  availableWastes.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} · {VND(partnerPriceOf(w.id))}/kg
+                    </option>
+                  ))
+                )}
               </select>
             </label>
             <label className="flex w-32 flex-col gap-2 text-[13px] font-semibold text-ink">
@@ -869,8 +913,14 @@ function CreateForm({
 
       <button
         type="button"
-        onClick={() => setRows((r) => [...r, { wasteId: "carton", kg: 5 }])}
-        className="btn-outline h-10 w-fit px-4 text-[13px]"
+        disabled={availableWastes.length === 0}
+        onClick={() =>
+          setRows((r) => [
+            ...r,
+            { wasteId: availableWastes[0]?.id ?? "carton", kg: 5 },
+          ])
+        }
+        className="btn-outline h-10 w-fit px-4 text-[13px] disabled:opacity-50"
       >
         Thêm loại rác
       </button>

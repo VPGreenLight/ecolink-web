@@ -1,7 +1,7 @@
-import { C as signIn, D as useSession, d as ROLE_LABEL, h as getSession, i as ensureActiveAuthSession, u as ROLE_HOME, w as signOut } from "./assets/api-BcucRD7x.js";
-import { r as openAuthPopup } from "./assets/popupAuth-Gle2iRq5.js";
-import { v as useEntitlements } from "./assets/servicePackageApi-CS25DpPC.js";
-import { m as ConfirmLogoutDialog, o as Portal, p as PORTAL_NAV } from "./assets/Portal-CyX9Rhh0.js";
+import { C as signIn, O as useSession, T as syncSessionState, d as ROLE_LABEL, h as getSession, i as ensureActiveAuthSession, u as ROLE_HOME, w as signOut } from "./assets/api-EXSOClT1.js";
+import { r as openAuthPopup } from "./assets/popupAuth-DBlpLiFF.js";
+import { v as useEntitlements } from "./assets/servicePackageApi-D1TAEkwp.js";
+import { m as ConfirmLogoutDialog, o as Portal, p as PORTAL_NAV } from "./assets/Portal-DIwE919r.js";
 import { t as AI_AVATAR } from "./assets/scanner-DJC07y4s.js";
 import { d as POSTS, f as STAFF, h as fmtVnd, i as COMPLAINTS, m as fmtInt, n as AI_CASES, o as DATASET, p as STATS, r as APPLICATIONS } from "./assets/ops-DEQYZm4o.js";
 import { n as FLOWS } from "./assets/cashflow-CHqRtMGy.js";
@@ -351,16 +351,6 @@ function AccountMenu$1() {
 			document.removeEventListener("keydown", onKey);
 		};
 	}, [open]);
-	useEffect(() => {
-		const onMessage = (e) => {
-			if (e.data?.type === "AUTH_SUCCESS") {
-				const role = e.data.role;
-				navigate(role === "user" ? "/" : ROLE_HOME[role] || "/");
-			} else if (e.data?.type === "AUTH_LOGOUT") navigate("/");
-		};
-		window.addEventListener("message", onMessage);
-		return () => window.removeEventListener("message", onMessage);
-	}, [navigate]);
 	const logout = () => {
 		setOpen(false);
 		setConfirmLogout(true);
@@ -1228,12 +1218,12 @@ function AccountMenu({ name, label, items }) {
 /** Chốt chặn route theo vai trò. Chưa đăng nhập -> về trang chủ / và mở hộp thoại đăng nhập nhỏ,
 *  đã đăng nhập sai vai trò -> về trang chủ của vai trò đó, đồng thời đối chiếu Cookie với Backend. */
 function RequireRole({ roles, children }) {
-	const session = useSession();
+	const session = useSession() ?? getSession();
 	const sessionIdentity = session ? `${session.id ?? session.username ?? session.name}:${session.role}` : null;
 	useEffect(() => {
 		if (typeof window === "undefined") return;
 		if (!sessionIdentity) {
-			openAuthPopup("login");
+			openAuthPopup("login", false);
 			return;
 		}
 		ensureActiveAuthSession();
@@ -1260,61 +1250,61 @@ function RequireRole({ roles, children }) {
 *  đồng bộ, `lazy` chưa resolve sẽ render ra fallback nên phải nạp trước. */
 var loaders = {
 	Home: () => import("./assets/Home-k8NQ6yEO.js"),
-	Blog: () => import("./assets/Blog-CCDbp2jZ.js"),
-	BlogDetail: () => import("./assets/BlogDetail-BI4opNVn.js"),
-	Rewards: () => import("./assets/Rewards-vLN8W-XB.js"),
-	LeaderboardPage: () => import("./assets/Leaderboard-CB3KVZkz.js"),
-	Scanner: () => import("./assets/Scanner-MiUZpu0y.js"),
-	MapPage: () => import("./assets/MapPage-BVXg6Q97.js"),
-	Partners: () => import("./assets/Partners-CIZrTiBM.js"),
-	Feedback: () => import("./assets/Feedback-DkKdhCRo.js"),
-	Guidance: () => import("./assets/Guidance-MKi7H_aF.js"),
-	Waste: () => import("./assets/Waste-hF-kZG7T.js"),
-	Chat: () => import("./assets/Chat-DFYEpzP4.js"),
-	JoinRecycler: () => import("./assets/JoinRecycler-D83vGm3L.js"),
-	ResetPassword: () => import("./assets/ResetPassword-C8atjx6j.js"),
-	Terms: () => import("./assets/Terms-BFbBVb9e.js"),
-	EcoFactsPage: () => import("./assets/EcoFactsPage-DdprYU9K.js"),
-	Login: () => import("./assets/Login-CwuHbcCK.js"),
-	Register: () => import("./assets/Register-D7UmFWbc.js"),
-	Logout: () => import("./assets/Logout-Dngs7Xyi.js"),
+	Blog: () => import("./assets/Blog-DOf-px4X.js"),
+	BlogDetail: () => import("./assets/BlogDetail-CeP2JUOm.js"),
+	Rewards: () => import("./assets/Rewards-DkIzvi5D.js"),
+	LeaderboardPage: () => import("./assets/Leaderboard-CsQ3Q_xx.js"),
+	Scanner: () => import("./assets/Scanner-Gb2_gs-I.js"),
+	MapPage: () => import("./assets/MapPage-D6QHuDoj.js"),
+	Partners: () => import("./assets/Partners-Brf_fRa0.js"),
+	Feedback: () => import("./assets/Feedback-BsIzZvIs.js"),
+	Guidance: () => import("./assets/Guidance-vhNDnt0I.js"),
+	Waste: () => import("./assets/Waste-BjvnG9uN.js"),
+	Chat: () => import("./assets/Chat-Bbi28rya.js"),
+	JoinRecycler: () => import("./assets/JoinRecycler-DLCYgwOU.js"),
+	ResetPassword: () => import("./assets/ResetPassword-Bow_qBjg.js"),
+	Terms: () => import("./assets/Terms-BGnsUadU.js"),
+	EcoFactsPage: () => import("./assets/EcoFactsPage-Bs7brJ0W.js"),
+	Login: () => import("./assets/Login-BOx_xpnS.js"),
+	Register: () => import("./assets/Register-9wRfC7vi.js"),
+	Logout: () => import("./assets/Logout-1Tpgd6Kl.js"),
 	NotFound: () => import("./assets/NotFound-Cuzh8QZo.js"),
-	Profile: () => import("./assets/Profile-DYTr0ND2.js"),
-	Notifications: () => import("./assets/Notifications-B0stBvc4.js"),
-	Password: () => import("./assets/Password-IEIUzWDs.js"),
-	UserHome: () => import("./assets/Home-ASqNVj-J.js"),
-	Handover: () => import("./assets/Handover-wux_ZfV8.js"),
-	Receipt: () => import("./assets/Receipt-C61UuC0c.js"),
-	Payout: () => import("./assets/Payout-BPC0-gTi.js"),
-	Transactions: () => import("./assets/Transactions-PT6gtmYd.js"),
-	Gamification: () => import("./assets/Gamification-Bazo1F6h.js"),
-	RecyclerHome: () => import("./assets/Home-H-jCjBZn.js"),
-	Requests: () => import("./assets/Requests-Dx0j6uJN.js"),
-	Catalog: () => import("./assets/Catalog-Qbwe0g1a.js"),
-	RecyclerReceipt: () => import("./assets/Receipt-D9cX575l.js"),
-	StaffHome: () => import("./assets/Home-Bbhr4438.js"),
-	AiReview: () => import("./assets/AiReview-BelVBB2X.js"),
-	Dataset: () => import("./assets/Dataset-BX3nKwoL.js"),
-	Applications: () => import("./assets/Applications-CqOA0Pqh.js"),
-	Complaints: () => import("./assets/Complaints-BXgbBuQO.js"),
-	Accounts: () => import("./assets/Accounts-B8F34lxl.js"),
-	BlogEditor: () => import("./assets/BlogEditor-GxG9fcrk.js"),
-	EcoFacts: () => import("./assets/EcoFacts-BeckeVmp.js"),
-	Gifts: () => import("./assets/Gifts-Bl25SXPZ.js"),
-	StaffCheckIn: () => import("./assets/CheckIn-BCNetWTR.js"),
-	AdminHome: () => import("./assets/Home-B-qACwe-.js"),
-	Reports: () => import("./assets/Reports-ruYFo5Pk.js"),
-	StaffAccounts: () => import("./assets/StaffAccounts-DIAweGL1.js"),
-	Permissions: () => import("./assets/Permissions-YD37drcw.js"),
-	BlogReview: () => import("./assets/BlogReview-DXdEVw5F.js"),
-	Categories: () => import("./assets/Categories-BejtZzXP.js"),
-	Policy: () => import("./assets/Policy-Bm06hDMN.js"),
-	GamificationConfig: () => import("./assets/Gamification-C76rUceX.js"),
-	LeaderboardConfig: () => import("./assets/Leaderboard-noRnsPqO.js"),
-	Fees: () => import("./assets/Fees-CJBVrkgF.js"),
-	Reconciliation: () => import("./assets/Reconciliation-Cx7z6DH8.js"),
-	AccountProfile: () => import("./assets/AccountProfile-S-VGnCSC.js"),
-	AccountPassword: () => import("./assets/AccountPassword-C2af9Dr6.js")
+	Profile: () => import("./assets/Profile-ChQ1e7SA.js"),
+	Notifications: () => import("./assets/Notifications-4LtxqWLB.js"),
+	Password: () => import("./assets/Password-Cbfz_Zp8.js"),
+	UserHome: () => import("./assets/Home-Kwix1Hsc.js"),
+	Handover: () => import("./assets/Handover-DnwkIuzC.js"),
+	Receipt: () => import("./assets/Receipt-C51ELv-_.js"),
+	Payout: () => import("./assets/Payout-BaUkGpK4.js"),
+	Transactions: () => import("./assets/Transactions-BwiPKfmD.js"),
+	Gamification: () => import("./assets/Gamification-DHEnryU3.js"),
+	RecyclerHome: () => import("./assets/Home-BMm3ASlb.js"),
+	Requests: () => import("./assets/Requests-NLGowhfH.js"),
+	Catalog: () => import("./assets/Catalog-BvxQAH0E.js"),
+	RecyclerReceipt: () => import("./assets/Receipt-VSv-mP5L.js"),
+	StaffHome: () => import("./assets/Home-BqHhxiKG.js"),
+	AiReview: () => import("./assets/AiReview-xWQ0hHQJ.js"),
+	Dataset: () => import("./assets/Dataset-8CPTelBH.js"),
+	Applications: () => import("./assets/Applications-C0eeYnPx.js"),
+	Complaints: () => import("./assets/Complaints-C0fr211w.js"),
+	Accounts: () => import("./assets/Accounts-DijfhkqO.js"),
+	BlogEditor: () => import("./assets/BlogEditor-DLNyohTo.js"),
+	EcoFacts: () => import("./assets/EcoFacts-C1ByZJI9.js"),
+	Gifts: () => import("./assets/Gifts-BoqHgx3M.js"),
+	StaffCheckIn: () => import("./assets/CheckIn-BsIaNBw4.js"),
+	AdminHome: () => import("./assets/Home-BoNxe13W.js"),
+	Reports: () => import("./assets/Reports-BHTGCPXI.js"),
+	StaffAccounts: () => import("./assets/StaffAccounts-CrE5Jvuc.js"),
+	Permissions: () => import("./assets/Permissions-Dny4YFbc.js"),
+	BlogReview: () => import("./assets/BlogReview-DpB3O-h5.js"),
+	Categories: () => import("./assets/Categories-CspQ2js6.js"),
+	Policy: () => import("./assets/Policy-B_us6rG3.js"),
+	GamificationConfig: () => import("./assets/Gamification-BDVvNWRJ.js"),
+	LeaderboardConfig: () => import("./assets/Leaderboard-CIL3OhDM.js"),
+	Fees: () => import("./assets/Fees-DuYEuK0G.js"),
+	Reconciliation: () => import("./assets/Reconciliation-exAPCBE0.js"),
+	AccountProfile: () => import("./assets/AccountProfile-Tuc6UErE.js"),
+	AccountPassword: () => import("./assets/AccountPassword-DOWlAfl-.js")
 };
 var PAGES = Object.fromEntries(Object.keys(loaders).map((name) => [name, lazy(loaders[name])]));
 function preloadPages() {
@@ -1337,8 +1327,26 @@ function RolePortal() {
 	const session = useSession();
 	return /* @__PURE__ */ jsx(Portal, { role: session?.role === "recycler" ? "recycler" : "user" });
 }
+function GlobalAuthListener() {
+	const navigate = useNavigate();
+	useEffect(() => {
+		const onMessage = (e) => {
+			if (e.data?.type === "AUTH_SUCCESS") {
+				const session = syncSessionState(e.data?.session);
+				const role = e.data?.role || session?.role || "user";
+				navigate(role === "user" ? "/" : ROLE_HOME[role] || "/");
+			} else if (e.data?.type === "AUTH_LOGOUT") {
+				signOut();
+				navigate("/");
+			}
+		};
+		window.addEventListener("message", onMessage);
+		return () => window.removeEventListener("message", onMessage);
+	}, [navigate]);
+	return null;
+}
 function AppRoutes() {
-	return /* @__PURE__ */ jsx(Fragment, { children: /* @__PURE__ */ jsx(Suspense, {
+	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(GlobalAuthListener, {}), /* @__PURE__ */ jsx(Suspense, {
 		fallback: null,
 		children: /* @__PURE__ */ jsxs(Routes, { children: [
 			/* @__PURE__ */ jsx(Route, {
@@ -1645,7 +1653,7 @@ function AppRoutes() {
 				]
 			})
 		] })
-	}) });
+	})] });
 }
 //#endregion
 //#region src/check-routes.tsx

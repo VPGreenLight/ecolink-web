@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { CardListSkeleton, Field, PageHead } from "@/components/Portal"
+import { CardListSkeleton, Empty, Field, PageHead } from "@/components/Portal"
 import { WASTE_GROUPS, WASTES } from "@/data/waste"
 import { initApiLoading } from "@/lib/hydration"
 import {
   AI_CLASS_OPTIONS,
   fetchSortingRules,
+  fetchWasteCategories,
   getCategoryMeta,
   parsePreparationSteps,
   submitAiFeedback,
@@ -24,20 +25,22 @@ import { getSession } from "@/lib/session"
 export default function Guidance() {
   const [group, setGroup] = useState<string>(WASTE_GROUPS[1])
   const [liveRules, setLiveRules] = useState<WasteSortingGuideDto[]>([])
+  const [activeTradableCodes, setActiveTradableCodes] = useState<Set<string> | null>(null)
   const [syncedFromApi, setSyncedFromApi] = useState(false)
   const [loading, setLoading] = useState(() => initApiLoading(true))
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchSortingRules(controller.signal)
-      .then((rules) => {
-        if (rules.length > 0) {
-          setLiveRules(rules)
+    Promise.allSettled([fetchSortingRules(controller.signal), fetchWasteCategories()])
+      .then(([rulesRes, catsRes]) => {
+        if (controller.signal.aborted) return
+        if (rulesRes.status === "fulfilled") {
+          setLiveRules(rulesRes.value)
           setSyncedFromApi(true)
         }
-      })
-      .catch(() => {
-        // Giữ danh mục mặc định nếu Backend chưa bật
+        if (catsRes.status === "fulfilled") {
+          setActiveTradableCodes(new Set(catsRes.value.map((c) => c.code.toLowerCase())))
+        }
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
@@ -45,10 +48,21 @@ export default function Guidance() {
     return () => controller.abort()
   }, [])
 
+  const visibleGroups: readonly string[] = syncedFromApi
+    ? WASTE_GROUPS.filter(
+        (g) =>
+          g !== WASTE_GROUPS[0] &&
+          liveRules.some((r) => getCategoryMeta(r.categoryCode).group === g),
+      )
+    : WASTE_GROUPS.filter((g) => g !== WASTE_GROUPS[0])
+  const activeGroup = visibleGroups.includes(group) ? group : (visibleGroups[0] ?? group)
   const matchedLiveRules = liveRules.filter(
-    (r) => getCategoryMeta(r.categoryCode).group === group,
+    (r) => getCategoryMeta(r.categoryCode).group === activeGroup,
   )
-  const fallbackList = WASTES.filter((w) => w.group === group)
+  const fallbackList = WASTES.filter((w) => w.group === activeGroup)
+  const activeFeedbackCodes = syncedFromApi
+    ? new Set(liveRules.map((r) => r.categoryCode.toLowerCase()))
+    : null
 
   return (
     <div className="page flex flex-col gap-6">
@@ -67,14 +81,14 @@ export default function Guidance() {
       />
 
       <div className="flex flex-wrap gap-2">
-        {WASTE_GROUPS.filter((g) => g !== WASTE_GROUPS[0]).map((g) => (
+        {visibleGroups.map((g) => (
           <button
             key={g}
             type="button"
             onClick={() => setGroup(g)}
-            aria-pressed={group === g}
+            aria-pressed={activeGroup === g}
             className={`rounded-full border px-4 py-2 text-[13px] font-semibold transition-colors ${
-              group === g
+              activeGroup === g
                 ? "border-brand bg-brand text-white"
                 : "border-line bg-surface text-body hover:bg-surface-2"
             }`}
@@ -84,13 +98,16 @@ export default function Guidance() {
         ))}
       </div>
 
-      {loading && liveRules.length === 0 ? (
+      {loading && !syncedFromApi ? (
         <CardListSkeleton count={3} />
-      ) : matchedLiveRules.length > 0 ? (
-        <ol className="flex flex-col gap-3">
-          {matchedLiveRules.map((rule, i) => {
-            const steps = parsePreparationSteps(rule.preparationSteps)
-            const canTrade = isDiscoverableCategory(rule.categoryCode)
+      ) : syncedFromApi ? (
+        matchedLiveRules.length > 0 ? (
+          <ol className="flex flex-col gap-3">
+            {matchedLiveRules.map((rule, i) => {
+              const steps = parsePreparationSteps(rule.preparationSteps)
+              const canTrade = activeTradableCodes
+                ? activeTradableCodes.has(rule.categoryCode.toLowerCase())
+                : isDiscoverableCategory(rule.categoryCode)
             return (
               <li key={rule.categoryCode} className="card flex flex-col gap-3 p-5 sm:flex-row sm:gap-4">
                 <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand/12 text-sm font-bold text-brand-deep">
@@ -141,7 +158,10 @@ export default function Guidance() {
               </li>
             )
           })}
-        </ol>
+          </ol>
+        ) : (
+          <Empty>Hiện chưa có quy tắc phân loại nào đang áp dụng trong nhóm này.</Empty>
+        )
       ) : (
         <ol className="flex flex-col gap-3">
           {fallbackList.map((w, i) => (
@@ -173,15 +193,23 @@ export default function Guidance() {
         </Link>
       </section>
 
-      <U04Report />
+      <U04Report activeCodes={activeFeedbackCodes} />
     </div>
   )
 }
 
 /** U-04 Báo cáo AI nhận diện sai — gửi thực tế lên POST /api/v1/waste-scan/feedback. */
-function U04Report() {
+function U04Report({ activeCodes }: { activeCodes: Set<string> | null }) {
+  const options = activeCodes
+    ? AI_CLASS_OPTIONS.filter((opt) => activeCodes.has(opt.code.toLowerCase()))
+    : AI_CLASS_OPTIONS
   const [predicted, setPredicted] = useState("plastic")
   const [correct, setCorrect] = useState("")
+  const resolvedPredicted = options.some((o) => o.code === predicted)
+    ? predicted
+    : (options[0]?.code ?? "")
+  const resolvedCorrect =
+    correct && options.some((o) => o.code === correct) ? correct : ""
   const [note, setNote] = useState("")
   const [sending, setSending] = useState(false)
   const [sentMessage, setSentMessage] = useState("")
@@ -196,7 +224,7 @@ function U04Report() {
     if (sending) return
     setErrMessage("")
     setSentMessage("")
-    if (!correct) {
+    if (!resolvedCorrect) {
       setErrMessage("Vui lòng chọn loại rác đúng thực tế trước khi gửi báo cáo.")
       return
     }
@@ -207,9 +235,9 @@ function U04Report() {
     setSending(true)
     try {
       const res = await submitAiFeedback({
-        predictedLabel: predicted,
+        predictedLabel: resolvedPredicted,
         confidenceScore: 0.55,
-        userReportedLabel: correct,
+        userReportedLabel: resolvedCorrect,
         note: note.trim() || undefined,
       })
       setSentMessage(res.message)
@@ -243,14 +271,14 @@ function U04Report() {
         <Field label="Nhãn AI đã dự đoán nhầm" required>
           <select
             className="input"
-            value={predicted}
+            value={resolvedPredicted}
             onChange={(e) => {
               setPredicted(e.target.value)
               setSentMessage("")
               setErrMessage("")
             }}
           >
-            {AI_CLASS_OPTIONS.map((opt) => (
+            {options.map((opt) => (
               <option key={opt.code} value={opt.code}>
                 {opt.label}
               </option>
@@ -261,7 +289,7 @@ function U04Report() {
         <Field label="Loại rác đúng thực tế" required>
           <select
             className="input"
-            value={correct}
+            value={resolvedCorrect}
             onChange={(e) => {
               setCorrect(e.target.value)
               setSentMessage("")
@@ -269,7 +297,7 @@ function U04Report() {
             }}
           >
             <option value="">Chọn loại rác đúng</option>
-            {AI_CLASS_OPTIONS.map((opt) => (
+            {options.map((opt) => (
               <option key={opt.code} value={opt.code}>
                 {opt.label}
               </option>
