@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { ROLE_HOME, type Role } from "@/lib/session"
+import { ROLE_HOME, getSession, type Role } from "@/lib/session"
 import { isAuthPopup } from "@/lib/popupAuth"
 import {
   SEEDED_DEMO_ACCOUNTS,
@@ -82,7 +82,8 @@ export default function AuthForm({
     dismissModal()
     if (isPopup && typeof window !== "undefined" && window.opener) {
       try {
-        window.opener.postMessage({ type: "AUTH_SUCCESS", role }, "*")
+        const session = getSession()
+        window.opener.postMessage({ type: "AUTH_SUCCESS", role, session }, "*")
       } catch {
         // ignore cross-window errors
       }

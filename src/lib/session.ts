@@ -181,9 +181,23 @@ function readSession(): Session | null {
 }
 
 /** Bỏ đệm để lần đọc kế tiếp nạp lại từ localStorage. */
-function invalidate() {
+export function invalidate() {
   cached = null
   primed = false
+}
+
+/** Làm mới ngay lập tức trạng thái session từ localStorage và báo cho tất cả listener. */
+export function syncSessionState(overrideSession?: Session | null): Session | null {
+  if (overrideSession !== undefined && typeof localStorage !== "undefined") {
+    if (overrideSession) {
+      localStorage.setItem(KEY, JSON.stringify(overrideSession))
+    } else {
+      localStorage.removeItem(KEY)
+    }
+  }
+  invalidate()
+  emit()
+  return getSession()
 }
 
 export function getSession(): Session | null {
