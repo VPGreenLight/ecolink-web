@@ -1,6 +1,5 @@
 import { C as signIn, D as useSession, d as ROLE_LABEL, h as getSession, i as ensureActiveAuthSession, u as ROLE_HOME, w as signOut } from "./assets/api-BcucRD7x.js";
-import { a as useAuthModalMode, i as openAuthPopup, t as closeAuthModal } from "./assets/popupAuth-B0QM-H-V.js";
-import { t as AuthForm } from "./assets/AuthForm-DOk6ca7Z.js";
+import { r as openAuthPopup } from "./assets/popupAuth-Gle2iRq5.js";
 import { v as useEntitlements } from "./assets/servicePackageApi-CS25DpPC.js";
 import { m as ConfirmLogoutDialog, o as Portal, p as PORTAL_NAV } from "./assets/Portal-CyX9Rhh0.js";
 import { t as AI_AVATAR } from "./assets/scanner-DJC07y4s.js";
@@ -10,34 +9,119 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Link, MemoryRouter, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
-//#region src/components/CompactAuthModal.tsx
-/** Hộp thoại Đăng nhập / Đăng ký Trang Nhỏ thống nhất trên toàn ứng dụng. */
-function CompactAuthModal() {
-	const mode = useAuthModalMode();
-	useEffect(() => {
-		if (!mode || typeof document === "undefined") return;
-		const onKeyDown = (e) => {
-			if (e.key === "Escape") closeAuthModal();
-		};
-		document.addEventListener("keydown", onKeyDown);
-		return () => document.removeEventListener("keydown", onKeyDown);
-	}, [mode]);
-	if (!mode) return null;
-	return /* @__PURE__ */ jsx("div", {
-		className: "fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-[2px]",
-		role: "dialog",
-		"aria-modal": "true",
-		"aria-label": mode === "register" ? "Tạo tài khoản EcoLink" : "Đăng nhập EcoLink",
-		onMouseDown: (e) => {
-			if (e.target === e.currentTarget) closeAuthModal();
-		},
-		children: /* @__PURE__ */ jsx("div", {
-			className: "my-auto w-full max-w-[420px]",
-			children: /* @__PURE__ */ jsx(AuthForm, {
-				mode,
-				onClose: closeAuthModal
-			}, mode)
-		})
+//#region src/components/AuthLayout.tsx
+/** Khung trang riêng cho Đăng nhập / Đăng ký.
+*
+*  Màn rộng (popup được phóng to): hai cột - panel thương hiệu dùng ảnh mầm cây
+*  bên trái, form bên phải. Màn hẹp / popup mặc định 480px: chỉ còn form trên
+*  nền sáng có quầng xanh nhẹ. */
+var HIGHLIGHTS = [
+	"Kết nối cơ sở thu mua gần bạn",
+	"Tích điểm xanh cho mỗi ki-lô-gam tái chế",
+	"Theo dõi cây ảo và phần thưởng"
+];
+function AuthLayout() {
+	return /* @__PURE__ */ jsxs("div", {
+		className: "min-h-dvh bg-page lg:grid lg:grid-cols-2",
+		children: [/* @__PURE__ */ jsxs("aside", {
+			className: "relative hidden overflow-hidden bg-[#06120b] lg:block",
+			children: [
+				/* @__PURE__ */ jsx("img", {
+					src: "/assets/auth/leaves.jpg",
+					alt: "",
+					"aria-hidden": "true",
+					className: "absolute inset-0 h-full w-full object-cover"
+				}),
+				/* @__PURE__ */ jsx("div", {
+					"aria-hidden": "true",
+					className: "absolute inset-0 bg-[#06120b]/35"
+				}),
+				/* @__PURE__ */ jsx("div", {
+					"aria-hidden": "true",
+					className: "absolute inset-x-0 bottom-0 h-[64%] bg-gradient-to-t from-[#06120b] via-[#06120b]/80 to-transparent"
+				}),
+				/* @__PURE__ */ jsxs("div", {
+					className: "relative flex h-full min-h-dvh flex-col p-10 xl:p-14",
+					children: [
+						/* @__PURE__ */ jsx(Link, {
+							to: "/",
+							"aria-label": "EcoLink - Trang chủ",
+							className: "inline-flex w-fit items-center rounded-2xl bg-white/95 px-4 py-2.5 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)] backdrop-blur-sm",
+							children: /* @__PURE__ */ jsx("img", {
+								src: "/assets/brand/logo1.png",
+								alt: "EcoLink",
+								className: "h-8 w-auto"
+							})
+						}),
+						/* @__PURE__ */ jsxs("div", {
+							className: "mt-auto max-w-[30rem] pt-16",
+							children: [
+								/* @__PURE__ */ jsxs("p", {
+									className: "text-[2rem] leading-[1.12] font-bold tracking-tight text-white xl:text-[2.5rem]",
+									children: [
+										"Gieo một mầm xanh,",
+										/* @__PURE__ */ jsx("br", {}),
+										"lớn lên cùng cộng đồng."
+									]
+								}),
+								/* @__PURE__ */ jsx("p", {
+									className: "mt-4 max-w-[26rem] text-[15px] leading-relaxed text-white/80",
+									children: "Theo dõi lịch thu gom, tích điểm cho mỗi ki-lô-gam tái chế và nuôi dưỡng cây ảo của riêng bạn."
+								}),
+								/* @__PURE__ */ jsx("ul", {
+									className: "mt-8 grid gap-3",
+									children: HIGHLIGHTS.map((item) => /* @__PURE__ */ jsxs("li", {
+										className: "flex items-start gap-3",
+										children: [/* @__PURE__ */ jsx("span", {
+											className: "mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-white/12 ring-1 ring-white/25",
+											children: /* @__PURE__ */ jsx("svg", {
+												viewBox: "0 0 16 16",
+												fill: "none",
+												"aria-hidden": "true",
+												className: "size-3.5 text-mint",
+												children: /* @__PURE__ */ jsx("path", {
+													d: "m3.5 8.5 3 3 6-7",
+													stroke: "currentColor",
+													strokeWidth: "1.9",
+													strokeLinecap: "round",
+													strokeLinejoin: "round"
+												})
+											})
+										}), /* @__PURE__ */ jsx("span", {
+											className: "text-sm leading-6 text-white/85",
+											children: item
+										})]
+									}, item))
+								})
+							]
+						}),
+						/* @__PURE__ */ jsxs("p", {
+							className: "mt-10 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/55",
+							children: [
+								/* @__PURE__ */ jsx("span", { children: "© 2026 EcoLink" }),
+								/* @__PURE__ */ jsx("span", {
+									"aria-hidden": "true",
+									className: "size-1 rounded-full bg-white/40"
+								}),
+								/* @__PURE__ */ jsx("span", { children: "Nền tảng thu gom tuần hoàn" })
+							]
+						})
+					]
+				})
+			]
+		}), /* @__PURE__ */ jsxs("main", {
+			className: "relative flex min-h-dvh flex-col justify-center overflow-hidden px-5 py-10 sm:px-8",
+			children: [/* @__PURE__ */ jsx("div", {
+				"aria-hidden": "true",
+				className: "pointer-events-none absolute inset-0 bg-[radial-gradient(760px_460px_at_50%_-10%,#dcefe3_0%,rgba(247,251,248,0)_72%)]"
+			}), /* @__PURE__ */ jsx("div", {
+				className: "relative mx-auto w-full max-w-[420px]",
+				children: /* @__PURE__ */ jsx(Suspense, {
+					fallback: null,
+					children: /* @__PURE__ */ jsx(Outlet, {})
+				})
+			})]
+		})]
 	});
 }
 //#endregion
@@ -166,64 +250,46 @@ function Avatar({ user, size = "size-9" }) {
 	});
 }
 /** Menu tài khoản: các mục dùng chung cho cả 4 vai trò sau đăng nhập. */
-var ACCOUNT_ITEMS$1 = [
-	{
-		to: "/account/profile",
-		label: "Hồ sơ cá nhân",
-		icon: /* @__PURE__ */ jsxs("svg", {
-			viewBox: "0 0 24 24",
-			fill: "none",
-			stroke: "currentColor",
-			strokeWidth: "1.8",
-			strokeLinecap: "round",
-			strokeLinejoin: "round",
-			"aria-hidden": "true",
-			className: "size-4 text-muted",
-			children: [/* @__PURE__ */ jsx("circle", {
-				cx: "12",
-				cy: "8",
-				r: "4"
-			}), /* @__PURE__ */ jsx("path", { d: "M20 21a8 8 0 1 0-16 0" })]
-		})
-	},
-	{
-		to: "/account/notifications",
-		label: "Thông báo",
-		icon: /* @__PURE__ */ jsxs("svg", {
-			viewBox: "0 0 24 24",
-			fill: "none",
-			stroke: "currentColor",
-			strokeWidth: "1.8",
-			strokeLinecap: "round",
-			strokeLinejoin: "round",
-			"aria-hidden": "true",
-			className: "size-4 text-muted",
-			children: [/* @__PURE__ */ jsx("path", { d: "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" }), /* @__PURE__ */ jsx("path", { d: "M10.3 21a1.94 1.94 0 0 0 3.4 0" })]
-		})
-	},
-	{
-		to: "/account/password",
-		label: "Đổi mật khẩu",
-		icon: /* @__PURE__ */ jsxs("svg", {
-			viewBox: "0 0 24 24",
-			fill: "none",
-			stroke: "currentColor",
-			strokeWidth: "1.8",
-			strokeLinecap: "round",
-			strokeLinejoin: "round",
-			"aria-hidden": "true",
-			className: "size-4 text-muted",
-			children: [/* @__PURE__ */ jsx("rect", {
-				width: "18",
-				height: "11",
-				x: "3",
-				y: "11",
-				rx: "2",
-				ry: "2"
-			}), /* @__PURE__ */ jsx("path", { d: "M7 11V7a5 5 0 0 1 10 0v4" })]
-		})
-	}
-];
+var ACCOUNT_ITEMS$1 = [{
+	to: "/account/profile",
+	label: "Hồ sơ cá nhân",
+	icon: /* @__PURE__ */ jsxs("svg", {
+		viewBox: "0 0 24 24",
+		fill: "none",
+		stroke: "currentColor",
+		strokeWidth: "1.8",
+		strokeLinecap: "round",
+		strokeLinejoin: "round",
+		"aria-hidden": "true",
+		className: "size-4 text-muted",
+		children: [/* @__PURE__ */ jsx("circle", {
+			cx: "12",
+			cy: "8",
+			r: "4"
+		}), /* @__PURE__ */ jsx("path", { d: "M20 21a8 8 0 1 0-16 0" })]
+	})
+}, {
+	to: "/account/password",
+	label: "Đổi mật khẩu",
+	icon: /* @__PURE__ */ jsxs("svg", {
+		viewBox: "0 0 24 24",
+		fill: "none",
+		stroke: "currentColor",
+		strokeWidth: "1.8",
+		strokeLinecap: "round",
+		strokeLinejoin: "round",
+		"aria-hidden": "true",
+		className: "size-4 text-muted",
+		children: [/* @__PURE__ */ jsx("rect", {
+			width: "18",
+			height: "11",
+			x: "3",
+			y: "11",
+			rx: "2",
+			ry: "2"
+		}), /* @__PURE__ */ jsx("path", { d: "M7 11V7a5 5 0 0 1 10 0v4" })]
+	})
+}];
 /** Mục Khám phá: dùng lại cho cả khách và người đã đăng nhập. `register` chỉ
 *  hiện khi đã đăng nhập — U-05 là bước nâng cấp từ tài khoản người dân lên
 *  cơ sở thu mua, người chưa có tài khoản thì chưa ở trong hệ sinh thái. */
@@ -513,6 +579,25 @@ function Navbar() {
 							onClick: () => openAuthPopup("login"),
 							className: "hidden h-10 items-center rounded-full bg-brand px-4 text-sm font-semibold whitespace-nowrap text-white shadow-[0_5px_14px_rgba(0,112,61,0.22)] transition-colors hover:bg-brand-deep sm:inline-flex",
 							children: "Đăng nhập"
+						}),
+						session && /* @__PURE__ */ jsxs(Link, {
+							to: "/account/notifications",
+							"aria-label": "Thông báo",
+							className: "group relative flex size-10 items-center justify-center rounded-full border border-line bg-white text-muted shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-[color,border-color,background-color,transform] duration-200 ease-out hover:border-sage-line hover:bg-surface-2 hover:text-ink active:scale-[0.96]",
+							children: [/* @__PURE__ */ jsxs("svg", {
+								viewBox: "0 0 24 24",
+								fill: "none",
+								stroke: "currentColor",
+								strokeWidth: "1.8",
+								strokeLinecap: "round",
+								strokeLinejoin: "round",
+								"aria-hidden": "true",
+								className: "size-[18px] transition-transform duration-200 group-hover:scale-105",
+								children: [/* @__PURE__ */ jsx("path", { d: "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" }), /* @__PURE__ */ jsx("path", { d: "M10.3 21a1.94 1.94 0 0 0 3.4 0" })]
+							}), /* @__PURE__ */ jsxs("span", {
+								className: "absolute top-2 right-2 flex size-2",
+								children: [/* @__PURE__ */ jsx("span", { className: "absolute inline-flex size-full animate-ping rounded-full bg-brand opacity-75" }), /* @__PURE__ */ jsx("span", { className: "relative inline-flex size-2 rounded-full border-2 border-white bg-brand shadow-[0_0_0_1px_rgba(0,112,61,0.2)]" })]
+							})]
 						}),
 						/* @__PURE__ */ jsx(AccountMenu$1, {})
 					]
@@ -1174,61 +1259,61 @@ function RequireRole({ roles, children }) {
 *  `preloadPages()` dùng cho `check-routes.tsx`: `renderToStaticMarkup` chạy
 *  đồng bộ, `lazy` chưa resolve sẽ render ra fallback nên phải nạp trước. */
 var loaders = {
-	Home: () => import("./assets/Home-AlJHO5uZ.js"),
-	Blog: () => import("./assets/Blog-CvMD6XIz.js"),
+	Home: () => import("./assets/Home-k8NQ6yEO.js"),
+	Blog: () => import("./assets/Blog-CCDbp2jZ.js"),
 	BlogDetail: () => import("./assets/BlogDetail-BI4opNVn.js"),
-	Rewards: () => import("./assets/Rewards-bZ42L3ed.js"),
-	LeaderboardPage: () => import("./assets/Leaderboard-BGW0HBg5.js"),
-	Scanner: () => import("./assets/Scanner-BiqoUbIa.js"),
-	MapPage: () => import("./assets/MapPage-DCq3HOXF.js"),
+	Rewards: () => import("./assets/Rewards-vLN8W-XB.js"),
+	LeaderboardPage: () => import("./assets/Leaderboard-CB3KVZkz.js"),
+	Scanner: () => import("./assets/Scanner-MiUZpu0y.js"),
+	MapPage: () => import("./assets/MapPage-BVXg6Q97.js"),
 	Partners: () => import("./assets/Partners-CIZrTiBM.js"),
-	Feedback: () => import("./assets/Feedback--UKw-4Gy.js"),
-	Guidance: () => import("./assets/Guidance-w6H09biY.js"),
+	Feedback: () => import("./assets/Feedback-DkKdhCRo.js"),
+	Guidance: () => import("./assets/Guidance-MKi7H_aF.js"),
 	Waste: () => import("./assets/Waste-hF-kZG7T.js"),
 	Chat: () => import("./assets/Chat-DFYEpzP4.js"),
 	JoinRecycler: () => import("./assets/JoinRecycler-D83vGm3L.js"),
-	ResetPassword: () => import("./assets/ResetPassword-BXY1Z8CK.js"),
+	ResetPassword: () => import("./assets/ResetPassword-C8atjx6j.js"),
 	Terms: () => import("./assets/Terms-BFbBVb9e.js"),
-	EcoFactsPage: () => import("./assets/EcoFactsPage-Dp83Nblb.js"),
-	Login: () => import("./assets/Login-5zEWyX6i.js"),
-	Register: () => import("./assets/Register-CwO23xID.js"),
-	Logout: () => import("./assets/Logout-CoqF1jLT.js"),
+	EcoFactsPage: () => import("./assets/EcoFactsPage-DdprYU9K.js"),
+	Login: () => import("./assets/Login-CwuHbcCK.js"),
+	Register: () => import("./assets/Register-D7UmFWbc.js"),
+	Logout: () => import("./assets/Logout-Dngs7Xyi.js"),
 	NotFound: () => import("./assets/NotFound-Cuzh8QZo.js"),
-	Profile: () => import("./assets/Profile-P4-an5Md.js"),
-	Notifications: () => import("./assets/Notifications-8p_KzkQG.js"),
-	Password: () => import("./assets/Password-CVwGZpRG.js"),
+	Profile: () => import("./assets/Profile-DYTr0ND2.js"),
+	Notifications: () => import("./assets/Notifications-B0stBvc4.js"),
+	Password: () => import("./assets/Password-IEIUzWDs.js"),
 	UserHome: () => import("./assets/Home-ASqNVj-J.js"),
-	Handover: () => import("./assets/Handover-Dz3okOxp.js"),
+	Handover: () => import("./assets/Handover-wux_ZfV8.js"),
 	Receipt: () => import("./assets/Receipt-C61UuC0c.js"),
 	Payout: () => import("./assets/Payout-BPC0-gTi.js"),
-	Transactions: () => import("./assets/Transactions-Cse0vUXX.js"),
-	Gamification: () => import("./assets/Gamification-CVqfv_6n.js"),
+	Transactions: () => import("./assets/Transactions-PT6gtmYd.js"),
+	Gamification: () => import("./assets/Gamification-Bazo1F6h.js"),
 	RecyclerHome: () => import("./assets/Home-H-jCjBZn.js"),
-	Requests: () => import("./assets/Requests-C9OpDxG3.js"),
-	Catalog: () => import("./assets/Catalog-yfAbVkfi.js"),
+	Requests: () => import("./assets/Requests-Dx0j6uJN.js"),
+	Catalog: () => import("./assets/Catalog-Qbwe0g1a.js"),
 	RecyclerReceipt: () => import("./assets/Receipt-D9cX575l.js"),
 	StaffHome: () => import("./assets/Home-Bbhr4438.js"),
 	AiReview: () => import("./assets/AiReview-BelVBB2X.js"),
 	Dataset: () => import("./assets/Dataset-BX3nKwoL.js"),
-	Applications: () => import("./assets/Applications-BMy-h3En.js"),
-	Complaints: () => import("./assets/Complaints-CbtqabWG.js"),
+	Applications: () => import("./assets/Applications-CqOA0Pqh.js"),
+	Complaints: () => import("./assets/Complaints-BXgbBuQO.js"),
 	Accounts: () => import("./assets/Accounts-B8F34lxl.js"),
-	BlogEditor: () => import("./assets/BlogEditor-Dzsw03g7.js"),
-	EcoFacts: () => import("./assets/EcoFacts-D4xisVx7.js"),
-	Gifts: () => import("./assets/Gifts-BpBbwYOu.js"),
-	StaffCheckIn: () => import("./assets/CheckIn-CI7cLTUI.js"),
+	BlogEditor: () => import("./assets/BlogEditor-GxG9fcrk.js"),
+	EcoFacts: () => import("./assets/EcoFacts-BeckeVmp.js"),
+	Gifts: () => import("./assets/Gifts-Bl25SXPZ.js"),
+	StaffCheckIn: () => import("./assets/CheckIn-BCNetWTR.js"),
 	AdminHome: () => import("./assets/Home-B-qACwe-.js"),
 	Reports: () => import("./assets/Reports-ruYFo5Pk.js"),
-	StaffAccounts: () => import("./assets/StaffAccounts-kzJn2fj5.js"),
+	StaffAccounts: () => import("./assets/StaffAccounts-DIAweGL1.js"),
 	Permissions: () => import("./assets/Permissions-YD37drcw.js"),
-	BlogReview: () => import("./assets/BlogReview-CG2akN1p.js"),
+	BlogReview: () => import("./assets/BlogReview-DXdEVw5F.js"),
 	Categories: () => import("./assets/Categories-BejtZzXP.js"),
 	Policy: () => import("./assets/Policy-Bm06hDMN.js"),
 	GamificationConfig: () => import("./assets/Gamification-C76rUceX.js"),
-	LeaderboardConfig: () => import("./assets/Leaderboard-Bx-zK2G4.js"),
+	LeaderboardConfig: () => import("./assets/Leaderboard-noRnsPqO.js"),
 	Fees: () => import("./assets/Fees-CJBVrkgF.js"),
 	Reconciliation: () => import("./assets/Reconciliation-Cx7z6DH8.js"),
-	AccountProfile: () => import("./assets/AccountProfile-D0fZtBPh.js"),
+	AccountProfile: () => import("./assets/AccountProfile-S-VGnCSC.js"),
 	AccountPassword: () => import("./assets/AccountPassword-C2af9Dr6.js")
 };
 var PAGES = Object.fromEntries(Object.keys(loaders).map((name) => [name, lazy(loaders[name])]));
@@ -1253,7 +1338,7 @@ function RolePortal() {
 	return /* @__PURE__ */ jsx(Portal, { role: session?.role === "recycler" ? "recycler" : "user" });
 }
 function AppRoutes() {
-	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Suspense, {
+	return /* @__PURE__ */ jsx(Fragment, { children: /* @__PURE__ */ jsx(Suspense, {
 		fallback: null,
 		children: /* @__PURE__ */ jsxs(Routes, { children: [
 			/* @__PURE__ */ jsx(Route, {
@@ -1265,16 +1350,18 @@ function AppRoutes() {
 				element: /* @__PURE__ */ jsx(ResetPassword, {})
 			}),
 			/* @__PURE__ */ jsxs(Route, {
+				element: /* @__PURE__ */ jsx(AuthLayout, {}),
+				children: [/* @__PURE__ */ jsx(Route, {
+					path: "/login",
+					element: /* @__PURE__ */ jsx(Login, {})
+				}), /* @__PURE__ */ jsx(Route, {
+					path: "/register",
+					element: /* @__PURE__ */ jsx(Register, {})
+				})]
+			}),
+			/* @__PURE__ */ jsxs(Route, {
 				element: /* @__PURE__ */ jsx(Layout, {}),
 				children: [
-					/* @__PURE__ */ jsx(Route, {
-						path: "login",
-						element: /* @__PURE__ */ jsx(Login, {})
-					}),
-					/* @__PURE__ */ jsx(Route, {
-						path: "register",
-						element: /* @__PURE__ */ jsx(Register, {})
-					}),
 					/* @__PURE__ */ jsx(Route, {
 						index: true,
 						element: /* @__PURE__ */ jsx(Home, {})
@@ -1558,7 +1645,7 @@ function AppRoutes() {
 				]
 			})
 		] })
-	}), /* @__PURE__ */ jsx(CompactAuthModal, {})] });
+	}) });
 }
 //#endregion
 //#region src/check-routes.tsx
