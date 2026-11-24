@@ -3,7 +3,9 @@ import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/Pagi
 import { PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { ACCOUNTS, type Account } from "@/data/ops"
+import { ApiError } from "@/lib/api"
 import { initApiLoading, initApiState } from "@/lib/hydration"
+import { hasLiveBackendAuth } from "@/lib/session"
 import {
   deactivateAccount,
   getStaffAccountDetail,
@@ -78,6 +80,7 @@ export default function Accounts() {
   const [pick, setPick] = useState<AccountRow | null>(null)
   const [detail, setDetail] = useState<StaffAccountDetailDto | null>(null)
   const [flash, setFlash] = useState("")
+  const [actionErr, setActionErr] = useState("")
   const [submitting, setSubmitting] = useState(false)
 
   // Modal nhập lý do bắt buộc (BR-ADM-03 / BR-ADM-04)
@@ -98,8 +101,14 @@ export default function Accounts() {
         setList(mapped)
         setIsLive(true)
       })
-      .catch(() => {
-        // Fallback sang dữ liệu mô phỏng khi chưa đăng nhập hoặc ngoại tuyến
+      .catch((err) => {
+        if (!cancelled && hasLiveBackendAuth()) {
+          setActionErr(
+            err instanceof ApiError
+              ? err.message
+              : "Không tải được danh sách tài khoản từ máy chủ.",
+          )
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -124,8 +133,10 @@ export default function Accounts() {
   }
 
   const openModerationModal = (target: AccountRow, kind: "lock" | "unlock" | "deactivate") => {
-    if (!isLive && kind === "deactivate" && target.deals > 0) {
-      setFlash(
+    setActionErr("")
+    setFlash("")
+    if (!hasLiveBackendAuth() && !isLive && kind === "deactivate" && target.deals > 0) {
+      setActionErr(
         `${target.name} đã có ${target.deals} giao dịch hoàn tất nên bản mô phỏng ngoại tuyến chặn xoá (BR-ADM-04). Hãy dùng chức năng Khoá tài khoản hoặc kết nối Backend để vô hiệu hoá mềm.`,
       )
       return
@@ -145,13 +156,17 @@ export default function Accounts() {
       setModalError("Lý do xử lý bắt buộc tối thiểu 10 ký tự theo quy tắc BR-ADM-03.")
       return
     }
+    if (cleanReason.length > 500) {
+      setModalError("Lý do xử lý không được vượt quá 500 ký tự.")
+      return
+    }
 
     const { target, kind } = modalAction
     setSubmitting(true)
     setModalError("")
 
     try {
-      if (isLive && target.backendId) {
+      if ((isLive || hasLiveBackendAuth()) && target.backendId) {
         if (kind === "deactivate") {
           await deactivateAccount(target.backendId, { reason: cleanReason })
           setList((ls) =>
@@ -313,6 +328,14 @@ export default function Accounts() {
         </div>
       </div>
 
+      {actionErr && (
+        <p
+          role="alert"
+          className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+        >
+          {actionErr}
+        </p>
+      )}
       {flash && (
         <p role="status" className="text-[13px] font-semibold text-brand">
           {flash}
@@ -498,6 +521,7 @@ export default function Accounts() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4"
         >
           <form
+            noValidate
             onSubmit={submitModeration}
             className="card flex w-full max-w-md flex-col gap-4 bg-white p-6 shadow-xl"
           >
@@ -540,7 +564,14 @@ export default function Accounts() {
               </label>
             )}
 
-            {modalError && <p className="text-[13px] font-semibold text-warn">{modalError}</p>}
+            {modalError && (
+              <p
+                role="alert"
+                className="rounded-xl border border-warn/35 bg-warn/10 px-3.5 py-2 text-[13px] font-medium text-warn"
+              >
+                {modalError}
+              </p>
+            )}
 
             <div className="flex justify-end gap-2 border-t border-line-soft pt-3">
               <button

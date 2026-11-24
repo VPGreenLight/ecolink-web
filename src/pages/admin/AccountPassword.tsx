@@ -5,8 +5,8 @@ import { changeCurrentUserPassword, formatAuthError } from "@/lib/authApi"
 
 /** Đổi mật khẩu cho STAFF và ADMIN — nối trực tiếp tới `POST /api/v1/auth/change-password`.
  *
- *  Giữ nguyên ngưỡng bảo mật cao hơn của tài khoản nội bộ (tối thiểu 12 ký tự + có chữ số),
- *  đồng thời xác minh mật khẩu hiện tại bằng BCrypt và thu hồi mọi phiên trên thiết bị khác. */
+ *  Thống nhất quy chuẩn tối thiểu 8 ký tự trên toàn hệ thống, đồng thời xác minh
+ *  mật khẩu hiện tại bằng BCrypt và thu hồi mọi phiên trên thiết bị khác. */
 export default function AccountPassword() {
   const session = useSession()
   const role = session?.role === "admin" ? "admin" : "staff"
@@ -25,12 +25,12 @@ export default function AccountPassword() {
       setErr("Nhập mật khẩu hiện tại.")
       return
     }
-    if (next.length < 12) {
-      setErr("Mật khẩu mới cần ít nhất 12 ký tự.")
+    if (next.length < 8) {
+      setErr("Mật khẩu mới cần ít nhất 8 ký tự.")
       return
     }
-    if (!/\d/.test(next)) {
-      setErr("Mật khẩu mới phải có ít nhất một chữ số.")
+    if (next.length > 100) {
+      setErr("Mật khẩu mới không được vượt quá 100 ký tự.")
       return
     }
     if (next !== again) {
@@ -67,7 +67,7 @@ export default function AccountPassword() {
       <PageHead
         eyebrow="BẢO MẬT"
         title="Đổi mật khẩu"
-        body={`Mật khẩu tài khoản ${ROLE_LABEL[role].toLowerCase()} dài hơn yêu cầu của tài khoản người dân: tối thiểu 12 ký tự và phải có chữ số. Đổi xong mọi thiết bị khác đang đăng nhập sẽ mất phiên ngay.`}
+        body={`Cập nhật mật khẩu tài khoản ${ROLE_LABEL[role].toLowerCase()} (tối thiểu 8 ký tự). Đổi xong mọi thiết bị khác đang đăng nhập sẽ mất phiên ngay.`}
       />
 
       <form
@@ -89,10 +89,10 @@ export default function AccountPassword() {
           />
         </Field>
 
-        <Field label="Mật khẩu mới" required hint="Tối thiểu 12 ký tự, phải có chữ số.">
+        <Field label="Mật khẩu mới" required hint="Tối thiểu 8 ký tự, khác mật khẩu hiện tại.">
           <input
             className={`input ${
-              err.startsWith("Mật khẩu mới cần") || err.startsWith("Mật khẩu mới phải có")
+              err.startsWith("Mật khẩu mới cần") || err.startsWith("Mật khẩu mới không")
                 ? "border-warn"
                 : ""
             }`}

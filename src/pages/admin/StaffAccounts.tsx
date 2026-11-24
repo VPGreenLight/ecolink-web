@@ -13,7 +13,7 @@ import {
   updateAdminStaff,
   type StaffMemberDto,
 } from "@/lib/governanceApi"
-import { useSession } from "@/lib/session"
+import { hasLiveBackendAuth, useSession } from "@/lib/session"
 
 type StaffRow = Staff & {
   backendUserId?: string
@@ -62,6 +62,8 @@ export default function StaffAccounts() {
   const [position, setPosition] = useState("Chuyên viên vận hành")
   const [initialPassword, setInitialPassword] = useState("")
   const [flash, setFlash] = useState("")
+  const [formErr, setFormErr] = useState("")
+  const [actionErr, setActionErr] = useState("")
   const [submitting, setSubmitting] = useState(false)
 
   // Modal sửa thông tin nhân sự
@@ -114,25 +116,44 @@ export default function StaffAccounts() {
 
   const add = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (name.trim().length < 3) {
-      setFlash("Cần họ tên nhân viên tối thiểu 3 ký tự trước khi tạo tài khoản.")
+    setFormErr("")
+    setActionErr("")
+    setFlash("")
+    const cleanName = name.trim()
+    if (cleanName.length < 2 || cleanName.length > 100) {
+      setFormErr("Họ tên nhân viên phải từ 2 đến 100 ký tự.")
       return
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
-      setFlash("Email chưa đúng định dạng công việc.")
+      setFormErr("Email chưa đúng định dạng công việc.")
+      return
+    }
+    const cleanDept = department.trim()
+    const cleanPos = position.trim()
+    const cleanInitialPw = initialPassword.trim()
+    if (!cleanDept || cleanDept.length > 100) {
+      setFormErr("Phòng ban phải từ 1 đến 100 ký tự.")
+      return
+    }
+    if (!cleanPos || cleanPos.length > 100) {
+      setFormErr("Chức vụ phải từ 1 đến 100 ký tự.")
+      return
+    }
+    if (cleanInitialPw && (cleanInitialPw.length < 8 || cleanInitialPw.length > 100)) {
+      setFormErr("Mật khẩu khởi tạo phải từ 8 đến 100 ký tự (nếu nhập).")
       return
     }
 
     setSubmitting(true)
     setFlash("")
     try {
-      if (isLive) {
+      if (isLive || hasLiveBackendAuth()) {
         const res = await createAdminStaff({
           fullName: name.trim(),
           email: email.trim(),
-          department: department.trim() || "Vận hành & Kiểm duyệt",
-          position: position.trim() || "Chuyên viên vận hành",
-          initialPassword: initialPassword.trim() || undefined,
+          department: cleanDept,
+          position: cleanPos,
+          initialPassword: cleanInitialPw || undefined,
         })
         const created = mapStaffDto(res.data)
         setList((ls) => [created, ...ls])
@@ -148,8 +169,8 @@ export default function StaffAccounts() {
             id,
             name: name.trim(),
             email: email.trim(),
-            department: department.trim() || "Vận hành & Kiểm duyệt",
-            position: position.trim() || "Chuyên viên vận hành",
+            department: cleanDept,
+            position: cleanPos,
             perms: [],
             status: "active",
           },
@@ -160,7 +181,7 @@ export default function StaffAccounts() {
       setEmail("")
       setInitialPassword("")
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Tạo tài khoản nhân viên thất bại.")
+      setFormErr(err instanceof Error ? err.message : "Tạo tài khoản nhân viên thất bại.")
     } finally {
       setSubmitting(false)
     }
@@ -178,20 +199,39 @@ export default function StaffAccounts() {
   const submitEdit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editTarget) return
-    if (editName.trim().length < 3) {
-      setModalError("Họ tên nhân viên tối thiểu 3 ký tự.")
+    if (editName.trim().length < 2 || editName.trim().length > 100) {
+      setModalError("Họ tên nhân viên phải từ 2 đến 100 ký tự.")
+      return
+    }
+    const cleanEditDept = editDept.trim()
+    const cleanEditPos = editPos.trim()
+    const cleanResetPw = editResetPw.trim()
+    if (!cleanEditDept || cleanEditDept.length > 100) {
+      setModalError("Phòng ban phải từ 1 đến 100 ký tự.")
+      return
+    }
+    if (!cleanEditPos || cleanEditPos.length > 100) {
+      setModalError("Chức vụ phải từ 1 đến 100 ký tự.")
+      return
+    }
+    if (cleanResetPw && (cleanResetPw.length < 8 || cleanResetPw.length > 100)) {
+      setModalError("Mật khẩu đặt lại phải từ 8 đến 100 ký tự (nếu nhập).")
       return
     }
 
     setSubmitting(true)
     setModalError("")
     try {
-      if (isLive && editTarget.backendUserId) {
+      if (isLive || hasLiveBackendAuth()) {
+        if (!editTarget.backendUserId) {
+          setModalError("Không tìm thấy mã tài khoản nhân viên trên máy chủ.")
+          return
+        }
         const res = await updateAdminStaff(editTarget.backendUserId, {
           fullName: editName.trim(),
-          department: editDept.trim() || "Vận hành chung",
-          position: editPos.trim() || "Chuyên viên vận hành",
-          resetPassword: editResetPw.trim() || undefined,
+          department: cleanEditDept,
+          position: cleanEditPos,
+          resetPassword: cleanResetPw || undefined,
         })
         const updated = mapStaffDto(res.data)
         setList((ls) =>
@@ -205,8 +245,8 @@ export default function StaffAccounts() {
               ? {
                   ...x,
                   name: editName.trim(),
-                  department: editDept.trim(),
-                  position: editPos.trim(),
+                  department: cleanEditDept,
+                  position: cleanEditPos,
                 }
               : x,
           ),
@@ -226,7 +266,7 @@ export default function StaffAccounts() {
       (s.backendUserId && session?.id && s.backendUserId === session.id) ||
       (session?.email && s.email.toLowerCase() === session.email.toLowerCase())
     ) {
-      setFlash("Không thể tự khoá tài khoản đang đăng nhập của chính bạn (BR-ADM-03).")
+      setActionErr("Không thể tự khoá tài khoản đang đăng nhập của chính bạn (BR-ADM-03).")
       return
     }
     setLockTarget(s)
@@ -238,8 +278,8 @@ export default function StaffAccounts() {
     e.preventDefault()
     if (!lockTarget) return
     const cleanReason = lockReason.trim()
-    if (cleanReason.length < 10) {
-      setModalError("Lý do khoá/mở khoá bắt buộc tối thiểu 10 ký tự (BR-ADM-03).")
+    if (cleanReason.length < 10 || cleanReason.length > 500) {
+      setModalError("Lý do khoá/mở khoá phải từ 10 đến 500 ký tự (BR-ADM-03).")
       return
     }
 
@@ -247,7 +287,11 @@ export default function StaffAccounts() {
     setSubmitting(true)
     setModalError("")
     try {
-      if (isLive && lockTarget.backendUserId) {
+      if (isLive || hasLiveBackendAuth()) {
+        if (!lockTarget.backendUserId) {
+          setModalError("Không tìm thấy mã tài khoản nhân viên trên máy chủ.")
+          return
+        }
         const res = await lockOrUnlockStaff(lockTarget.backendUserId, {
           isLocked: nextLocked,
           reason: cleanReason,
@@ -339,6 +383,14 @@ export default function StaffAccounts() {
             />
           </Field>
         </div>
+        {formErr && (
+          <p
+            role="alert"
+            className="rounded-xl border border-warn/30 bg-warn/5 px-3.5 py-2 text-[13px] font-semibold text-warn"
+          >
+            {formErr}
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
           <button type="submit" disabled={submitting} className="btn-primary h-11 px-6">
             {submitting ? "Đang khởi tạo..." : "Tạo tài khoản nhân viên"}
@@ -350,6 +402,14 @@ export default function StaffAccounts() {
           )}
         </div>
       </form>
+      {actionErr && (
+        <p
+          role="alert"
+          className="rounded-xl border border-warn/30 bg-warn/5 px-4 py-3 text-[13px] font-semibold text-warn"
+        >
+          {actionErr}
+        </p>
+      )}
 
       <SearchFilterBar
         value={search}
@@ -449,6 +509,7 @@ export default function StaffAccounts() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4"
         >
           <form
+            noValidate
             onSubmit={submitEdit}
             className="card flex w-full max-w-md flex-col gap-4 bg-white p-6 shadow-xl"
           >
@@ -488,7 +549,11 @@ export default function StaffAccounts() {
                 placeholder="Tối thiểu 8 ký tự"
               />
             </Field>
-            {modalError && <p className="text-[13px] font-semibold text-warn">{modalError}</p>}
+            {modalError && (
+              <p role="alert" className="text-[13px] font-semibold text-warn">
+                {modalError}
+              </p>
+            )}
             <div className="flex justify-end gap-2 border-t border-line-soft pt-3">
               <button
                 type="button"
@@ -516,6 +581,7 @@ export default function StaffAccounts() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4"
         >
           <form
+            noValidate
             onSubmit={submitLock}
             className="card flex w-full max-w-md flex-col gap-4 bg-white p-6 shadow-xl"
           >
@@ -533,7 +599,11 @@ export default function StaffAccounts() {
                 required
               />
             </Field>
-            {modalError && <p className="text-[13px] font-semibold text-warn">{modalError}</p>}
+            {modalError && (
+              <p role="alert" className="text-[13px] font-semibold text-warn">
+                {modalError}
+              </p>
+            )}
             <div className="flex justify-end gap-2 border-t border-line-soft pt-3">
               <button
                 type="button"

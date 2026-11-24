@@ -32,6 +32,7 @@ export default function StaffCheckIn() {
   const [isLive, setIsLive] = useState(false)
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState("")
+  const [errMsg, setErrMsg] = useState("")
 
   useEffect(() => {
     let cancelled = false
@@ -58,10 +59,15 @@ export default function StaffCheckIn() {
   }, [])
 
   const handleServerCheckIn = async () => {
-    setBusy(true)
+    setErrMsg("")
     setFlash("")
+    if (shiftNote.trim().length > 500) {
+      setErrMsg("Ghi chú bàn giao ca trực không được vượt quá 500 ký tự.")
+      return
+    }
+    setBusy(true)
     try {
-      const res = await checkInStaff(shiftNote)
+      const res = await checkInStaff(shiftNote.trim())
       if (res.data) {
         setPoints(res.data.totalWorkPointsMonth)
         setTasksHandled(res.data.totalTasksHandled)
@@ -72,24 +78,29 @@ export default function StaffCheckIn() {
       }
       setFlash(res.message || "Đã điểm danh bắt đầu ca trực thành công.")
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Điểm danh ca trực thất bại.")
+      setErrMsg(err instanceof Error ? err.message : "Điểm danh ca trực thất bại.")
     } finally {
       setBusy(false)
     }
   }
 
   const handleServerCheckOut = async () => {
-    setBusy(true)
+    setErrMsg("")
     setFlash("")
+    if (shiftNote.trim().length > 500) {
+      setErrMsg("Ghi chú bàn giao ca trực không được vượt quá 500 ký tự.")
+      return
+    }
+    setBusy(true)
     try {
-      const res = await checkOutStaff(shiftNote)
+      const res = await checkOutStaff(shiftNote.trim())
       if (res.data) {
         setCheckedOutToday(res.data.checkedOutToday)
         setRecords(res.data.recentRecords ?? [])
       }
       setFlash(res.message || "Đã kết thúc ca trực và lưu ghi chú bàn giao.")
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Chốt ca trực thất bại.")
+      setErrMsg(err instanceof Error ? err.message : "Chốt ca trực thất bại.")
     } finally {
       setBusy(false)
     }
@@ -144,7 +155,18 @@ export default function StaffCheckIn() {
         </dl>
       </section>
 
-      <section className="card flex flex-col gap-4 p-5 md:p-6">
+      <form
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!checkedInToday) {
+            void handleServerCheckIn()
+          } else if (!checkedOutToday) {
+            void handleServerCheckOut()
+          }
+        }}
+        className="card flex flex-col gap-4 p-5 md:p-6"
+      >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-ink">Bàn giao & Kết thúc ca trực hôm nay</h2>
@@ -165,26 +187,36 @@ export default function StaffCheckIn() {
           <textarea
             className="input min-h-[84px] py-2"
             value={shiftNote}
-            onChange={(e) => setShiftNote(e.target.value)}
+            onChange={(e) => {
+              setShiftNote(e.target.value)
+              setErrMsg("")
+            }}
             placeholder="Ví dụ: Đã xử lý 14 ảnh AI sai, còn hồ sơ HS-0231 chờ bổ sung ảnh cơ sở..."
           />
         </Field>
 
+        {errMsg && (
+          <p
+            role="alert"
+            className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+          >
+            {errMsg}
+          </p>
+        )}
+
         <div className="flex flex-wrap items-center gap-3">
           {!checkedInToday ? (
             <button
-              type="button"
+              type="submit"
               disabled={busy}
-              onClick={handleServerCheckIn}
               className="btn-primary h-10 px-5 text-[13px]"
             >
               {busy ? "Đang ghi nhận..." : "Mở ca trực trên hệ thống"}
             </button>
           ) : (
             <button
-              type="button"
+              type="submit"
               disabled={busy || checkedOutToday}
-              onClick={handleServerCheckOut}
               className="btn-outline h-10 px-5 text-[13px]"
             >
               {checkedOutToday
@@ -200,7 +232,7 @@ export default function StaffCheckIn() {
             </p>
           )}
         </div>
-      </section>
+      </form>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-bold text-ink">Nhật ký chấm công trong tháng</h2>

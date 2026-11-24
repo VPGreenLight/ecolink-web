@@ -20,7 +20,7 @@ import {
   type PayInOrderDto,
   type ServicePackageCatalogDto,
 } from "@/lib/servicePackageApi"
-import { getAccessToken } from "@/lib/session"
+import { getAccessToken, hasLiveBackendAuth } from "@/lib/session"
 
 function buildDemoQrOrder(pkg: ServicePackageCatalogDto): PayInOrderDto {
   const randomDigits = Math.floor(100000 + Math.random() * 900000)
@@ -102,7 +102,7 @@ export default function Payout() {
         setPackages(pkgRes.data)
       }
 
-      if (getAccessToken()) {
+      if (getAccessToken() || hasLiveBackendAuth()) {
         const [subRes, ordRes] = await Promise.allSettled([
           getMyServiceSubscriptions(),
           getMyServiceOrders({ pageNumber: 1, pageSize: 10 }),
@@ -114,8 +114,14 @@ export default function Payout() {
           setOrders(ordRes.value.data.items ?? [])
         }
       }
-    } catch {
-      // Giữ danh sách gói chuẩn khi chạy ngoại tuyến
+    } catch (errLoad) {
+      if (hasLiveBackendAuth()) {
+        setPkgErr(
+          errLoad instanceof Error
+            ? errLoad.message
+            : "Không tải được thông tin gói dịch vụ từ máy chủ.",
+        )
+      }
     } finally {
       setLoadingPackages(false)
     }
@@ -132,7 +138,7 @@ export default function Payout() {
     setBuyingCode(pkg.packageCode)
 
     try {
-      if (!getAccessToken()) {
+      if (!getAccessToken() && !hasLiveBackendAuth()) {
         const demoOrder = buildDemoQrOrder(pkg)
         setOrders((prev) => [demoOrder, ...prev])
         setActiveQrOrder(demoOrder)
@@ -233,8 +239,9 @@ export default function Payout() {
       setSaved(false)
       return
     }
-    if (holder.trim().length < 3) {
-      setErr("Tên chủ tài khoản phải khớp với tên trên giấy tờ.")
+    const cleanHolder = holder.trim()
+    if (cleanHolder.length < 3 || cleanHolder.length > 100) {
+      setErr("Tên chủ tài khoản phải từ 3 đến 100 ký tự và khớp với tên trên giấy tờ.")
       setSaved(false)
       return
     }
@@ -517,7 +524,11 @@ export default function Payout() {
             </span>
           </label>
 
-          {err && <p className="text-[13px] text-warn">{err}</p>}
+          {err && (
+            <p role="alert" className="text-[13px] font-medium text-warn">
+              {err}
+            </p>
+          )}
 
           <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
             <button type="submit" className="btn-primary h-11 px-6">

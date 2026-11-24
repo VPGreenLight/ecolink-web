@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { Empty, Field, FormRequiredLegend, Status, TableSkeleton } from "@/components/admin/ui"
+import { hasLiveBackendAuth } from "@/lib/session"
 import { initApiLoading, initApiState, isSsrSmokeTest } from "@/lib/hydration"
 import {
   DEFAULT_PLATFORM_POLICIES,
@@ -111,17 +112,33 @@ export default function PlatformPoliciesTab() {
     setFlash("")
     setErrMsg("")
 
-    if (title.trim().length < 3) {
-      setErrMsg("Vui lòng nhập tiêu đề điều khoản (tối thiểu 3 ký tự).")
+    const cleanCode = code.trim()
+    const cleanTitle = title.trim()
+    const cleanContent = content.trim()
+    const parsedOrder = Number(displayOrder)
+    if (cleanCode.length > 40) {
+      setErrMsg("Mã điều khoản tối đa 40 ký tự.")
       return
     }
-    if (content.trim().length < 10) {
-      setErrMsg("Vui lòng nhập nội dung điều khoản chi tiết (tối thiểu 10 ký tự).")
+    if (cleanTitle.length < 3 || cleanTitle.length > 200) {
+      setErrMsg("Tiêu đề điều khoản phải từ 3 đến 200 ký tự.")
+      return
+    }
+    if (cleanContent.length < 10 || cleanContent.length > 4000) {
+      setErrMsg("Nội dung điều khoản phải từ 10 đến 4.000 ký tự.")
+      return
+    }
+    if (!Number.isInteger(parsedOrder) || parsedOrder < 1) {
+      setErrMsg("Thứ tự hiển thị phải là số nguyên từ 1 trở lên.")
       return
     }
 
-    if (!liveMode) {
+    if (!liveMode && !hasLiveBackendAuth()) {
       setFlash("Đã lưu thay đổi điều khoản ở chế độ xem trước.")
+      return
+    }
+    if (!liveMode) {
+      setErrMsg("Phiên đăng nhập chưa sẵn sàng để lưu điều khoản lên máy chủ. Vui lòng thử lại.")
       return
     }
 

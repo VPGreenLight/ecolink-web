@@ -3,9 +3,10 @@ import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/Pagi
 import { PageHead, RequiredMark, Status } from "@/components/Portal"
 import { AI_CASES } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { ApiError } from "@/lib/api"
 import { initApiLoading, initApiState } from "@/lib/hydration"
 import { AI_CLASS_OPTIONS, getCategoryMeta } from "@/lib/wasteScanApi"
-import { getAccessToken } from "@/lib/session"
+import { getAccessToken, hasLiveBackendAuth } from "@/lib/session"
 import {
   assignGroundTruthLabel,
   batchAssignAiLabels,
@@ -64,6 +65,7 @@ export default function AiReview() {
   const [yoloBoxText, setYoloBoxText] = useState<string>("")
   const [savingFb, setSavingFb] = useState(false)
   const [flashFb, setFlashFb] = useState<string>("")
+  const [errFb, setErrFb] = useState<string>("")
 
   // S-02 State
   const [labelItems, setLabelItems] = useState<AiDatasetItemDto[]>([])
@@ -75,6 +77,7 @@ export default function AiReview() {
   const [batchLabel, setBatchLabel] = useState<string>("plastic")
   const [savingLabel, setSavingLabel] = useState(false)
   const [flashLabel, setFlashLabel] = useState<string>("")
+  const [errLabel, setErrLabel] = useState<string>("")
 
   // Search & Pagination state
   const [fbSearch, setFbSearch] = useState("")
@@ -113,8 +116,9 @@ export default function AiReview() {
     labelItems.find((i) => i.id === selectedItemId) ?? filteredLabelItems[0] ?? labelItems[0] ?? null
 
   const loadFeedbackQueue = async (filter: FeedbackFilter = statusFilter) => {
+    const liveAuth = hasLiveBackendAuth()
     const token = getAccessToken()
-    if (!token) {
+    if (!token && !liveAuth) {
       setLoadingFeedbacks(false)
       return
     }
@@ -139,16 +143,19 @@ export default function AiReview() {
           setVerifiedLabel(first.adminVerifiedLabel || first.userReportedLabel || "plastic")
         }
       }
-    } catch {
-      // Giữ nguyên dữ liệu dự phòng khi chưa đủ quyền hoặc backend offline
+    } catch (err) {
+      if (liveAuth) {
+        setErrFb(err instanceof ApiError ? err.message : "Không tải được hàng đợi phản hồi AI.")
+      }
     } finally {
       setLoadingFeedbacks(false)
     }
   }
 
   const loadLabelQueue = async (filter: LabelingFilter = labelFilter) => {
+    const liveAuth = hasLiveBackendAuth()
     const token = getAccessToken()
-    if (!token) return
+    if (!token && !liveAuth) return
     try {
       const res = await fetchAiLabelingQueue({
         status:
@@ -166,8 +173,10 @@ export default function AiReview() {
           setSingleGtLabel(first.groundTruthLabel || first.predictedLabel || "plastic")
         }
       }
-    } catch {
-      // Fallback êm
+    } catch (err) {
+      if (liveAuth) {
+        setErrLabel(err instanceof ApiError ? err.message : "Không tải được hàng đợi gán nhãn.")
+      }
     }
   }
 
@@ -181,6 +190,7 @@ export default function AiReview() {
     setVerifiedLabel(fb.adminVerifiedLabel || fb.userReportedLabel || "plastic")
     setReviewNote(fb.reviewNote ?? "")
     setFlashFb("")
+    setErrFb("")
   }
 
   const parseOptionalYoloBox = (categoryCode: string) => {
@@ -201,16 +211,23 @@ export default function AiReview() {
     decision: "ApproveAndLabel" | "ApproveToQueue" | "Reject",
   ) => {
     if (!currentFb) return
+    setErrFb("")
+    setFlashFb("")
     if (decision === "ApproveAndLabel" && !verifiedLabel.trim()) {
-      setFlashFb("Cần chọn nhãn chuẩn trước khi xác nhận.")
+      setErrFb("Cần chọn nhãn chuẩn trước khi xác nhận.")
       return
     }
     if (decision === "Reject" && reviewNote.trim().length < 5) {
-      setFlashFb("Khi bác bỏ ảnh (Reject), vui lòng nhập lý do tối thiểu 5 ký tự (BR-CLS-06).")
+      setErrFb("Khi bác bỏ ảnh (Reject), vui lòng nhập lý do tối thiểu 5 ký tự (BR-CLS-06).")
+      return
+    }
+    if (reviewNote.trim().length > 500) {
+      setErrFb("Nhận xét thẩm định không được vượt quá 500 ký tự.")
       return
     }
 
-    if (!liveConnected || !getAccessToken()) {
+    const liveAuth = hasLiveBackendAuth()
+    if (!liveAuth && (!liveConnected || !getAccessToken())) {
       setFeedbacks((prev) =>
         prev.map((item) =>
           item.id === currentFb.id
@@ -228,7 +245,6 @@ export default function AiReview() {
     }
 
     setSavingFb(true)
-    setFlashFb("")
     try {
       const yoloAnnotations =
         decision === "ApproveAndLabel" ? parseOptionalYoloBox(verifiedLabel) : undefined
@@ -243,7 +259,7 @@ export default function AiReview() {
       setFlashFb(res.message || "Đã cập nhật thẩm định thành công (MSG-CLS-07).")
       await Promise.all([loadFeedbackQueue(statusFilter), loadLabelQueue(labelFilter)])
     } catch (err) {
-      setFlashFb(err instanceof Error ? err.message : "Không thể cập nhật thẩm định.")
+      setErrFb(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Không thể cập nhật thẩm định.")
     } finally {
       setSavingFb(false)
     }
@@ -251,8 +267,17 @@ export default function AiReview() {
 
   const handleSingleAssign = async (exclude: boolean) => {
     if (!currentItem) return
-    setSavingLabel(true)
+    setErrLabel("")
     setFlashLabel("")
+    if (!exclude && !singleGtLabel.trim()) {
+      setErrLabel("Vui lòng chọn nhãn Ground-Truth chuẩn.")
+      return
+    }
+    if (singleQualityNote.trim().length > 500) {
+      setErrLabel("Ghi chú chất lượng ảnh không được vượt quá 500 ký tự.")
+      return
+    }
+    setSavingLabel(true)
     try {
       const yoloAnnotations = !exclude ? parseOptionalYoloBox(singleGtLabel) : undefined
       const res = await assignGroundTruthLabel(currentItem.id, {
@@ -264,19 +289,28 @@ export default function AiReview() {
       setFlashLabel(res.message || "Đã lưu nhãn chuẩn Ground-Truth (MSG-CLS-07).")
       await loadLabelQueue(labelFilter)
     } catch (err) {
-      setFlashLabel(err instanceof Error ? err.message : "Lỗi gán nhãn Ground-Truth.")
+      setErrLabel(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Lỗi gán nhãn Ground-Truth.")
     } finally {
       setSavingLabel(false)
     }
   }
 
   const handleBatchAssign = async () => {
+    setErrLabel("")
+    setFlashLabel("")
     if (batchIds.length === 0) {
-      setFlashLabel("Hãy tích chọn ít nhất 1 ảnh trong hàng đợi để gán hàng loạt.")
+      setErrLabel("Hãy tích chọn ít nhất 1 ảnh trong hàng đợi để gán hàng loạt.")
+      return
+    }
+    if (!batchLabel.trim()) {
+      setErrLabel("Vui lòng chọn nhãn Ground-Truth hàng loạt.")
+      return
+    }
+    if (singleQualityNote.trim().length > 500) {
+      setErrLabel("Ghi chú chất lượng ảnh không được vượt quá 500 ký tự.")
       return
     }
     setSavingLabel(true)
-    setFlashLabel("")
     try {
       const res = await batchAssignAiLabels({
         itemIds: batchIds,
@@ -287,7 +321,7 @@ export default function AiReview() {
       setBatchIds([])
       await loadLabelQueue(labelFilter)
     } catch (err) {
-      setFlashLabel(err instanceof Error ? err.message : "Lỗi gán nhãn hàng loạt.")
+      setErrLabel(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Lỗi gán nhãn hàng loạt.")
     } finally {
       setSavingLabel(false)
     }
@@ -341,7 +375,14 @@ export default function AiReview() {
       {tab === "feedback" ? (
         <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
           {currentFb ? (
-            <div className="card flex flex-col gap-4 p-5">
+            <form
+              noValidate
+              onSubmit={(e) => {
+                e.preventDefault()
+                void handleReviewDecision("ApproveAndLabel")
+              }}
+              className="card flex flex-col gap-4 p-5"
+            >
               <figure className="overflow-hidden rounded-xl border border-line bg-surface-2">
                 <img
                   src={currentFb.imageUrl || "/assets/scanner/b7b43.png"}
@@ -424,9 +465,8 @@ export default function AiReview() {
 
               <div className="flex flex-wrap items-center gap-3 border-t border-line-soft pt-4">
                 <button
-                  type="button"
+                  type="submit"
                   disabled={savingFb || currentFb.status !== "Pending"}
-                  onClick={() => void handleReviewDecision("ApproveAndLabel")}
                   className="btn-primary h-10 px-5 text-[13px] disabled:opacity-50"
                 >
                   Duyệt &amp; Đưa vào Dataset (1 chạm)
@@ -449,12 +489,20 @@ export default function AiReview() {
                 </button>
               </div>
 
+              {errFb && (
+                <p
+                  role="alert"
+                  className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+                >
+                  {errFb}
+                </p>
+              )}
               {flashFb && (
                 <p role="status" className="text-[13px] font-semibold text-brand">
                   {flashFb}
                 </p>
               )}
-            </div>
+            </form>
           ) : loadingFeedbacks ? (
             <div className="card p-6 text-sm text-muted">
               Đang tải hàng đợi phản hồi AI...
@@ -566,7 +614,14 @@ export default function AiReview() {
         </div>
       ) : (
         <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
-          <div className="card flex flex-col gap-4 p-5">
+          <form
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault()
+              void handleSingleAssign(false)
+            }}
+            className="card flex flex-col gap-4 p-5"
+          >
             {currentItem ? (
               <>
                 <figure className="overflow-hidden rounded-xl border border-line bg-surface-2">
@@ -623,9 +678,8 @@ export default function AiReview() {
 
                 <div className="flex flex-wrap items-center gap-3 border-t border-line-soft pt-3">
                   <button
-                    type="button"
+                    type="submit"
                     disabled={savingLabel}
-                    onClick={() => void handleSingleAssign(false)}
                     className="btn-primary h-10 px-5 text-[13px] disabled:opacity-50"
                   >
                     Xác nhận nhãn chuẩn (S-02)
@@ -664,20 +718,28 @@ export default function AiReview() {
                 </select>
                 <button
                   type="button"
-                  disabled={savingLabel || batchIds.length === 0}
+                  disabled={savingLabel}
                   onClick={() => void handleBatchAssign()}
                   className="btn-outline h-10 px-4 text-[13px] disabled:opacity-50"
                 >
                   Gán hàng loạt ngay
                 </button>
               </div>
+              {errLabel && (
+                <p
+                  role="alert"
+                  className="mt-2.5 rounded-xl border border-warn/35 bg-warn/10 px-3.5 py-2 text-xs font-medium text-warn"
+                >
+                  {errLabel}
+                </p>
+              )}
               {flashLabel && (
                 <p role="status" className="mt-2 text-xs font-semibold text-brand">
                   {flashLabel}
                 </p>
               )}
             </div>
-          </div>
+          </form>
 
           <aside className="flex flex-col gap-3">
             <input

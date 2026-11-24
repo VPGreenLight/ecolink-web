@@ -284,6 +284,7 @@ export default function Chat() {
   const [draft, setDraft] = useState("")
   const [sending, setSending] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [chatErr, setChatErr] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Modal đề xuất thương lượng (kiêm Lên đơn từ Chat - Chiều A)
@@ -910,8 +911,17 @@ export default function Chat() {
 
   const sendTextDirect = async (rawText: string) => {
     const text = rawText.trim()
-    if (!text || sending) return
+    if (sending) return
+    if (!text) {
+      setChatErr("Vui lòng nhập nội dung tin nhắn hoặc chọn ảnh phế liệu để gửi.")
+      return
+    }
+    if (text.length > 2000) {
+      setChatErr("Nội dung tin nhắn không được vượt quá 2000 ký tự.")
+      return
+    }
 
+    setChatErr("")
     setSending(true)
     try {
       const wasDraftless = !currentOrderId
@@ -956,7 +966,7 @@ export default function Chat() {
         })
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Không thể gửi tin nhắn.")
+      setChatErr(err instanceof Error ? err.message : "Không thể gửi tin nhắn.")
     } finally {
       setSending(false)
     }
@@ -972,6 +982,19 @@ export default function Chat() {
   const handleSelectImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    setChatErr("")
+    const validType =
+      /^image\/(jpeg|jpg|png|webp)$/i.test(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name)
+    if (!validType) {
+      setChatErr(`Tệp "${file.name}" không phải ảnh JPG, PNG hoặc WEBP hợp lệ.`)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setChatErr(`Ảnh "${file.name}" vượt quá dung lượng tối đa 10 MB.`)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+      return
+    }
 
     setUploadingImage(true)
     try {
@@ -1023,7 +1046,7 @@ export default function Chat() {
         })
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Tải ảnh phế liệu thất bại.")
+      setChatErr(err instanceof Error ? err.message : "Tải ảnh phế liệu thất bại.")
     } finally {
       setUploadingImage(false)
       if (fileInputRef.current) fileInputRef.current.value = ""
@@ -1033,13 +1056,25 @@ export default function Chat() {
   // Gửi đề xuất giá, loại phế liệu, điểm hẹn & ngày/khung giờ mới (BR-NEG-04 + Chiều A Lên đơn trong Chat)
   const handleSendProposal = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (proposalPrice <= 0 || proposalWeight <= 0) {
-      setProposalErr("Vui lòng nhập đơn giá và khối lượng ước tính lớn hơn 0.")
+    if (!Number.isFinite(proposalPrice) || proposalPrice <= 0) {
+      setProposalErr("Vui lòng nhập đơn giá thu mua đề xuất lớn hơn 0 đ/kg.")
+      return
+    }
+    if (!Number.isFinite(proposalWeight) || proposalWeight <= 0) {
+      setProposalErr("Vui lòng nhập khối lượng ước tính lớn hơn 0 kg.")
       return
     }
     const scheduleErr = validateAppointmentSelection(proposalDate, proposalSlot)
     if (scheduleErr) {
       setProposalErr(scheduleErr)
+      return
+    }
+    if (proposalAddress.trim().length < 5 || proposalAddress.trim().length > 255) {
+      setProposalErr("Địa điểm thu gom phải từ 5 đến 255 ký tự.")
+      return
+    }
+    if (proposalNote.trim().length > 500) {
+      setProposalErr("Ghi chú đề xuất không được vượt quá 500 ký tự.")
       return
     }
     setProposalErr("")
@@ -1139,6 +1174,7 @@ export default function Chat() {
       return
     }
 
+    setChatErr("")
     try {
       const result = await respondToProposal(currentOrderId, messageId, {
         isAccepted,
@@ -1189,7 +1225,7 @@ export default function Chat() {
         }
       })
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Thao tác không thành công.")
+      setChatErr(err instanceof Error ? err.message : "Thao tác không thành công.")
     }
   }
 
@@ -1197,6 +1233,7 @@ export default function Chat() {
   const handleAcceptInitialTerms = async () => {
     if (!confirm("Xác nhận chấp nhận lịch hẹn và đơn giá ban đầu của người dân?")) return
 
+    setChatErr("")
     try {
       const result = await acceptOrderInitialTerms(currentOrderId)
       touchOrderPreview(
@@ -1231,7 +1268,7 @@ export default function Chat() {
         }
       })
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Không thể chốt đơn.")
+      setChatErr(err instanceof Error ? err.message : "Không thể chốt đơn.")
     }
   }
 
@@ -2135,8 +2172,18 @@ export default function Chat() {
             )}
           </div>
 
+          {chatErr && (
+            <p
+              role="alert"
+              className="mx-3 mb-2 rounded-xl border border-warn/35 bg-warn/10 px-3.5 py-2 text-xs font-medium text-warn"
+            >
+              {chatErr}
+            </p>
+          )}
+
           {/* Thanh nhập tin nhắn kiểu Messenger */}
           <form
+            noValidate
             onSubmit={handleSendMessage}
             className="flex items-center gap-1.5 sm:gap-2 border-t border-line bg-surface px-2.5 sm:px-4 py-2.5"
           >
@@ -2182,6 +2229,7 @@ export default function Chat() {
               onChange={(e) => {
                 const val = e.target.value
                 setDraft(val)
+                setChatErr("")
                 if (hubRef.current && currentOrderId) {
                   sendTypingIndicator(hubRef.current, currentOrderId, true).catch(() => {})
                 }
@@ -2198,7 +2246,7 @@ export default function Chat() {
 
             <button
               type="submit"
-              disabled={!canCompose || !draft.trim() || sending}
+              disabled={!canCompose || sending}
               aria-label="Gửi tin nhắn"
               className="btn-primary h-9 sm:h-10 shrink-0 rounded-full px-3 sm:px-4 text-xs sm:text-sm"
             >
@@ -2375,7 +2423,7 @@ export default function Chat() {
               </button>
             </div>
 
-            <form onSubmit={handleSendProposal} className="flex flex-col gap-4 text-xs">
+            <form noValidate onSubmit={handleSendProposal} className="flex flex-col gap-4 text-xs">
               <div>
                 <label className="mb-1 block font-semibold text-ink">
                   Loại phế liệu thu gom: <RequiredMark />

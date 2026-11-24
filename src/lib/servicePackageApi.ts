@@ -26,6 +26,7 @@ import {
   apiRequest,
   clearSessionOnUnauthorized,
   fetchWithAutoHost,
+  resolveApiErrorMessage,
   rotateRefreshTokenSingleFlight,
   type ApiResponse,
 } from "@/lib/api"
@@ -56,6 +57,7 @@ export interface ProEligibilityReportDto {
   averageRating: number
   totalReviews: number
   minRequiredRating: number
+  minRequiredReviews?: number
   minRequiredReviewsForRenewal: number
   isNotCurrentlyActivePro: boolean
   activeProExpiresAt?: string | null
@@ -409,8 +411,31 @@ export const CANONICAL_FALLBACK_PACKAGES: AdminServicePackageDto[] = [
       mapPriorityBoost: 100,
     },
     isActive: true,
-    isEligible: true,
+    isEligible: false,
+    ineligibleReason:
+      "Cơ sở thu mua cần xác minh KYB và đạt tối thiểu 50 lượt đánh giá (trung bình >= 4.0 sao) để đăng ký gói Tích xanh Pro.",
     isCurrentPlan: false,
+    proEligibility: {
+      isEligible: false,
+      isReRegistration: false,
+      isKybAndProfileValid: true,
+      verificationStatus: "Verified",
+      requiresProfileReverification: false,
+      isWarningLimitOk: true,
+      currentWarningCount: 0,
+      maxAllowedWarnings: 5,
+      isPositiveFeedbackMet: false,
+      averageRating: 0,
+      totalReviews: 0,
+      minRequiredRating: 4.0,
+      minRequiredReviews: 50,
+      minRequiredReviewsForRenewal: 50,
+      isNotCurrentlyActivePro: true,
+      activeProExpiresAt: null,
+      blockingReasons: [
+        "Cơ sở thu mua hiện có 0/50 lượt đánh giá (yêu cầu tối thiểu 50 lượt đánh giá thực tế và điểm trung bình từ 4.0/5.0 sao trở lên để đăng ký gói Tích xanh Pro).",
+      ],
+    },
     activeSubscribersCount: 38,
     totalPaidOrdersCount: 41,
     totalRevenueVnd: 41000000,
@@ -650,13 +675,16 @@ export async function exportReconciliationReportBlob(
   if (!res.ok) {
     if (res.status === 401) clearSessionOnUnauthorized()
     let errMsg = `Xuất bảng kê đối soát thất bại (HTTP ${res.status}).`
+    let detailErrors: string[] | undefined
     try {
-      const json = (await res.json()) as { message?: string }
-      if (json?.message) errMsg = json.message
+      const json = (await res.json()) as { message?: string; errors?: string[] }
+      detailErrors = Array.isArray(json?.errors) ? json.errors : undefined
+      const resolved = resolveApiErrorMessage(json?.message, detailErrors)
+      if (resolved) errMsg = resolved
     } catch {
       // ignore non-json
     }
-    throw new ApiError({ status: res.status, message: errMsg })
+    throw new ApiError({ status: res.status, message: errMsg, errors: detailErrors })
   }
 
   const blob = await res.blob()

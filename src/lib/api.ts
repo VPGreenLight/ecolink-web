@@ -37,6 +37,43 @@ export interface ApiResponse<T> {
   timestamp?: string
 }
 
+export function cleanValidationErrorItem(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return ""
+  if (/The JSON value could not be converted/i.test(trimmed)) {
+    return "Định dạng dữ liệu gửi lên không hợp lệ."
+  }
+  const stripped = trimmed.replace(/^[A-Za-z_][A-Za-z0-9_.[\]]*:\s*/, "").trim()
+  return stripped || trimmed
+}
+
+export function resolveApiErrorMessage(
+  envMessage?: string | null,
+  detailErrors?: string[] | null,
+): string | undefined {
+  const cleanedDetails = (detailErrors ?? [])
+    .map(cleanValidationErrorItem)
+    .filter(Boolean)
+    .filter((v, idx, arr) => arr.indexOf(v) === idx)
+
+  const trimmedEnv = envMessage?.trim() ?? ""
+  if (cleanedDetails.length > 0) {
+    const isGenericWrapper =
+      !trimmedEnv ||
+      /^Dữ liệu .*không hợp lệ\.?$/i.test(trimmedEnv) ||
+      trimmedEnv === "Xử lý yêu cầu không thành công." ||
+      trimmedEnv === "Thao tác không thành công."
+    if (isGenericWrapper) {
+      return cleanedDetails.join(" ")
+    }
+    if (!trimmedEnv.includes(cleanedDetails[0])) {
+      return `${trimmedEnv} (${cleanedDetails.join("; ")})`
+    }
+  }
+
+  return trimmedEnv || (cleanedDetails.length > 0 ? cleanedDetails.join(" ") : undefined)
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly messageCode?: string
@@ -468,8 +505,7 @@ export async function apiRequest<T>(
     const env = parsed as Partial<ApiResponse<unknown>> & { message?: string } | null
     const detailErrors = Array.isArray(env?.errors) ? env.errors : undefined
     const primaryMessage =
-      env?.message ||
-      (detailErrors && detailErrors.length > 0 ? detailErrors[0] : undefined) ||
+      resolveApiErrorMessage(env?.message, detailErrors) ||
       (res.status === 404
         ? "Không tìm thấy dữ liệu yêu cầu."
         : res.status === 401
@@ -495,11 +531,12 @@ export async function apiRequest<T>(
   ) {
     const env = parsed as ApiResponse<T>
     if (!env.success) {
+      const detailErrors = Array.isArray(env.errors) ? env.errors : undefined
       throw new ApiError({
         status: res.status,
         messageCode: env.messageCode ?? undefined,
-        message: env.message || "Xử lý yêu cầu không thành công.",
-        errors: env.errors ?? undefined,
+        message: resolveApiErrorMessage(env.message, detailErrors) || "Xử lý yêu cầu không thành công.",
+        errors: detailErrors,
       })
     }
     return env

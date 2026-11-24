@@ -61,6 +61,7 @@ export default function RecyclerHome() {
   const [open, setOpen] = useState(true)
   const [toggling, setToggling] = useState(false)
   const [flash, setFlash] = useState("")
+  const [actionErr, setActionErr] = useState("")
   const [syncedBackend, setSyncedBackend] = useState(false)
 
   const liveAuth = hasLiveBackendAuth()
@@ -112,6 +113,7 @@ export default function RecyclerHome() {
     initApiState("", "123 Đường Nguyễn Hữu Cảnh, P. 22, Bình Thạnh, TP.HCM"),
   )
   const [savingPin, setSavingPin] = useState(false)
+  const [pinErr, setPinErr] = useState("")
 
   const [loadingHandovers, setLoadingHandovers] = useState<boolean>(() => initApiLoading(true))
   const [handovers, setHandovers] = useState<UpcomingRow[]>(() =>
@@ -128,7 +130,7 @@ export default function RecyclerHome() {
       if (pkgRes.success && Array.isArray(pkgRes.data) && pkgRes.data.length > 0) {
         setPackages(pkgRes.data)
       }
-      if (getAccessToken()) {
+      if (getAccessToken() || liveAuth) {
         const [subRes, ordRes] = await Promise.allSettled([
           getMyServiceSubscriptions(),
           getMyServiceOrders({ pageNumber: 1, pageSize: 5 }),
@@ -205,13 +207,15 @@ export default function RecyclerHome() {
   const handleToggleAvailability = async () => {
     const nextOnline = !open
     setToggling(true)
+    setActionErr("")
+    setFlash("")
     try {
       const res = await toggleRecyclerOnlineStatus(nextOnline)
       setOpen(res.isOnline)
       setSyncedBackend(res.fromBackend)
       setFlash(res.message)
     } catch (err) {
-      setFlash(
+      setActionErr(
         err instanceof Error
           ? err.message
           : "Không thể cập nhật trạng thái hoạt động lúc này.",
@@ -221,10 +225,24 @@ export default function RecyclerHome() {
     }
   }
 
-  const handleSaveWarehousePin = async () => {
+  const handleSaveWarehousePin = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    if (savingPin) return
+    setPinErr("")
+    setActionErr("")
+    setFlash("")
+    const cleanAddress = draftAddress.trim()
+    if (cleanAddress.length < 5 || cleanAddress.length > 255) {
+      setPinErr("Địa chỉ kho bãi công khai phải từ 5 đến 255 ký tự.")
+      return
+    }
+    if (!Number.isFinite(draftLat) || !Number.isFinite(draftLng) || (draftLat === 0 && draftLng === 0)) {
+      setPinErr("Vui lòng chọn toạ độ vị trí kho bãi hợp lệ trên bản đồ.")
+      return
+    }
     setSavingPin(true)
     try {
-      const res = await updateRecyclerWarehousePin(profile, draftLat, draftLng, draftAddress)
+      const res = await updateRecyclerWarehousePin(profile, draftLat, draftLng, cleanAddress)
       setProfile(res.profile)
       setSyncedBackend(res.fromBackend)
       setEditingLocation(false)
@@ -232,6 +250,12 @@ export default function RecyclerHome() {
         res.fromBackend
           ? "Đã cập nhật toạ độ kho bãi lên hệ thống. Ghim trên bản đồ /map đã dời sang vị trí mới."
           : "Đã lưu vị trí kho bãi mới và đồng bộ với bản đồ.",
+      )
+    } catch (err) {
+      setPinErr(
+        err instanceof Error
+          ? err.message
+          : "Không thể cập nhật vị trí kho bãi lên hệ thống.",
       )
     } finally {
       setSavingPin(false)
@@ -256,10 +280,12 @@ export default function RecyclerHome() {
       setPkgErr("Gói Tích xanh Pro không hỗ trợ gia hạn cộng dồn trước hạn. Vui lòng xác thực lại sau khi hết kỳ.")
       return
     }
-    if (isPro && (!isKybVerified || !pkg.isEligible)) {
+    const proEval = isPro ? pkg.proEligibility : null
+    if (isPro && (!isKybVerified || !pkg.isEligible || (liveAuth && !proEval?.isEligible))) {
       setPkgErr(
         pkg.ineligibleReason ||
-          "Cơ sở thu mua cần hoàn tất xác minh hồ sơ KYB và đạt đầy đủ tiêu chí uy tín trước khi mua gói Pro.",
+          proEval?.blockingReasons?.[0] ||
+          "Cơ sở thu mua cần hoàn tất xác minh hồ sơ KYB và đạt tối thiểu 50 lượt đánh giá (trung bình >= 4.0 ★) trước khi mua gói Pro.",
       )
       return
     }
@@ -268,7 +294,7 @@ export default function RecyclerHome() {
     setPkgNotice("")
     setBuyingCode(pkg.packageCode)
     try {
-      if (!getAccessToken()) {
+      if (!getAccessToken() && !liveAuth) {
         const rand = Math.floor(100000 + Math.random() * 900000)
         const orderCode = `ECO${new Date().toISOString().slice(2, 10).replace(/-/g, "")}${rand}`
         const transferContent = `ECOLINK ${orderCode}`
@@ -443,6 +469,14 @@ export default function RecyclerHome() {
         </button>
       </section>
 
+      {actionErr && (
+        <p
+          role="alert"
+          className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn"
+        >
+          {actionErr}
+        </p>
+      )}
       {flash && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand/25 bg-brand/6 px-4 py-3">
           <p role="status" className="text-[13px] font-semibold text-brand-deep">
@@ -470,7 +504,10 @@ export default function RecyclerHome() {
             </Link>
             <button
               type="button"
-              onClick={() => setEditingLocation((v) => !v)}
+              onClick={() => {
+                setEditingLocation((v) => !v)
+                setPinErr("")
+              }}
               className="btn-outline h-9 px-3.5 text-xs"
             >
               {editingLocation ? "Đóng chỉnh vị trí" : "Cập nhật ghim kho bãi"}
@@ -479,13 +516,20 @@ export default function RecyclerHome() {
         </div>
 
         {editingLocation && (
-          <div className="flex flex-col gap-3 border-t border-line-soft pt-4">
+          <form
+            noValidate
+            onSubmit={(e) => void handleSaveWarehousePin(e)}
+            className="flex flex-col gap-3 border-t border-line-soft pt-4"
+          >
             <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-ink">
               Địa chỉ hiển thị công khai
               <input
                 className="input"
                 value={draftAddress}
-                onChange={(e) => setDraftAddress(e.target.value)}
+                onChange={(e) => {
+                  setDraftAddress(e.target.value)
+                  setPinErr("")
+                }}
               />
             </label>
             <LocationPinPickerMap
@@ -495,14 +539,22 @@ export default function RecyclerHome() {
               onChange={(nextLat, nextLng, hint) => {
                 setDraftLat(nextLat)
                 setDraftLng(nextLng)
+                setPinErr("")
                 if (hint) setDraftAddress(hint)
               }}
             />
+            {pinErr && (
+              <p
+                role="alert"
+                className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn"
+              >
+                {pinErr}
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-3">
               <button
-                type="button"
+                type="submit"
                 disabled={savingPin}
-                onClick={() => void handleSaveWarehousePin()}
                 className="btn-primary h-10 px-5 text-xs"
               >
                 {savingPin ? "Đang lưu toạ độ..." : "Lưu vị trí kho bãi"}
@@ -511,7 +563,7 @@ export default function RecyclerHome() {
                 Vị trí mới sẽ cập nhật ngay trên truy vấn bán kính của người dân.
               </span>
             </div>
-          </div>
+          </form>
         )}
       </section>
 
@@ -589,9 +641,14 @@ export default function RecyclerHome() {
             const isCurrent =
               !isIncludedInHigherPlan &&
               (pkg.isCurrentPlan || currentTierRank === pkgRank)
-            const blockedPro =
-              isPro && !isCurrent && (!isKybVerified || pkg.isEligible === false)
             const proEval = isPro ? pkg.proEligibility : null
+            const minReviews =
+              proEval?.minRequiredReviews ?? proEval?.minRequiredReviewsForRenewal ?? 50
+            const minRating = proEval?.minRequiredRating ?? 4.0
+            const blockedPro =
+              isPro &&
+              !isCurrent &&
+              (!isKybVerified || pkg.isEligible === false || (liveAuth && !proEval?.isEligible))
 
             return (
               <article
@@ -675,16 +732,26 @@ export default function RecyclerHome() {
                           </span>
                         </li>
                         <li className="flex items-start gap-1.5">
-                          <span className={proEval ? (proEval.isPositiveFeedbackMet ? "text-brand font-bold" : "text-warn font-bold") : "text-brand font-bold"}>
-                            {proEval ? (proEval.isPositiveFeedbackMet ? "✓" : "✕") : "✓"}
+                          <span
+                            className={
+                              proEval?.isPositiveFeedbackMet
+                                ? "text-brand font-bold"
+                                : "text-warn font-bold"
+                            }
+                          >
+                            {proEval?.isPositiveFeedbackMet ? "✓" : "✕"}
                           </span>
                           <span>
                             Đánh giá:{" "}
-                            {proEval && proEval.totalReviews > 0
-                              ? `${proEval.averageRating.toFixed(1)}/5.0 ★ (${proEval.totalReviews} lượt · >= 4.0)`
-                              : proEval?.isReRegistration
-                                ? "Tái đăng ký cần >= 1 đánh giá >= 4.0 ★"
-                                : "Đạt chuẩn (Duy trì >= 4.0 ★)"}
+                            {!proEval || proEval.totalReviews < minReviews
+                              ? `${proEval?.totalReviews ?? 0}/${minReviews} lượt${
+                                  proEval && proEval.totalReviews > 0
+                                    ? ` (${proEval.averageRating.toFixed(1)}/5.0 ★)`
+                                    : ""
+                                } · Cần >= ${minReviews} lượt & >= ${minRating.toFixed(1)} ★`
+                              : proEval.isPositiveFeedbackMet
+                                ? `${proEval.averageRating.toFixed(1)}/5.0 ★ (${proEval.totalReviews} lượt · Đạt chuẩn >= ${minRating.toFixed(1)} ★)`
+                                : `${proEval.averageRating.toFixed(1)}/5.0 ★ (${proEval.totalReviews} lượt · Cần >= ${minRating.toFixed(1)} ★)`}
                           </span>
                         </li>
                         <li className="flex items-start gap-1.5">
@@ -724,15 +791,26 @@ export default function RecyclerHome() {
                       {" · "}Không gia hạn cộng dồn (xét duyệt lại khi hết kỳ)
                     </div>
                   ) : blockedPro ? (
-                    <button
-                      type="button"
-                      disabled
-                      title={pkg.ineligibleReason || "Chưa đáp ứng đủ điều kiện đăng ký gói Pro"}
-                      className="btn-outline inline-flex h-9 w-full cursor-not-allowed items-center justify-center gap-1.5 text-xs opacity-75"
-                    >
-                      <Lock className="size-3.5" />
-                      Chưa đủ điều kiện lên Pro
-                    </button>
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        disabled
+                        title={
+                          pkg.ineligibleReason ||
+                          proEval?.blockingReasons?.[0] ||
+                          "Chưa đáp ứng đủ điều kiện đăng ký gói Pro"
+                        }
+                        className="btn-outline inline-flex h-9 w-full cursor-not-allowed items-center justify-center gap-1.5 text-xs opacity-75"
+                      >
+                        <Lock className="size-3.5" />
+                        Chưa đủ điều kiện lên Pro
+                      </button>
+                      {(pkg.ineligibleReason || proEval?.blockingReasons?.[0]) && (
+                        <p className="text-[11px] leading-4 text-warn">
+                          {pkg.ineligibleReason || proEval?.blockingReasons?.[0]}
+                        </p>
+                      )}
+                    </div>
                   ) : (
                     <button
                       type="button"

@@ -118,15 +118,31 @@ export default function JoinRecycler() {
       return
     }
     if (name.trim().length < 3) {
-      setErr("Cần tên cơ sở để thẩm định hồ sơ.")
+      setErr("Cần tên cơ sở tối thiểu 3 ký tự để thẩm định hồ sơ.")
+      return
+    }
+    if (name.trim().length > 150) {
+      setErr("Tên cơ sở không được vượt quá 150 ký tự.")
+      return
+    }
+    if (owner.trim().length < 2 || owner.trim().length > 100) {
+      setErr("Tên người đại diện phải từ 2 đến 100 ký tự.")
       return
     }
     if (!/^(?:\+84|0)\d{9,10}$/.test(phone.replace(/[\s.\-()]/g, ""))) {
       setErr("Số điện thoại chưa đúng định dạng Việt Nam.")
       return
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
+      setErr("Email nhận kết quả thẩm định chưa đúng định dạng.")
+      return
+    }
     if (!address.trim()) {
       setErr("Cần địa chỉ nơi thu gom thực tế.")
+      return
+    }
+    if (address.trim().length > 255) {
+      setErr("Địa chỉ kho bãi không được vượt quá 255 ký tự.")
       return
     }
     if (lat === 0 && lng === 0) {
@@ -141,8 +157,30 @@ export default function JoinRecycler() {
       setErr("Vui lòng tải lên Giấy phép kinh doanh hoặc chứng từ pháp lý.")
       return
     }
+    const permitOk =
+      /^(image\/(jpeg|jpg|png|webp)|application\/pdf)$/i.test(permitFile.type) ||
+      /\.(pdf|jpe?g|png|webp)$/i.test(permitFile.name)
+    if (!permitOk) {
+      setErr("Giấy phép kinh doanh chỉ hỗ trợ tệp PDF, JPG, PNG hoặc WEBP.")
+      return
+    }
+    if (permitFile.size > 10 * 1024 * 1024) {
+      setErr("Tệp Giấy phép kinh doanh vượt quá dung lượng tối đa 10 MB.")
+      return
+    }
     if (!facilityPhotoFile) {
       setErr("Vui lòng tải lên Ảnh chụp mặt tiền / kho bãi thu gom.")
+      return
+    }
+    const photoOk =
+      /^image\/(jpeg|jpg|png|webp)$/i.test(facilityPhotoFile.type) ||
+      /\.(jpe?g|png|webp)$/i.test(facilityPhotoFile.name)
+    if (!photoOk) {
+      setErr("Ảnh chụp mặt tiền / kho bãi chỉ hỗ trợ định dạng JPG, PNG hoặc WEBP.")
+      return
+    }
+    if (facilityPhotoFile.size > 10 * 1024 * 1024) {
+      setErr("Ảnh chụp mặt tiền / kho bãi vượt quá dung lượng tối đa 10 MB.")
       return
     }
 
@@ -495,7 +533,14 @@ export default function JoinRecycler() {
           </div>
         </div>
 
-        {err && <p className="text-[13px] text-warn">{err}</p>}
+        {err && (
+          <p
+            role="alert"
+            className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+          >
+            {err}
+          </p>
+        )}
 
         <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
           <button

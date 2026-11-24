@@ -26,6 +26,10 @@ export default function Password() {
       setErr("Mật khẩu mới cần ít nhất 8 ký tự.")
       return
     }
+    if (next.length > 100) {
+      setErr("Mật khẩu mới không được vượt quá 100 ký tự.")
+      return
+    }
     if (next !== again) {
       setErr("Hai mật khẩu mới không khớp nhau.")
       return

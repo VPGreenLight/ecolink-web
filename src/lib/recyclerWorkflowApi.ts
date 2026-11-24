@@ -600,15 +600,12 @@ export async function submitRecyclerOnboarding(
       .slice(0, 12) || "recycler"
   const suffix = String(Date.now()).slice(-5)
   const username = `${slug}_${suffix}`
-  const email =
-    input.email.trim() || `${username}@partner.ecolink.vn`
+  const email = input.email.trim()
 
   const currentSession = getSession()
   const isAuthenticatedUpgrade = Boolean(getAccessToken())
   const resolvedRepresentative = (
-    input.representativeName.trim() ||
-    currentSession?.name?.trim() ||
-    input.facilityName.trim()
+    input.representativeName.trim() || currentSession?.name?.trim() || ""
   ).slice(0, 100)
 
   try {
@@ -716,13 +713,8 @@ export async function submitRecyclerOnboarding(
       userId: createdId || undefined,
     }
   } catch (err) {
-    if (err instanceof ApiError && !err.isNetworkError) {
+    if (hasLiveBackendAuth() || !(err instanceof ApiError && err.isNetworkError)) {
       throw err
-    }
-    if (hasLiveBackendAuth()) {
-      throw err instanceof Error
-        ? err
-        : new Error("Không thể gửi hồ sơ thẩm định lên máy chủ lúc này. Vui lòng thử lại.")
     }
 
     // Dự phòng ngoại tuyến: chỉ chạy khi thực sự không có máy chủ Backend và chưa đăng nhập thực
@@ -842,7 +834,7 @@ export async function toggleRecyclerOnlineStatus(nextOnline: boolean): Promise<{
       fromBackend: true,
     }
   } catch (err) {
-    if (err instanceof ApiError && !err.isNetworkError && err.status >= 400 && err.status < 500) {
+    if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
       throw err
     }
 
@@ -896,7 +888,10 @@ export async function updateRecyclerWarehousePin(
     })
 
     return { profile: res.data, fromBackend: true }
-  } catch {
+  } catch (err) {
+    if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+      throw err
+    }
     const updated: RecyclerProfileDto = {
       ...currentProfile,
       latitude: nextLat,
@@ -1271,7 +1266,7 @@ export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
     }
     syncedWithBackend = true
   } catch (err) {
-    if (err instanceof ApiError && !err.isNetworkError && err.status >= 400 && err.status < 500) {
+    if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
       throw err
     }
     syncedWithBackend = false
@@ -1373,8 +1368,12 @@ export async function updateHandoverOrderStatus(
           method: "POST",
         })
         syncedWithBackend = true
-      } catch {
-        // Nếu endpoint /accept từ chối, dự phòng sang PATCH /status
+      } catch (err) {
+        if (!(err instanceof ApiError && err.status === 404)) {
+          if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+            throw err
+          }
+        }
       }
     }
 
@@ -1395,7 +1394,10 @@ export async function updateHandoverOrderStatus(
           mappedOrder = mapApiOrderToSynced(res.data)
         }
         syncedWithBackend = true
-      } catch {
+      } catch (err) {
+        if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+          throw err
+        }
         syncedWithBackend = false
       }
     }
@@ -1449,7 +1451,7 @@ export async function updateHandoverOrderTimeSlot(
       })
       syncedWithBackend = true
     } catch (err) {
-      if (err instanceof ApiError && !err.isNetworkError && err.status >= 400 && err.status < 500) {
+      if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
         throw err
       }
       syncedWithBackend = false
@@ -1644,8 +1646,10 @@ export async function saveRecyclerPrices(
       writeSyncState({ ...state, customPrices: res.data })
       return { items: res.data, syncedWithBackend: true }
     }
-  } catch {
-    // Backend offline fallback
+  } catch (err) {
+    if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+      throw err
+    }
   }
 
   const now = new Date().toISOString()

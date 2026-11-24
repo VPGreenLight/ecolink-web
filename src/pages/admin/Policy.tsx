@@ -4,7 +4,9 @@ import PlatformPoliciesTab from "@/components/admin/PlatformPoliciesTab"
 import { Empty, Field, FormRequiredLegend, PageHead, Status, TableSkeleton } from "@/components/admin/ui"
 import { GAMIFICATION } from "@/data/ops"
 import { WASTES } from "@/data/waste"
+import { ApiError } from "@/lib/api"
 import { initApiLoading, initApiState } from "@/lib/hydration"
+import { hasLiveBackendAuth } from "@/lib/session"
 import {
   fetchDetailedSortingRules,
   fetchWasteCategories,
@@ -174,33 +176,67 @@ export default function Policy() {
     applicableRegion: r.applicableRegion || "VN_NATIONAL",
   })
 
+  const validateRule = (r: PolicyRuleRow): string | null => {
+    const title = r.title.trim()
+    const prep = r.preparationSteps.trim()
+    const inst = r.sortingInstruction.trim()
+    const act = r.handlingAction.trim()
+    if (!title || title.length > 150) {
+      return `Danh mục '${r.categoryCode}': Tiêu đề hướng dẫn không được để trống và tối đa 150 ký tự.`
+    }
+    if (!prep || prep.length > 2000) {
+      return `Danh mục '${r.categoryCode}': Các bước chuẩn bị bắt buộc nhập (tối đa 2000 ký tự).`
+    }
+    if (!inst || inst.length > 2000) {
+      return `Danh mục '${r.categoryCode}': Hướng dẫn phân loại bắt buộc nhập (tối đa 2000 ký tự).`
+    }
+    if (!act || act.length > 1000) {
+      return `Danh mục '${r.categoryCode}': Hành động khuyến nghị bắt buộc nhập (tối đa 1000 ký tự).`
+    }
+    return null
+  }
+
   const handleSaveRule = async (r: PolicyRuleRow) => {
+    setFlash("")
+    setErrMsg("")
+    const validationErr = validateRule(r)
+    if (validationErr) {
+      setErrMsg(validationErr)
+      return
+    }
     if (!r.isBackend || !r.wasteCategoryId) {
+      if (hasLiveBackendAuth()) {
+        setErrMsg("Quy tắc này chưa liên kết với danh mục trên máy chủ.")
+        return
+      }
       setFlash("Đã lưu thay đổi cục bộ.")
       return
     }
     setBusyId(r.id)
-    setFlash("")
-    setErrMsg("")
     try {
       const res = await upsertSortingRule(r.wasteCategoryId, buildRulePayload(r))
       setRules((rs) => rs.map((item) => (item.id === r.id ? mapDetailToRow(res.data) : item)))
       setFlash(`Đã lưu bản nháp quy tắc '${res.data.categoryCode}'. Bấm 'Công bố & Đồng bộ AI' để kích hoạt.`)
     } catch (err) {
-      setErrMsg(err instanceof Error ? err.message : "Không thể lưu quy tắc phân loại.")
+      setErrMsg(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Không thể lưu quy tắc phân loại.")
     } finally {
       setBusyId(null)
     }
   }
 
   const handlePublishRule = async (r: PolicyRuleRow) => {
+    setFlash("")
+    setErrMsg("")
+    const validationErr = validateRule(r)
+    if (validationErr) {
+      setErrMsg(validationErr)
+      return
+    }
     if (!r.isBackend || !r.wasteCategoryId) {
-      setFlash("Chỉ hỗ trợ công bố quy tắc khi đã kết nối máy chủ Admin.")
+      setErrMsg("Chỉ hỗ trợ công bố quy tắc khi đã kết nối máy chủ Admin.")
       return
     }
     setBusyId(r.id)
-    setFlash("")
-    setErrMsg("")
     try {
       let targetRuleId = r.ruleId && r.ruleId !== EMPTY_GUID ? r.ruleId : ""
       if (!targetRuleId) {
@@ -220,21 +256,32 @@ export default function Policy() {
           : `Đã phát hành quy tắc '${res.data.rule.categoryCode}' trên Core DB (AI sync: ${res.data.aiSyncMessage ?? "tạm hoãn"}).`,
       )
     } catch (err) {
-      setErrMsg(err instanceof Error ? err.message : "Không thể phát hành quy tắc.")
+      setErrMsg(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Không thể phát hành quy tắc.")
     } finally {
       setBusyId(null)
     }
   }
 
   const handleSaveAll = async () => {
+    setFlash("")
+    setErrMsg("")
+    for (const r of rules) {
+      const validationErr = validateRule(r)
+      if (validationErr) {
+        setErrMsg(validationErr)
+        return
+      }
+    }
     const backendRules = rules.filter((r) => r.isBackend && r.wasteCategoryId)
     if (backendRules.length === 0) {
+      if (hasLiveBackendAuth()) {
+        setErrMsg("Không có quy tắc nào được liên kết với danh mục máy chủ.")
+        return
+      }
       setFlash("Đã lưu. Hướng dẫn phân loại và kết quả AI hiện câu mới ngay.")
       return
     }
     setBusyId("ALL")
-    setFlash("")
-    setErrMsg("")
     try {
       const saved = await Promise.all(
         backendRules.map((r) => upsertSortingRule(r.wasteCategoryId!, buildRulePayload(r))),
@@ -243,7 +290,7 @@ export default function Policy() {
       setRules((prev) => prev.map((item) => mapByCat.get(item.wasteCategoryId ?? "") ?? item))
       setFlash("Đã lưu đồng loạt các quy tắc ở trạng thái DRAFT. Chọn từng thẻ để công bố.")
     } catch (err) {
-      setErrMsg(err instanceof Error ? err.message : "Lưu danh sách chính sách thất bại.")
+      setErrMsg(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Lưu danh sách chính sách thất bại.")
     } finally {
       setBusyId(null)
     }
@@ -302,7 +349,14 @@ export default function Policy() {
       {activeTab === "terms" ? (
         <PlatformPoliciesTab />
       ) : (
-        <>
+        <form
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault()
+            void handleSaveAll()
+          }}
+          className="flex flex-col gap-6"
+        >
           <FormRequiredLegend />
 
           <div className="flex flex-wrap items-end justify-between gap-3">
@@ -466,8 +520,7 @@ export default function Policy() {
 
           <div className="flex flex-wrap items-center gap-4">
             <button
-              type="button"
-              onClick={() => void handleSaveAll()}
+              type="submit"
               disabled={busyId === "ALL"}
               className="btn-primary h-11 px-6 disabled:opacity-60"
             >
@@ -509,7 +562,7 @@ export default function Policy() {
               kích hoạt chính thức sang AI Service (BR-SRT-03).
             </Status>
           </section>
-        </>
+        </form>
       )}
     </div>
   )

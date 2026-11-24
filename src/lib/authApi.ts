@@ -22,6 +22,7 @@
 import { ApiError, apiRequest, fetchWithAutoHost } from "@/lib/api"
 import {
   COOKIE_REFRESH_SENTINEL,
+  hasLiveBackendAuth,
   isRealJwt,
   mapBackendRole,
   registerLogoutHook,
@@ -199,11 +200,6 @@ function persistBackendAuth(dto: BackendAuthResponseDto, fallbackEmail?: string)
 
 export function formatAuthError(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.errors && err.errors.length > 0) {
-      // Ưu tiên thông báo chi tiết từ FluentValidation (bỏ tiền tố tên trường tiếng Anh nếu có)
-      const first = err.errors[0].replace(/^[A-Za-z0-9_.]+:\s*/, "").trim()
-      if (first) return first
-    }
     return err.message
   }
   if (err instanceof Error && err.message) {
@@ -709,7 +705,10 @@ export async function updateCurrentUserProfile(input: {
       fromBackend: true,
     }
   } catch (err) {
-    // Dự phòng khi Backend chưa khởi động hoặc tiến trình WebApi cũ chưa nạp endpoint /profile mới
+    if (hasLiveBackendAuth()) {
+      throw err
+    }
+    // Dự phòng khi Backend chưa khởi động trong chế độ demo ngoại tuyến
     if (err instanceof ApiError && (err.isNetworkError || err.status === 404)) {
       updateSession({
         name: cleanName,
@@ -749,6 +748,9 @@ export async function changeCurrentUserPassword(input: {
       fromBackend: true,
     }
   } catch (err) {
+    if (hasLiveBackendAuth()) {
+      throw err
+    }
     if (err instanceof ApiError && (err.isNetworkError || err.status === 404)) {
       return {
         message:

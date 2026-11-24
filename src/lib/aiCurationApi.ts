@@ -12,6 +12,7 @@ import {
   apiRequest,
   clearSessionOnUnauthorized,
   fetchWithAutoHost,
+  resolveApiErrorMessage,
   rotateRefreshTokenSingleFlight,
   type ApiResponse,
 } from "@/lib/api"
@@ -370,13 +371,16 @@ export async function downloadDatasetVersionZip(
   if (!res.ok) {
     if (res.status === 401) clearSessionOnUnauthorized()
     let errMsg = `Xuất gói dữ liệu thất bại (HTTP ${res.status}).`
+    let detailErrors: string[] | undefined
     try {
-      const json = (await res.json()) as { message?: string }
-      if (json?.message) errMsg = json.message
+      const json = (await res.json()) as { message?: string; errors?: string[] }
+      detailErrors = Array.isArray(json?.errors) ? json.errors : undefined
+      const resolved = resolveApiErrorMessage(json?.message, detailErrors)
+      if (resolved) errMsg = resolved
     } catch {
       // ignore non-json
     }
-    throw new ApiError({ status: res.status, message: errMsg })
+    throw new ApiError({ status: res.status, message: errMsg, errors: detailErrors })
   }
 
   const blob = await res.blob()

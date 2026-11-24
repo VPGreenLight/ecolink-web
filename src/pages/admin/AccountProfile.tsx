@@ -52,6 +52,11 @@ export default function AccountProfile() {
       setSavedMsg("")
       return
     }
+    if (name.trim().length > 100) {
+      setErr("Tên hiển thị không được vượt quá 100 ký tự.")
+      setSavedMsg("")
+      return
+    }
     if (!/^(?:\+84|0)\d{9,10}$/.test(phone.replace(/[\s.\-()]/g, ""))) {
       setErr("Số điện thoại chưa đúng định dạng Việt Nam.")
       setSavedMsg("")
@@ -128,7 +133,11 @@ export default function AccountProfile() {
             </span>
           </Field>
 
-          {err && <p className="text-[13px] text-warn">{err}</p>}
+          {err && (
+            <p role="alert" className="text-[13px] font-medium text-warn">
+              {err}
+            </p>
+          )}
 
           <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
             <button

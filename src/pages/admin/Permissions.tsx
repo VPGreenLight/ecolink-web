@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { PageHead, Status, Table, TableSkeleton, Td } from "@/components/admin/ui"
 import { PERMS, STAFF, type Staff } from "@/data/ops"
+import { hasLiveBackendAuth } from "@/lib/session"
 import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   getAdminStaffList,
@@ -40,6 +41,7 @@ export default function Permissions() {
   const [isLive, setIsLive] = useState(false)
   const [saving, setSaving] = useState(false)
   const [flash, setFlash] = useState("")
+  const [errMsg, setErrMsg] = useState("")
 
   useEffect(() => {
     let cancelled = false
@@ -78,10 +80,15 @@ export default function Permissions() {
   const saveAllChanges = async () => {
     setSaving(true)
     setFlash("")
+    setErrMsg("")
     try {
-      if (isLive) {
+      if (isLive || hasLiveBackendAuth()) {
         const targets = list.filter((s) => s.dirty && s.backendUserId)
         const listToSave = targets.length > 0 ? targets : list.filter((s) => s.backendUserId)
+        if (listToSave.length === 0) {
+          setErrMsg("Không tìm thấy dữ liệu nhân viên hợp lệ để đồng bộ phân quyền lên máy chủ.")
+          return
+        }
         let lastMessage = ""
         for (const row of listToSave) {
           if (!row.backendUserId) continue
@@ -98,7 +105,8 @@ export default function Permissions() {
         setFlash("Đã lưu ma trận phân quyền nhân viên (MSG-ADM-01).")
       }
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Cập nhật phân quyền thất bại.")
+      setFlash("")
+      setErrMsg(err instanceof Error ? err.message : "Cập nhật phân quyền thất bại.")
     } finally {
       setSaving(false)
     }
@@ -170,11 +178,17 @@ export default function Permissions() {
       </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <form
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault()
+          void saveAllChanges()
+        }}
+        className="flex flex-wrap items-center gap-3"
+      >
         <button
-          type="button"
+          type="submit"
           disabled={saving}
-          onClick={saveAllChanges}
           className="btn-primary h-11 px-6"
         >
           {saving
@@ -186,6 +200,7 @@ export default function Permissions() {
         <button
           type="button"
           onClick={() => {
+            setErrMsg("")
             setList((ls) =>
               ls.map((s) => ({ ...s, dirty: true, perms: PERMS.map((p) => p.id) })),
             )
@@ -198,6 +213,7 @@ export default function Permissions() {
         <button
           type="button"
           onClick={() => {
+            setErrMsg("")
             setList((ls) => ls.map((s) => ({ ...s, dirty: true, perms: [] })))
             setFlash("Đã bỏ chọn toàn bộ quyền. Nhấn 'Lưu cấu hình phân quyền' để xác nhận thu hồi.")
           }}
@@ -205,12 +221,17 @@ export default function Permissions() {
         >
           Thu hồi toàn bộ quyền
         </button>
+        {errMsg && (
+          <p role="alert" className="text-[13px] font-semibold text-warn">
+            {errMsg}
+          </p>
+        )}
         {flash && (
           <p role="status" className="text-[13px] font-semibold text-brand">
             {flash}
           </p>
         )}
-      </div>
+      </form>
 
       <section>
         <h2 className="text-base font-bold text-ink">Trạng thái hiện tại</h2>

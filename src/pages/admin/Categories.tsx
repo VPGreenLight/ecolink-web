@@ -2,7 +2,9 @@ import { useEffect, useState } from "react"
 import { Field, FormRequiredLegend, PageHead, Status, Table, TableSkeleton, Td } from "@/components/admin/ui"
 import { WASTE_GROUPS, WASTES, VND } from "@/data/waste"
 import { fmtInt } from "@/data/ops"
+import { ApiError } from "@/lib/api"
 import { initApiLoading, initApiState } from "@/lib/hydration"
+import { hasLiveBackendAuth } from "@/lib/session"
 import {
   createWasteCategory,
   fetchWasteCategories,
@@ -72,6 +74,7 @@ export default function Categories() {
   const [rows, setRows] = useState<CategoryRow[]>(() => initApiState([], FALLBACK_ROWS))
   const [loading, setLoading] = useState(() => initApiLoading(true))
   const [flash, setFlash] = useState("")
+  const [tableErr, setTableErr] = useState("")
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -96,28 +99,54 @@ export default function Categories() {
     setRows((rs) => rs.map((w) => (w.id === id ? { ...w, ...patch, dirty: true } : w)))
 
   const handleSaveAll = async () => {
-    setSaving(true)
+    setTableErr("")
     setFlash("")
+    const invalidRow = rows.find(
+      (r) =>
+        !r.name.trim() ||
+        r.name.trim().length > 100 ||
+        !r.standardBinColor.trim() ||
+        r.standardBinColor.trim().length > 50,
+    )
+    if (invalidRow) {
+      setTableErr(
+        `Danh mục '${invalidRow.code}': Tên loại rác (tối đa 100 ký tự) và Màu thùng chuẩn (tối đa 50 ký tự) không được để trống.`,
+      )
+      return
+    }
+    setSaving(true)
     try {
       const backendDirty = rows.filter((r) => r.isBackend && r.dirty)
       if (backendDirty.length > 0) {
         const updatedList = await Promise.all(
           backendDirty.map((r) =>
             updateWasteCategory(r.id, {
-              name: r.name,
-              description: r.description || r.rule,
-              standardBinColor: r.standardBinColor || "Cam",
+              name: r.name.trim(),
+              description: (r.description || r.rule).trim(),
+              standardBinColor: r.standardBinColor.trim(),
               isRecyclable: r.recyclable,
             }),
           ),
         )
         const updatedMap = new Map(updatedList.map((res) => [res.data.id, mapDtoToRow(res.data)]))
         setRows((prev) => prev.map((r) => updatedMap.get(r.id) ?? { ...r, dirty: false }))
+      } else if (hasLiveBackendAuth()) {
+        setFlash("Không có thay đổi nào cần lưu.")
+        return
       }
       setFlash("Đã lưu đồng bộ danh mục rác lên máy chủ.")
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Đã lưu thay đổi cục bộ."
-      setFlash(msg)
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Không thể lưu danh mục rác lúc này."
+      if (hasLiveBackendAuth()) {
+        setTableErr(msg)
+      } else {
+        setFlash("Đã lưu thay đổi cục bộ.")
+      }
     } finally {
       setSaving(false)
     }
@@ -126,7 +155,12 @@ export default function Categories() {
   const handleToggleStatus = async (row: CategoryRow) => {
     const nextStatus: "Active" | "Inactive" = row.status === "Active" ? "Inactive" : "Active"
     setFlash("")
+    setTableErr("")
     if (!row.isBackend) {
+      if (hasLiveBackendAuth()) {
+        setTableErr("Danh mục này chưa đồng bộ với máy chủ.")
+        return
+      }
       set(row.id, { status: nextStatus })
       return
     }
@@ -135,7 +169,7 @@ export default function Categories() {
       setRows((prev) => prev.map((r) => (r.id === row.id ? mapDtoToRow(res.data) : r)))
       setFlash(`Đã chuyển trạng thái '${row.code}' sang ${nextStatus} (BR-SRT-04).`)
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Không thể đổi trạng thái danh mục.")
+      setTableErr(err instanceof Error ? err.message : "Không thể đổi trạng thái danh mục.")
     }
   }
 
@@ -262,22 +296,35 @@ export default function Categories() {
           </p>
         )}
       </div>
+      {tableErr && (
+        <p
+          role="alert"
+          className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+        >
+          {tableErr}
+        </p>
+      )}
 
       <section>
         <h2 className="text-base font-bold text-ink">Thêm loại rác mới</h2>
         <AddForm
           onAdd={async (payload) => {
             setFlash("")
+            setTableErr("")
             try {
               const res = await createWasteCategory(payload)
               setRows((rs) => [...rs, mapDtoToRow(res.data)])
               setFlash(`Đã thêm danh mục '${res.data.code}' vào cơ sở dữ liệu.`)
-              return true
+              return { ok: true as const }
             } catch (err) {
-              // Cho phép thêm cục bộ nếu chưa đăng nhập hoặc offline demo
-              if (err instanceof Error && err.message.includes("tồn tại")) {
-                setFlash(err.message)
-                return false
+              if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+                return {
+                  ok: false as const,
+                  error:
+                    err instanceof Error
+                      ? err.message
+                      : "Không thể thêm danh mục rác lên máy chủ.",
+                }
               }
               setRows((rs) => [
                 ...rs,
@@ -297,7 +344,7 @@ export default function Categories() {
                 },
               ])
               setFlash("Đã thêm danh mục ở chế độ cục bộ.")
-              return true
+              return { ok: true as const }
             }
           }}
         />
@@ -320,38 +367,57 @@ function AddForm({
     description: string
     standardBinColor: string
     isRecyclable: boolean
-  }) => Promise<boolean>
+  }) => Promise<{ ok: true } | { ok: false; error: string }>
 }) {
   const [code, setCode] = useState("")
   const [name, setName] = useState("")
   const [binColor, setBinColor] = useState("Cam")
   const [rule, setRule] = useState("")
   const [isRecyclable, setIsRecyclable] = useState(true)
+  const [formErr, setFormErr] = useState("")
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault()
-        const normalizedCode = (
-          code.trim() ||
-          name
-            .trim()
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "_")
-            .replace(/^_|_$/g, "")
-        ).toLowerCase()
-        if (name.trim().length < 2 || normalizedCode.length < 2) return
+        setFormErr("")
+        const rawCode = code.trim().toLowerCase()
+        const cleanName = name.trim()
+        const cleanBin = binColor.trim()
+        const cleanRule = rule.trim()
+        if (!rawCode) {
+          setFormErr("Vui lòng nhập mã danh mục (chỉ gồm chữ thường, số, dấu '_').")
+          return
+        }
+        if (rawCode.length > 50 || !/^[a-z0-9_]+$/.test(rawCode)) {
+          setFormErr("Mã danh mục tối đa 50 ký tự và chỉ chứa chữ thường (a-z), số (0-9) hoặc gạch dưới (_).")
+          return
+        }
+        if (!cleanName || cleanName.length > 100) {
+          setFormErr("Vui lòng nhập tên loại rác (tối đa 100 ký tự).")
+          return
+        }
+        if (!cleanBin || cleanBin.length > 50) {
+          setFormErr("Vui lòng nhập màu thùng chuẩn (tối đa 50 ký tự).")
+          return
+        }
+        if (!cleanRule || cleanRule.length > 1000) {
+          setFormErr("Vui lòng nhập luật xử lý / mô tả loại rác (tối đa 1000 ký tự).")
+          return
+        }
         void onAdd({
-          code: normalizedCode,
-          name: name.trim(),
-          description: rule.trim() || "Phân loại theo hướng dẫn chuẩn EcoLink.",
-          standardBinColor: binColor.trim() || "Cam",
+          code: rawCode,
+          name: cleanName,
+          description: cleanRule,
+          standardBinColor: cleanBin,
           isRecyclable,
-        }).then((ok) => {
-          if (ok) {
+        }).then((res) => {
+          if (res.ok) {
             setCode("")
             setName("")
             setRule("")
+          } else {
+            setFormErr(res.error)
           }
         })
       }}
@@ -365,7 +431,10 @@ function AddForm({
         <input
           className="input"
           value={code}
-          onChange={(e) => setCode(e.target.value)}
+          onChange={(e) => {
+            setCode(e.target.value)
+            setFormErr("")
+          }}
           placeholder="Ví dụ: pvc_plastic"
         />
       </Field>
@@ -373,7 +442,10 @@ function AddForm({
         <input
           className="input"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => {
+            setName(e.target.value)
+            setFormErr("")
+          }}
           placeholder="Ví dụ: Nhựa PVC ống nước"
         />
       </Field>
@@ -381,7 +453,10 @@ function AddForm({
         <input
           className="input"
           value={binColor}
-          onChange={(e) => setBinColor(e.target.value)}
+          onChange={(e) => {
+            setBinColor(e.target.value)
+            setFormErr("")
+          }}
           placeholder="Ví dụ: Cam, Xanh Dương, Đen..."
         />
       </Field>
@@ -401,11 +476,24 @@ function AddForm({
           <input
             className="input"
             value={rule}
-            onChange={(e) => setRule(e.target.value)}
+            onChange={(e) => {
+              setRule(e.target.value)
+              setFormErr("")
+            }}
             placeholder="Ống nước PVC, làm sạch bùn đất trước khi bàn giao."
           />
         </Field>
       </div>
+      {formErr && (
+        <div className="md:col-span-2">
+          <p
+            role="alert"
+            className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+          >
+            {formErr}
+          </p>
+        </div>
+      )}
       <div className="md:col-span-2">
         <button type="submit" className="btn-primary h-11 px-6">
           Thêm vào danh mục

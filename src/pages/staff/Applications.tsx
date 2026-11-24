@@ -5,6 +5,7 @@ import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/Pagi
 import { PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { ApiError } from "@/lib/api"
 import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   decideStaffApplication,
@@ -30,6 +31,7 @@ export default function Applications() {
   const [rejectErr, setRejectErr] = useState("")
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [flash, setFlash] = useState("")
+  const [actionErr, setActionErr] = useState("")
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)
   const [pendingPage, setPendingPage] = useState(1)
@@ -75,6 +77,8 @@ export default function Applications() {
 
   const handleApprove = async (app: StaffApplicationView) => {
     setProcessingId(app.id)
+    setActionErr("")
+    setFlash("")
     try {
       const res = await decideStaffApplication(app, true)
       setList((ls) => ls.map((a) => (a.id === app.id ? res.updated : a)))
@@ -83,7 +87,7 @@ export default function Applications() {
         `${app.name} (${app.id}): đã phê duyệt. Ghim kho bãi đã được kích hoạt trên trang Bản đồ /map.`,
       )
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Không thể phê duyệt hồ sơ lúc này.")
+      setActionErr(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Không thể phê duyệt hồ sơ lúc này.")
     } finally {
       setProcessingId(null)
     }
@@ -95,7 +99,13 @@ export default function Applications() {
       setRejectErr("Lý do từ chối cần tối thiểu 10 ký tự để cơ sở biết hướng bổ sung (BR-MTH-02).")
       return
     }
+    if (trimmed.length > 500) {
+      setRejectErr("Lý do từ chối không được vượt quá 500 ký tự.")
+      return
+    }
     setRejectErr("")
+    setActionErr("")
+    setFlash("")
     setProcessingId(app.id)
     try {
       const res = await decideStaffApplication(app, false, trimmed)
@@ -104,7 +114,7 @@ export default function Applications() {
       setRejectReason("")
       setFlash(`${app.name} (${app.id}): đã từ chối với lý do "${trimmed}".`)
     } catch (err) {
-      setRejectErr(err instanceof Error ? err.message : "Không thể từ chối hồ sơ lúc này.")
+      setRejectErr(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Không thể từ chối hồ sơ lúc này.")
     } finally {
       setProcessingId(null)
     }
@@ -150,6 +160,14 @@ export default function Applications() {
         }
       />
 
+      {actionErr && (
+        <p
+          role="alert"
+          className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+        >
+          {actionErr}
+        </p>
+      )}
       {flash && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand/25 bg-brand/6 px-4 py-3">
           <p role="status" className="text-[13px] font-semibold text-brand-deep">
@@ -276,7 +294,14 @@ export default function Applications() {
                   )}
 
                   {isRejecting && (
-                    <div className="flex flex-col gap-2.5 rounded-xl border border-warn/35 bg-surface-2 p-4">
+                    <form
+                      noValidate
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        void handleConfirmReject(a)
+                      }}
+                      className="flex flex-col gap-2.5 rounded-xl border border-warn/35 bg-surface-2 p-4"
+                    >
                       <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-ink">
                         <span>
                           Lý do từ chối hồ sơ {a.id} (cơ sở sẽ nhận được thông báo này)
@@ -292,12 +317,18 @@ export default function Applications() {
                           placeholder="Ví dụ: Ảnh giấy phép bị mờ góc phải hoặc vị trí ghim lệch địa chỉ đăng ký..."
                         />
                       </label>
-                      {rejectErr && <p className="text-xs text-warn">{rejectErr}</p>}
+                      {rejectErr && (
+                        <p
+                          role="alert"
+                          className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs font-medium text-warn"
+                        >
+                          {rejectErr}
+                        </p>
+                      )}
                       <div className="flex flex-wrap gap-2">
                         <button
-                          type="button"
+                          type="submit"
                           disabled={busy}
-                          onClick={() => void handleConfirmReject(a)}
                           className="btn-primary h-9 px-4 text-xs"
                         >
                           {busy ? "Đang xử lý..." : "Xác nhận từ chối"}
@@ -314,7 +345,7 @@ export default function Applications() {
                           Huỷ
                         </button>
                       </div>
-                    </div>
+                    </form>
                   )}
 
                   <div className="flex flex-wrap gap-3 border-t border-line-soft pt-4">

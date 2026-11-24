@@ -73,6 +73,10 @@ export default function ResetPassword() {
       setFlash("Mật khẩu mới cần ít nhất 8 ký tự.")
       return
     }
+    if (password.length > 100) {
+      setFlash("Mật khẩu mới không được vượt quá 100 ký tự.")
+      return
+    }
     if (password !== confirmPassword) {
       setFlash("Mật khẩu xác nhận không khớp với mật khẩu mới.")
       return
@@ -96,7 +100,11 @@ export default function ResetPassword() {
   }
 
   const handleResend = async () => {
-    if (submitting || !email.trim()) return
+    if (submitting) return
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
+      setFlash("Vui lòng nhập đúng email đã đăng ký trước khi gửi lại mã.")
+      return
+    }
     setFlash("")
     setSubmitting(true)
     try {

@@ -4,7 +4,9 @@ import { PageHead, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { VND, WASTES } from "@/data/waste"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { ApiError } from "@/lib/api"
 import { initApiLoading, initApiState } from "@/lib/hydration"
+import { hasLiveBackendAuth } from "@/lib/session"
 import {
   fetchRecyclerPrices,
   fetchWasteCategories,
@@ -45,12 +47,14 @@ const INITIAL_SEED_ROWS: Row[] = WASTES.filter((w) => w.recyclable).map((w) => (
 }))
 
 export default function Catalog() {
+  const liveAuth = hasLiveBackendAuth()
   const [rows, setRows] = useState<Row[]>(() => initApiState([], INITIAL_SEED_ROWS))
   const [loading, setLoading] = useState(() => initApiLoading(true))
   const [categories, setCategories] = useState<WasteCategoryDto[]>([])
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
+  const [errMsg, setErrMsg] = useState("")
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)
   const [activeFilter, setActiveFilter] = useState<"all" | "on" | "off">("all")
@@ -103,6 +107,15 @@ export default function Catalog() {
                   : r
               })
         setRows(baseRows)
+      } catch (err) {
+        if (!active) return
+        if (liveAuth) {
+          setErrMsg(
+            err instanceof ApiError
+              ? err.message
+              : "Không tải được bảng giá thu mua từ máy chủ.",
+          )
+        }
       } finally {
         if (active) setLoading(false)
       }
@@ -111,14 +124,25 @@ export default function Catalog() {
     return () => {
       active = false
     }
-  }, [])
+  }, [liveAuth])
 
   const set = (id: string, patch: Partial<Row>) => {
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)))
     setDirty(true)
+    setErrMsg("")
   }
 
-  const handleSave = async () => {
+  const handleSave = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    if (saving) return
+    setErrMsg("")
+    setFlash(null)
+    const invalidRow = rows.find((r) => r.on && (!Number.isFinite(r.price) || r.price <= 0))
+    if (invalidRow) {
+      const wasteName = WASTES.find((w) => w.id === invalidRow.id)?.name ?? invalidRow.id
+      setErrMsg(`Đơn giá thu mua cho "${wasteName}" phải lớn hơn 0 đ/kg.`)
+      return
+    }
     setSaving(true)
     try {
       // Nhóm theo nhóm phế liệu backend để gửi BulkSavePricesRequest
@@ -150,22 +174,29 @@ export default function Catalog() {
           ? "Đã lưu và công bố bảng giá thành công lên hệ thống."
           : "Đã lưu bảng giá tạm thời (chế độ dự phòng ngoại tuyến).",
       )
+    } catch (err) {
+      setErrMsg(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Không thể lưu bảng giá thu mua lên hệ thống.",
+      )
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <form noValidate onSubmit={(e) => void handleSave(e)} className="flex flex-col gap-6">
       <PageHead
         eyebrow="THU MUA"
         title="Danh mục và bảng giá"
         body="Chọn loại rác bạn thu mua và đặt giá trả cho người dân. Loại tắt sẽ không hiện trên bản đồ và người dân không đặt được."
         action={
           <button
-            type="button"
+            type="submit"
             disabled={!dirty || saving}
-            onClick={() => void handleSave()}
             className="btn-primary h-11 shrink-0 px-5"
           >
             {saving ? "Đang lưu..." : "Lưu thay đổi"}
@@ -173,8 +204,20 @@ export default function Catalog() {
         }
       />
 
+      {errMsg && (
+        <div
+          role="alert"
+          className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-3 text-sm font-medium text-warn"
+        >
+          {errMsg}
+        </div>
+      )}
+
       {flash && (
-        <div className="rounded-xl border border-brand/30 bg-mint/15 px-4 py-3 text-sm font-medium text-brand-deep">
+        <div
+          role="status"
+          className="rounded-xl border border-brand/30 bg-mint/15 px-4 py-3 text-sm font-medium text-brand-deep"
+        >
           {flash}
         </div>
       )}
@@ -290,6 +333,6 @@ export default function Catalog() {
         Đổi bảng giá chỉ áp dụng cho yêu cầu tạo sau đây, không đổi giá của các
         yêu cầu đã chốt.
       </Status>
-    </div>
+    </form>
   )
 }

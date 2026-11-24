@@ -35,21 +35,18 @@ const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
 const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
 
 const ALL_COMPLAINT_CATEGORIES: ComplaintCategoryCode[] = [
+  "ScaleDiscrepancy",
+  "PaymentIssue",
   "NoShow",
   "Misconduct",
-  "PaymentIssue",
-  "ScaleDiscrepancy",
   "Other",
 ]
-const CANCELLED_ONLY_CATEGORIES: ComplaintCategoryCode[] = ["NoShow", "Misconduct"]
 const COMPLAINT_STATUS_LABELS: Record<string, string> = {
   Open: "Chờ tiếp nhận",
   Investigating: "Đang xử lý",
   Resolved: "Đã giải quyết",
   Dismissed: "Đã bác bỏ",
 }
-const isCancelledOrder = (status: string, rawStatus?: string) =>
-  status === "broken" || rawStatus?.toLowerCase() === "cancelled"
 
 type IncomingView = HandoverItem & {
   displayCode: string
@@ -84,12 +81,17 @@ export default function Requests() {
   const [loading, setLoading] = useState<boolean>(() => initApiLoading(true))
   const [busy, setBusy] = useState("")
   const [flash, setFlash] = useState("")
+  const [actionErr, setActionErr] = useState("")
   const [openMapId, setOpenMapId] = useState<string | null>(null)
+  const [cancelOrder, setCancelOrder] = useState<IncomingView | null>(null)
+  const [cancelReason, setCancelReason] = useState("")
+  const [cancelErr, setCancelErr] = useState("")
   const [complaintOrder, setComplaintOrder] = useState<IncomingView | null>(null)
-  const [cmpCategory, setCmpCategory] = useState<ComplaintCategoryCode>("NoShow")
+  const [cmpCategory, setCmpCategory] = useState<ComplaintCategoryCode>("ScaleDiscrepancy")
   const [cmpDesc, setCmpDesc] = useState("")
   const [cmpFiles, setCmpFiles] = useState<File[]>([])
   const [cmpBusy, setCmpBusy] = useState(false)
+  const [cmpErr, setCmpErr] = useState("")
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)
   const [pendingPage, setPendingPage] = useState(1)
@@ -152,17 +154,25 @@ export default function Requests() {
 
   const act = async (h: IncomingView, next: "accepted" | "declined") => {
     setBusy(h.id)
+    setFlash("")
+    setActionErr("")
     try {
-      setList((ls) => ls.map((l) => (l.id === h.id ? { ...l, status: next } : l)))
       await updateHandoverOrderStatus(
         h.id,
         "recycler",
         next === "accepted" ? "Accepted" : "Rejected",
       )
+      setList((ls) => ls.map((l) => (l.id === h.id ? { ...l, status: next } : l)))
       setFlash(
         next === "accepted"
           ? `Đã tiếp nhận đơn ${h.displayCode} và chốt khung giờ ${h.slot}.`
           : `Đã từ chối đơn ${h.displayCode}.`,
+      )
+    } catch (err) {
+      setActionErr(
+        err instanceof ApiError
+          ? err.message
+          : "Không thể cập nhật trạng thái đơn bàn giao. Vui lòng thử lại.",
       )
     } finally {
       setBusy("")
@@ -170,48 +180,114 @@ export default function Requests() {
   }
 
   /** R-04 huỷ lịch giữa chừng: bắt buộc có lý do vì người dùng đang chờ. */
-  const cancel = async (h: IncomingView) => {
-    const reason = window.prompt(
-      `Lý do huỷ lịch thu gom ${h.displayCode} (người dùng sẽ thấy lý do này):`,
-    )
-    if (!reason?.trim()) return
-    const cleanReason = reason.trim()
-    setBusy(h.id)
+  const openCancelForm = (h: IncomingView) => {
+    setCancelOrder(h)
+    setCancelReason("")
+    setCancelErr("")
+    setActionErr("")
+  }
+
+  const submitCancel = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!cancelOrder || busy) return
+    const cleanReason = cancelReason.trim()
+    if (cleanReason.length < 5) {
+      setCancelErr("Vui lòng nhập lý do hủy lịch thu gom tối thiểu 5 ký tự.")
+      return
+    }
+    if (cleanReason.length > 500) {
+      setCancelErr("Lý do hủy lịch không được vượt quá 500 ký tự.")
+      return
+    }
+    setCancelErr("")
+    setFlash("")
+    setActionErr("")
+    setBusy(cancelOrder.id)
     try {
-      setList((ls) =>
-        ls.map((l) =>
-          l.id === h.id ? { ...l, status: "broken", reason: cleanReason } : l,
-        ),
-      )
       const res = await updateHandoverOrderStatus(
-        h.id,
+        cancelOrder.id,
         "recycler",
         "Cancelled",
         cleanReason,
       )
+      setList((ls) =>
+        ls.map((l) =>
+          l.id === cancelOrder.id ? { ...l, status: "broken", reason: cleanReason } : l,
+        ),
+      )
       setFlash(
-        `Đã huỷ lịch thu gom ${h.displayCode}${res.syncedWithBackend ? " trên hệ thống" : ""}.`,
+        `Đã huỷ lịch thu gom ${cancelOrder.displayCode}${res.syncedWithBackend ? " trên hệ thống" : ""}.`,
+      )
+      setCancelOrder(null)
+      setCancelReason("")
+    } catch (err) {
+      setCancelErr(
+        err instanceof ApiError
+          ? err.message
+          : "Không thể hủy lịch thu gom trên hệ thống.",
       )
     } finally {
       setBusy("")
     }
   }
 
-  const submitRecyclerComplaint = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!complaintOrder) return
-    const cleanDesc = cmpDesc.trim()
-    if (cleanDesc.length < 15) {
-      setFlash("Nội dung mô tả khiếu nại phải có tối thiểu 15 ký tự.")
+  const handleComplaintFileChange = (pickedList: FileList | null) => {
+    const picked = Array.from(pickedList ?? [])
+    setCmpErr("")
+    if (picked.length > 5) {
+      setCmpErr("Chỉ được đính kèm tối đa 5 ảnh minh chứng.")
       return
     }
-    setCmpBusy(true)
+    for (const f of picked) {
+      const validType =
+        /^image\/(jpeg|jpg|png|webp)$/i.test(f.type) || /\.(jpe?g|png|webp)$/i.test(f.name)
+      if (!validType) {
+        setCmpErr(`Tệp "${f.name}" không phải ảnh JPG, PNG hoặc WEBP hợp lệ.`)
+        return
+      }
+      if (f.size > 10 * 1024 * 1024) {
+        setCmpErr(`Ảnh "${f.name}" vượt quá dung lượng tối đa 10 MB.`)
+        return
+      }
+    }
+    setCmpFiles(picked)
+  }
+
+  const submitRecyclerComplaint = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!complaintOrder || cmpBusy) return
+    setCmpErr("")
     setFlash("")
+
+    if (complaintOrder.status !== "done") {
+      setCmpErr(
+        "Chỉ được gửi khiếu nại giao dịch sau khi biên nhận bàn giao đã xác nhận hoàn tất.",
+      )
+      return
+    }
+    const cleanDesc = cmpDesc.trim()
+    if (cleanDesc.length < 15) {
+      setCmpErr("Nội dung mô tả khiếu nại phải có tối thiểu 15 ký tự.")
+      return
+    }
+    if (cleanDesc.length > 2000) {
+      setCmpErr("Nội dung mô tả khiếu nại không được vượt quá 2000 ký tự.")
+      return
+    }
+    if (cmpFiles.length > 5) {
+      setCmpErr("Chỉ được đính kèm tối đa 5 ảnh minh chứng.")
+      return
+    }
+
+    setCmpBusy(true)
     try {
       const evidenceUrls: string[] = []
-      for (const f of cmpFiles.slice(0, 5)) {
+      for (const f of cmpFiles) {
         const up = await uploadComplaintEvidence(f)
-        if (up.data?.fileUrl) evidenceUrls.push(up.data.fileUrl)
+        if (!up.data?.fileUrl) {
+          throw new Error(`Không tải lên được ảnh minh chứng "${f.name}".`)
+        }
+        evidenceUrls.push(up.data.fileUrl)
       }
       const res = await submitComplaint({
         handoverRequestId: complaintOrder.id,
@@ -236,10 +312,12 @@ export default function Requests() {
           .catch(() => {})
       }
     } catch (err) {
-      setFlash(
+      setCmpErr(
         err instanceof ApiError
           ? err.message
-          : "Không thể gửi phiếu khiếu nại cho đơn này.",
+          : err instanceof Error
+            ? err.message
+            : "Không thể gửi phiếu khiếu nại cho đơn này.",
       )
     } finally {
       setCmpBusy(false)
@@ -284,6 +362,14 @@ export default function Requests() {
       {flash && (
         <p role="status" className="text-[13px] font-semibold text-brand">
           {flash}
+        </p>
+      )}
+      {actionErr && (
+        <p
+          role="alert"
+          className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+        >
+          {actionErr}
         </p>
       )}
 
@@ -442,23 +528,6 @@ export default function Requests() {
                         >
                           Xem biên nhận
                         </Link>
-                        {h.fromBackend && (
-                          <>
-                            <span className="text-muted">·</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setComplaintOrder(h)
-                                setCmpCategory("PaymentIssue")
-                                setCmpDesc("")
-                                setCmpFiles([])
-                              }}
-                              className="text-[13px] font-semibold text-warn hover:underline"
-                            >
-                              Khiếu nại
-                            </button>
-                          </>
-                        )}
                       </div>
                     ) : h.status === "accepted" ? (
                       <div className="flex flex-wrap items-center gap-2 whitespace-nowrap">
@@ -479,40 +548,21 @@ export default function Requests() {
                         <button
                           type="button"
                           disabled={busy === h.id}
-                          onClick={() => void cancel(h)}
+                          onClick={() => openCancelForm(h)}
                           className="text-[13px] font-semibold text-warn hover:underline"
                         >
                           Huỷ lịch
                         </button>
-                        {h.fromBackend && (
-                          <>
-                            <span className="text-muted">·</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setComplaintOrder(h)
-                                setCmpCategory("NoShow")
-                                setCmpDesc("")
-                                setCmpFiles([])
-                              }}
-                              className="text-[13px] font-semibold text-ink hover:underline"
-                            >
-                              Báo sự cố / Khiếu nại
-                            </button>
-                          </>
-                        )}
                       </div>
-                    ) : h.fromBackend &&
-                      (h.status === "done" || h.status === "broken" || h.status === "cancelled") ? (
+                    ) : h.fromBackend && h.status === "done" ? (
                       <button
                         type="button"
                         onClick={() => {
                           setComplaintOrder(h)
-                          setCmpCategory(
-                            isCancelledOrder(h.status, h.rawStatus) ? "NoShow" : "Misconduct",
-                          )
+                          setCmpCategory("ScaleDiscrepancy")
                           setCmpDesc("")
                           setCmpFiles([])
+                          setCmpErr("")
                         }}
                         className="text-[13px] font-semibold text-warn hover:underline"
                       >
@@ -541,8 +591,72 @@ export default function Requests() {
         Sau khi tạo biên nhận và người dùng xác nhận khối lượng, biên nhận sẽ được lưu trữ để hai bên đối chiếu và ghi nhận Điểm Xanh. Các khung giờ thu gom: {TIME_SLOTS.join(" · ")}.
       </p>
 
+      {cancelOrder && (
+        <form
+          noValidate
+          onSubmit={(e) => void submitCancel(e)}
+          className="card flex flex-col gap-4 border-warn/40 p-5"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="eyebrow">HỦY LỊCH THU GOM (R-04)</span>
+              <h3 className="mt-1 text-base font-bold text-ink">
+                Hủy lịch thu gom đơn {cancelOrder.displayCode}
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setCancelOrder(null)
+                setCancelErr("")
+              }}
+              className="btn-ghost h-9 px-3 text-xs"
+            >
+              Đóng
+            </button>
+          </div>
+
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
+            <span>
+              Lý do hủy lịch (tối thiểu 5 ký tự, người dân sẽ thấy lý do này)
+              <RequiredMark />
+            </span>
+            <textarea
+              className="input h-auto resize-y py-2.5 text-sm"
+              rows={2}
+              value={cancelReason}
+              onChange={(e) => {
+                setCancelReason(e.target.value)
+                setCancelErr("")
+              }}
+              placeholder="Ví dụ: Xe thu gom gặp sự cố kỹ thuật đột xuất, không thể đến đúng khung giờ cam kết."
+            />
+          </label>
+
+          {cancelErr && (
+            <p
+              role="alert"
+              className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+            >
+              {cancelErr}
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="submit"
+              disabled={busy === cancelOrder.id}
+              className="btn-primary h-10 px-5 text-xs"
+            >
+              {busy === cancelOrder.id ? "Đang hủy..." : "Xác nhận hủy lịch"}
+            </button>
+          </div>
+        </form>
+      )}
+
       {complaintOrder && (
         <form
+          noValidate
           onSubmit={(e) => void submitRecyclerComplaint(e)}
           className="card flex flex-col gap-4 border-warn/40 p-5"
         >
@@ -555,7 +669,10 @@ export default function Requests() {
             </div>
             <button
               type="button"
-              onClick={() => setComplaintOrder(null)}
+              onClick={() => {
+                setComplaintOrder(null)
+                setCmpErr("")
+              }}
               className="btn-ghost h-9 px-3 text-xs"
             >
               Đóng
@@ -563,9 +680,9 @@ export default function Requests() {
           </div>
 
           <p className="rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-xs text-muted">
-            {isCancelledOrder(complaintOrder.status, complaintOrder.rawStatus)
-              ? "Đơn đã hủy (BR-DSP-01): chỉ hỗ trợ nhóm Không đến đúng hẹn (NoShow) hoặc Thái độ / hành vi thiếu chuẩn mực (Misconduct)."
-              : "Ràng buộc BR-DSP-01/02: khiếu nại hợp lệ trong vòng 7 ngày kể từ bàn giao/hủy, tối đa 1 phiếu đang xử lý trên mỗi đơn và mô tả tối thiểu 15 ký tự."}
+            Ràng buộc BR-DSP-01/02: chỉ khiếu nại hai chiều trong vòng 7 ngày sau khi biên nhận bàn
+            giao đã xác nhận hoàn tất, tối đa 1 phiếu đang xử lý trên mỗi đơn và mô tả 15–2000 ký
+            tự.
           </p>
 
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
@@ -574,21 +691,14 @@ export default function Requests() {
               <RequiredMark />
             </span>
             <select
-              value={
-                (isCancelledOrder(complaintOrder.status, complaintOrder.rawStatus)
-                  ? CANCELLED_ONLY_CATEGORIES
-                  : ALL_COMPLAINT_CATEGORIES
-                ).includes(cmpCategory)
-                  ? cmpCategory
-                  : "NoShow"
-              }
-              onChange={(e) => setCmpCategory(e.target.value as ComplaintCategoryCode)}
+              value={cmpCategory}
+              onChange={(e) => {
+                setCmpCategory(e.target.value as ComplaintCategoryCode)
+                setCmpErr("")
+              }}
               className="input h-10 text-sm"
             >
-              {(isCancelledOrder(complaintOrder.status, complaintOrder.rawStatus)
-                ? CANCELLED_ONLY_CATEGORIES
-                : ALL_COMPLAINT_CATEGORIES
-              ).map((cat) => (
+              {ALL_COMPLAINT_CATEGORIES.map((cat) => (
                 <option key={cat} value={cat}>
                   {COMPLAINT_CATEGORY_LABELS[cat]}
                 </option>
@@ -598,28 +708,40 @@ export default function Requests() {
 
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
             <span>
-              Mô tả sự cố (tối thiểu 15 ký tự)
+              Mô tả sự cố (15–2000 ký tự)
               <RequiredMark />
             </span>
             <textarea
               className="input h-auto resize-y py-2.5 text-sm"
               rows={3}
               value={cmpDesc}
-              onChange={(e) => setCmpDesc(e.target.value)}
-              placeholder="Ví dụ: Xe thu gom đến đúng điểm hẹn nhưng người dân không nghe máy trong 30 phút."
+              onChange={(e) => {
+                setCmpDesc(e.target.value)
+                setCmpErr("")
+              }}
+              placeholder="Ví dụ: Phát hiện sai lệch khối lượng hoặc phát sinh tranh chấp thanh toán sau khi xác nhận biên nhận."
             />
           </label>
 
           <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
-            Ảnh hiện trường / tin nhắn bằng chứng (tùy chọn, tối đa 5 ảnh)
+            Ảnh hiện trường / biên nhận bằng chứng (tùy chọn, tối đa 5 ảnh JPG/PNG/WEBP ≤ 10 MB)
             <input
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
               multiple
-              onChange={(e) => setCmpFiles(Array.from(e.target.files ?? []).slice(0, 5))}
+              onChange={(e) => handleComplaintFileChange(e.target.files)}
               className="text-xs font-normal text-muted"
             />
           </label>
+
+          {cmpErr && (
+            <p
+              role="alert"
+              className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+            >
+              {cmpErr}
+            </p>
+          )}
 
           <div className="flex flex-wrap gap-3">
             <button type="submit" disabled={cmpBusy} className="btn-primary h-10 px-5 text-xs">

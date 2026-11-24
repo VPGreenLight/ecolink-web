@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react"
 import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
-import { PageHead, Field, Status, Table, Td } from "@/components/Portal"
+import { PageHead, Field, FormRequiredLegend, Status, Table, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { POSTS, type Post } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { ApiError } from "@/lib/api"
 import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
+import { hasLiveBackendAuth } from "@/lib/session"
 import {
   createStaffBlog,
   deleteStaffBlog,
@@ -42,6 +44,7 @@ export default function BlogEditor() {
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [flash, setFlash] = useState("")
+  const [errMsg, setErrMsg] = useState("")
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)
   const [statusFilter, setStatusFilter] = useState<"all" | "Draft" | "Approved">("all")
@@ -77,8 +80,19 @@ export default function BlogEditor() {
 
   const handleUploadCover = async (file?: File) => {
     if (!file || !liveMode) return
-    setUploading(true)
+    setErrMsg("")
     setFlash("")
+    const validType =
+      /^image\/(jpeg|jpg|png|webp)$/i.test(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name)
+    if (!validType) {
+      setErrMsg(`Tệp "${file.name}" không phải ảnh JPG, PNG hoặc WEBP hợp lệ.`)
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setErrMsg(`Ảnh bìa "${file.name}" vượt quá dung lượng tối đa 10 MB.`)
+      return
+    }
+    setUploading(true)
     try {
       const res = await uploadBlogMedia(file)
       if (res.data?.url || res.data?.fileUrl) {
@@ -86,28 +100,40 @@ export default function BlogEditor() {
         setFlash("Đã tải ảnh bìa lên máy chủ thành công.")
       }
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Tải ảnh bìa thất bại.")
+      setErrMsg(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Tải ảnh bìa thất bại.")
     } finally {
       setUploading(false)
     }
   }
 
   const handleSave = async (submitForApproval: boolean) => {
-    if (!liveMode) {
-      if (title.trim().length < 10) {
-        setFlash("Tiêu đề cần ít nhất 10 ký tự.")
-        return
-      }
-      if (excerpt.trim().length < 30) {
-        setFlash("Tóm tắt cần ít nhất 30 ký tự để người đọc biết bài nói gì.")
+    setErrMsg("")
+    setFlash("")
+    const cleanTitle = title.trim()
+    const cleanSummary = excerpt.trim()
+    const cleanContent = content.trim()
+    const cleanCover = coverImageUrl.trim()
+
+    if (cleanTitle.length < 5 || cleanTitle.length > 200) {
+      setErrMsg("Tiêu đề bài viết phải từ 5 đến 200 ký tự.")
+      return
+    }
+    if (cleanSummary.length > 500) {
+      setErrMsg("Tóm tắt bài viết không được vượt quá 500 ký tự.")
+      return
+    }
+
+    if (!liveMode && !hasLiveBackendAuth()) {
+      if (cleanSummary.length < 10) {
+        setErrMsg("Tóm tắt cần ít nhất 10 ký tự để người đọc biết bài nói gì.")
         return
       }
       const id = `BL-${String(offlineList.length + 89).padStart(4, "0")}`
       setOfflineList((ls) => [
         {
           id,
-          title: title.trim(),
-          excerpt: excerpt.trim(),
+          title: cleanTitle,
+          excerpt: cleanSummary,
           author: "Lê Thu Hà",
           date: "30/09/2026",
           status: "pending",
@@ -120,9 +146,23 @@ export default function BlogEditor() {
       return
     }
 
+    if (submitForApproval) {
+      if (cleanSummary.length < 10) {
+        setErrMsg("Vui lòng nhập tóm tắt tối thiểu 10 ký tự trước khi gửi Admin duyệt.")
+        return
+      }
+      if (cleanContent.length < 20) {
+        setErrMsg("Nội dung bài viết phải có tối thiểu 20 ký tự trước khi gửi Admin duyệt.")
+        return
+      }
+      if (!cleanCover) {
+        setErrMsg("Vui lòng nhập hoặc tải lên URL ảnh bìa trước khi gửi Admin duyệt.")
+        return
+      }
+    }
+
     if (saving) return
     setSaving(true)
-    setFlash("")
     const tags = tagsText
       .split(",")
       .map((s) => s.trim())
@@ -131,10 +171,10 @@ export default function BlogEditor() {
 
     try {
       const payload = {
-        title: title.trim(),
-        summary: excerpt.trim() || null,
-        content: content.trim() || null,
-        coverImageUrl: coverImageUrl.trim() || null,
+        title: cleanTitle,
+        summary: cleanSummary || null,
+        content: cleanContent || null,
+        coverImageUrl: cleanCover || null,
         tags,
         submitForApproval,
       }
@@ -150,7 +190,7 @@ export default function BlogEditor() {
       resetForm()
       await loadStaffPosts()
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Không thể lưu bài viết.")
+      setErrMsg(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Không thể lưu bài viết.")
     } finally {
       setSaving(false)
     }
@@ -158,6 +198,7 @@ export default function BlogEditor() {
 
   const handleEdit = async (id: string) => {
     setFlash("")
+    setErrMsg("")
     try {
       const res = await fetchStaffBlogDetail(id)
       if (!res.data) return
@@ -171,7 +212,7 @@ export default function BlogEditor() {
       setTagsText((d.tags ?? []).join(", "))
       window.scrollTo({ top: 0, behavior: "smooth" })
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Không tải được chi tiết bài viết.")
+      setErrMsg(err instanceof Error ? err.message : "Không tải được chi tiết bài viết.")
     }
   }
 
@@ -233,6 +274,7 @@ export default function BlogEditor() {
         noValidate
         className="card flex flex-col gap-5 p-5 md:p-6"
       >
+        <FormRequiredLegend />
         {editingId && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-brand/25 bg-brand/6 px-4 py-2.5 text-sm">
             <span className="font-semibold text-brand-deep">
@@ -321,6 +363,15 @@ export default function BlogEditor() {
               </Field>
             </div>
           </>
+        )}
+
+        {errMsg && (
+          <p
+            role="alert"
+            className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+          >
+            {errMsg}
+          </p>
         )}
 
         <div className="flex flex-wrap items-center gap-3 border-t border-line-soft pt-4">
@@ -412,9 +463,10 @@ export default function BlogEditor() {
                                 try {
                                   await recallStaffBlog(p.id)
                                   setFlash("Đã thu hồi bài viết về bản nháp.")
+                                  setErrMsg("")
                                   await loadStaffPosts()
                                 } catch (err) {
-                                  setFlash(err instanceof Error ? err.message : "Thu hồi thất bại.")
+                                  setErrMsg(err instanceof Error ? err.message : "Thu hồi thất bại.")
                                 }
                               }}
                               className="text-xs font-semibold text-brand hover:underline"
@@ -485,9 +537,10 @@ export default function BlogEditor() {
                                 try {
                                   await submitStaffBlog(p.id)
                                   setFlash("Đã nộp bài lên hàng đợi Admin.")
+                                  setErrMsg("")
                                   await loadStaffPosts()
                                 } catch (err) {
-                                  setFlash(
+                                  setErrMsg(
                                     err instanceof Error
                                       ? err.message
                                       : "Bài cần có ảnh bìa và nội dung trước khi nộp duyệt.",
@@ -504,9 +557,10 @@ export default function BlogEditor() {
                                 try {
                                   await deleteStaffBlog(p.id)
                                   setFlash("Đã xóa bản nháp.")
+                                  setErrMsg("")
                                   await loadStaffPosts()
                                 } catch (err) {
-                                  setFlash(err instanceof Error ? err.message : "Không thể xóa.")
+                                  setErrMsg(err instanceof Error ? err.message : "Không thể xóa.")
                                 }
                               }}
                               className="text-warn hover:underline"

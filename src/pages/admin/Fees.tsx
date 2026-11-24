@@ -12,7 +12,7 @@ import {
   type AdminServicePackageDto,
   type UpsertServicePackageRequest,
 } from "@/lib/servicePackageApi"
-import { getAccessToken } from "@/lib/session"
+import { getAccessToken, hasLiveBackendAuth } from "@/lib/session"
 
 type PackageFormState = {
   packageId: string | null
@@ -121,7 +121,7 @@ export default function Fees() {
         setPackages(res.data)
       }
     } catch (e) {
-      if (getAccessToken()) {
+      if (getAccessToken() || hasLiveBackendAuth()) {
         setErrMsg(
           e instanceof Error ? e.message : "Không thể tải danh sách gói dịch vụ từ máy chủ.",
         )
@@ -152,7 +152,7 @@ export default function Fees() {
     setFlash("")
     const nextActive = !pkg.isActive
     try {
-      if (!getAccessToken()) {
+      if (!getAccessToken() && !hasLiveBackendAuth()) {
         setPackages((prev) =>
           prev.map((item) =>
             item.id === pkg.id ? { ...item, isActive: nextActive } : item,
@@ -183,18 +183,31 @@ export default function Fees() {
 
     const code = editing.packageCode.trim().toUpperCase()
     const name = editing.packageName.trim()
+    const description = editing.description.trim()
     const price = Number(editing.priceVnd)
     const duration = Number(editing.durationDays)
     const displayOrder = Number(editing.displayOrder) || 10
-    const multiplier = Number(editing.dailyPointMultiplier) || 1.0
-    const boost = Number(editing.mapPriorityBoost) || 0
+    const multiplier = Number(editing.dailyPointMultiplier)
+    const boost = Number(editing.mapPriorityBoost)
 
     if (!/^[A-Z0-9_-]{3,40}$/.test(code)) {
       setFormErr("Mã gói chỉ gồm chữ in hoa, số, dấu '-' hoặc '_' (3–40 ký tự).")
       return
     }
-    if (name.length < 3) {
-      setFormErr("Tên gói dịch vụ phải từ 3 ký tự trở lên.")
+    if (name.length < 2 || name.length > 120) {
+      setFormErr("Tên gói dịch vụ phải từ 2 đến 120 ký tự.")
+      return
+    }
+    if (description.length > 500) {
+      setFormErr("Mô tả gói dịch vụ không được vượt quá 500 ký tự.")
+      return
+    }
+    if (!Number.isFinite(multiplier) || multiplier < 1 || multiplier > 10) {
+      setFormErr("Hệ số nhân điểm hằng ngày phải nằm trong khoảng 1 đến 10.")
+      return
+    }
+    if (!Number.isInteger(boost) || boost < 0 || boost > 1000) {
+      setFormErr("Điểm ưu tiên hiển thị trên bản đồ phải là số nguyên từ 0 đến 1000.")
       return
     }
     if (editing.isDefaultFree || code === "BASIC") {
@@ -236,7 +249,7 @@ export default function Fees() {
 
     setSaving(true)
     try {
-      if (!getAccessToken()) {
+      if (!getAccessToken() && !hasLiveBackendAuth()) {
         if (editing.packageId) {
           setPackages((prev) =>
             prev.map((item) =>
@@ -506,6 +519,7 @@ export default function Fees() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
         >
           <form
+            noValidate
             onSubmit={(e) => void handleSaveForm(e)}
             className="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-line bg-white p-5 shadow-2xl md:p-6"
           >

@@ -187,15 +187,24 @@ function U04Report() {
   const [sentMessage, setSentMessage] = useState("")
   const [errMessage, setErrMessage] = useState("")
 
-  const handleReport = async () => {
+  const handleReport = async (e?: React.FormEvent) => {
+    e?.preventDefault()
     if (!getSession() && !isSsrSmokeTest()) {
       openAuthPopup("login")
       return
     }
-    if (!correct || sending) return
-    setSending(true)
+    if (sending) return
     setErrMessage("")
     setSentMessage("")
+    if (!correct) {
+      setErrMessage("Vui lòng chọn loại rác đúng thực tế trước khi gửi báo cáo.")
+      return
+    }
+    if (note.trim().length > 500) {
+      setErrMessage("Ghi chú phản hồi AI không được vượt quá 500 ký tự.")
+      return
+    }
+    setSending(true)
     try {
       const res = await submitAiFeedback({
         predictedLabel: predicted,
@@ -217,7 +226,11 @@ function U04Report() {
   }
 
   return (
-    <section className="card flex flex-col gap-4 p-5 md:p-6">
+    <form
+      noValidate
+      onSubmit={(e) => void handleReport(e)}
+      className="card flex flex-col gap-4 p-5 md:p-6"
+    >
       <div>
         <h2 className="text-base font-bold text-ink">AI chỉ sai loại rác</h2>
         <p className="mt-1 text-sm text-muted">
@@ -234,6 +247,7 @@ function U04Report() {
             onChange={(e) => {
               setPredicted(e.target.value)
               setSentMessage("")
+              setErrMessage("")
             }}
           >
             {AI_CLASS_OPTIONS.map((opt) => (
@@ -251,6 +265,7 @@ function U04Report() {
             onChange={(e) => {
               setCorrect(e.target.value)
               setSentMessage("")
+              setErrMessage("")
             }}
           >
             <option value="">Chọn loại rác đúng</option>
@@ -266,7 +281,10 @@ function U04Report() {
           <input
             className="input"
             value={note}
-            onChange={(e) => setNote(e.target.value)}
+            onChange={(e) => {
+              setNote(e.target.value)
+              setErrMessage("")
+            }}
             placeholder="Ví dụ: ảnh chụp ngược sáng, nền tối"
           />
         </Field>
@@ -274,9 +292,8 @@ function U04Report() {
 
       <div className="flex flex-wrap items-center gap-4">
         <button
-          type="button"
-          disabled={!correct || sending}
-          onClick={handleReport}
+          type="submit"
+          disabled={sending}
           className="btn-primary h-11 px-6"
         >
           {sending ? "Đang gửi..." : "Gửi báo cáo"}
@@ -292,6 +309,6 @@ function U04Report() {
           </p>
         )}
       </div>
-    </section>
+    </form>
   )
 }

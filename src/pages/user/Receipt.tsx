@@ -93,6 +93,9 @@ export default function Receipt() {
   const [disputeFiles, setDisputeFiles] = useState<File[]>([])
   const [receiptInfo, setReceiptInfo] = useState<ReceiptDto | null>(null)
   const [flashMessage, setFlashMessage] = useState<string | null>(null)
+  const [confirmErr, setConfirmErr] = useState("")
+  const [disputeErr, setDisputeErr] = useState("")
+  const [reviewErr, setReviewErr] = useState("")
 
   useEffect(() => {
     let active = true
@@ -102,6 +105,9 @@ export default function Receipt() {
       setDisputed(false)
       setReceiptInfo(null)
       setFlashMessage(null)
+      setConfirmErr("")
+      setDisputeErr("")
+      setReviewErr("")
 
       try {
         const [ordersRes, handoversRes] = await Promise.all([
@@ -289,9 +295,14 @@ export default function Receipt() {
 
   const confirm = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!h) return
-    setProcessing(true)
+    if (!h || processing) return
+    setConfirmErr("")
     setFlashMessage(null)
+    if (actual.some((a) => !Number.isFinite(a.kg) || a.kg <= 0)) {
+      setConfirmErr("Khối lượng thực tế mỗi loại rác phải lớn hơn 0 kg.")
+      return
+    }
+    setProcessing(true)
     try {
       const res = await confirmHandoverReceipt(h.id)
       if (res.receipt) {
@@ -305,7 +316,7 @@ export default function Receipt() {
           : "Đã xác nhận khối lượng bàn giao (chế độ dự phòng ngoại tuyến).",
       )
     } catch (err) {
-      setFlashMessage(
+      setConfirmErr(
         err instanceof ApiError
           ? err.message
           : err instanceof Error
@@ -317,24 +328,62 @@ export default function Receipt() {
     }
   }
 
+  const handleDisputeFileChange = (pickedList: FileList | null) => {
+    const picked = Array.from(pickedList ?? [])
+    setDisputeErr("")
+    if (picked.length > 5) {
+      setDisputeErr("Chỉ được đính kèm tối đa 5 ảnh bằng chứng.")
+      return
+    }
+    for (const file of picked) {
+      const validType =
+        /^image\/(jpeg|jpg|png|webp)$/i.test(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name)
+      if (!validType) {
+        setDisputeErr(`Tệp "${file.name}" không phải ảnh JPG, PNG hoặc WEBP hợp lệ.`)
+        return
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setDisputeErr(`Ảnh "${file.name}" vượt quá dung lượng tối đa 10 MB.`)
+        return
+      }
+    }
+    setDisputeFiles(picked)
+  }
+
   const handleDisputeSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!h) return
+    if (!h || processing) return
+    setDisputeErr("")
+    setFlashMessage(null)
     const clean = disputeReason.trim()
     if (clean.length < 10) {
-      setFlashMessage("Vui lòng nhập lý do khiếu nại tối thiểu 10 ký tự.")
+      setDisputeErr("Vui lòng nhập lý do khiếu nại tối thiểu 10 ký tự.")
+      return
+    }
+    if (clean.length > 500) {
+      setDisputeErr("Lý do khiếu nại biên nhận không được vượt quá 500 ký tự.")
+      return
+    }
+    if (disputeFiles.length > 5) {
+      setDisputeErr("Chỉ được đính kèm tối đa 5 ảnh bằng chứng.")
       return
     }
 
     setProcessing(true)
     try {
       const uploadedUrls: string[] = []
-      for (const file of disputeFiles.slice(0, 5)) {
+      for (const file of disputeFiles) {
         try {
           const up = await uploadComplaintEvidence(file)
-          if (up.data?.fileUrl) uploadedUrls.push(up.data.fileUrl)
-        } catch {
-          // bỏ qua ảnh lỗi nếu chạy offline
+          if (up.data?.fileUrl) {
+            uploadedUrls.push(up.data.fileUrl)
+          } else if (hasLiveBackendAuth()) {
+            throw new Error(`Không tải lên được ảnh bằng chứng "${file.name}".`)
+          }
+        } catch (upErr) {
+          if (hasLiveBackendAuth() || (upErr instanceof ApiError && !upErr.isNetworkError)) {
+            throw upErr
+          }
         }
       }
       const res = await disputeHandoverReceipt(h.id, clean, uploadedUrls)
@@ -346,27 +395,47 @@ export default function Receipt() {
           : "Khiếu nại đã được ghi nhận (chế độ dự phòng ngoại tuyến).",
       )
     } catch (err) {
-      setFlashMessage(err instanceof ApiError ? err.message : "Không thể gửi khiếu nại biên nhận.")
+      setDisputeErr(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Không thể gửi khiếu nại biên nhận.",
+      )
     } finally {
       setProcessing(false)
     }
   }
 
-  const handleSubmitReview = async () => {
-    if (!h || stars < 1 || stars > 5) return
+  const handleSubmitReview = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    if (!h || reviewBusy) return
+    setReviewErr("")
+    setFlashMessage(null)
+    if (stars < 1 || stars > 5) {
+      setReviewErr("Vui lòng chọn số sao đánh giá (từ 1 đến 5 sao).")
+      return
+    }
+    const cleanComment = note.trim()
+    if (cleanComment.length > 1000) {
+      setReviewErr("Nội dung đánh giá không được vượt quá 1000 ký tự.")
+      return
+    }
     setReviewBusy(true)
     try {
       const res = await createHandoverReview(h.id, {
         ratingStars: stars,
-        comment: note.trim() || undefined,
+        comment: cleanComment || undefined,
       })
       setSubmittedReview(res.data)
       setFlashMessage(
         res.message || "Cảm ơn bạn đã đánh giá! Điểm uy tín của cơ sở thu mua đã được cập nhật.",
       )
     } catch (err) {
-      if (err instanceof ApiError && !err.isNetworkError) {
-        setFlashMessage(err.message)
+      if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+        setReviewErr(
+          err instanceof ApiError ? err.message : "Không thể gửi đánh giá giao dịch.",
+        )
       } else {
         setSubmittedReview({
           reviewId: `local-${Date.now()}`,
@@ -376,7 +445,7 @@ export default function Receipt() {
           recyclerId: "local",
           facilityName: h.recycler,
           ratingStars: stars,
-          comment: note.trim() || null,
+          comment: cleanComment || null,
           status: "Visible",
           reportCount: 0,
           createdAt: new Date().toISOString(),
@@ -389,7 +458,9 @@ export default function Receipt() {
   }
 
   const handleDeleteReview = async () => {
-    if (!submittedReview) return
+    if (!submittedReview || reviewBusy) return
+    setReviewErr("")
+    setFlashMessage(null)
     setReviewBusy(true)
     try {
       if (!submittedReview.reviewId.startsWith("local-")) {
@@ -402,7 +473,7 @@ export default function Receipt() {
       setStars(0)
       setNote("")
     } catch (err) {
-      setFlashMessage(err instanceof ApiError ? err.message : "Không thể xóa đánh giá.")
+      setReviewErr(err instanceof ApiError ? err.message : "Không thể xóa đánh giá.")
     } finally {
       setReviewBusy(false)
     }
@@ -439,7 +510,10 @@ export default function Receipt() {
       )}
 
       {flashMessage && (
-        <div className="rounded-xl border border-brand/30 bg-mint/15 px-4 py-3 text-sm font-medium text-brand-deep">
+        <div
+          role="status"
+          className="rounded-xl border border-brand/30 bg-mint/15 px-4 py-3 text-sm font-medium text-brand-deep"
+        >
           {flashMessage}
         </div>
       )}
@@ -470,7 +544,7 @@ export default function Receipt() {
           </Link>
         </div>
       ) : (
-      <form onSubmit={confirm} className="card flex flex-col gap-5 p-5 md:p-6">
+      <form noValidate onSubmit={confirm} className="card flex flex-col gap-5 p-5 md:p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-line-soft pb-4">
           <div>
             <p className="font-bold text-ink">{h.recycler}</p>
@@ -563,6 +637,15 @@ export default function Receipt() {
           </p>
         )}
 
+        {confirmErr && (
+          <p
+            role="alert"
+            className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+          >
+            {confirmErr}
+          </p>
+        )}
+
         <div className="flex flex-wrap gap-4 border-t border-line-soft pt-4">
           <button
             type="submit"
@@ -579,7 +662,10 @@ export default function Receipt() {
             <button
               type="button"
               disabled={processing}
-              onClick={() => setShowDisputeForm((v) => !v)}
+              onClick={() => {
+                setShowDisputeForm((v) => !v)
+                setDisputeErr("")
+              }}
               className="btn-ghost h-11 px-5"
             >
               Sai rồi, tôi muốn khiếu nại
@@ -600,44 +686,66 @@ export default function Receipt() {
       )}
 
       {h && showDisputeForm && !confirmed && !disputed && (
-        <form onSubmit={(e) => void handleDisputeSubmit(e)} className="card flex flex-col gap-4 border-warn/40 p-5 md:p-6">
+        <form
+          noValidate
+          onSubmit={(e) => void handleDisputeSubmit(e)}
+          className="card flex flex-col gap-4 border-warn/40 p-5 md:p-6"
+        >
           <h2 className="text-base font-bold text-ink">
             Gửi khiếu nại sai lệch biên nhận (U-11)
           </h2>
           <FormRequiredLegend />
           <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
             <span>
-              Lý do sai lệch khối lượng / thanh toán
+              Lý do sai lệch khối lượng / thanh toán (10–500 ký tự)
               <RequiredMark />
             </span>
             <textarea
               className="input h-auto resize-y py-2.5 leading-6"
               rows={3}
               value={disputeReason}
-              onChange={(e) => setDisputeReason(e.target.value)}
+              onChange={(e) => {
+                setDisputeReason(e.target.value)
+                setDisputeErr("")
+              }}
               placeholder="Ví dụ: Đồng hồ cân tại điểm thu mua hiển thị 12.5 kg nhưng biên nhận chỉ ghi 9.0 kg."
             />
           </label>
           <div className="flex flex-col gap-1.5 text-sm">
             <span className="font-semibold text-ink">
-              Ảnh bằng chứng mặt cân / biên lai (tùy chọn, tối đa 5 ảnh)
+              Ảnh bằng chứng mặt cân / biên lai (tùy chọn, tối đa 5 ảnh JPG/PNG/WEBP ≤ 10 MB)
             </span>
             <input
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
               multiple
-              onChange={(e) => setDisputeFiles(Array.from(e.target.files ?? []).slice(0, 5))}
+              onChange={(e) => handleDisputeFileChange(e.target.files)}
               className="text-xs text-muted"
             />
             {disputeFiles.length > 0 && (
               <p className="text-xs text-brand-deep">Đã chọn {disputeFiles.length} ảnh bằng chứng.</p>
             )}
           </div>
+          {disputeErr && (
+            <p
+              role="alert"
+              className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+            >
+              {disputeErr}
+            </p>
+          )}
           <div className="flex flex-wrap gap-3">
             <button type="submit" disabled={processing} className="btn-primary h-10 px-5 text-sm">
               {processing ? "Đang gửi..." : "Gửi phiếu khiếu nại"}
             </button>
-            <button type="button" onClick={() => setShowDisputeForm(false)} className="btn-ghost h-10 px-4 text-sm">
+            <button
+              type="button"
+              onClick={() => {
+                setShowDisputeForm(false)
+                setDisputeErr("")
+              }}
+              className="btn-ghost h-10 px-4 text-sm"
+            >
               Hủy
             </button>
           </div>
@@ -650,8 +758,9 @@ export default function Receipt() {
             Đánh giá {h.recycler}
           </h2>
           <p className="text-sm text-muted">
-            Điểm của bạn quyết định cơ sở này có được đề xuất cho khu vực của bạn
-            không (mỗi đơn chỉ gửi 1 lần trong 14 ngày; không chỉnh sửa sau khi đăng).
+            Điểm của bạn quyết định cơ sở này có được đề xuất cho khu vực của bạn không (mỗi đơn
+            giữ tối đa 1 đánh giá đang hiển thị trong 14 ngày; bạn có thể xóa đánh giá cũ để gửi lại
+            đánh giá mới).
           </p>
 
           {submittedReview ? (
@@ -673,6 +782,14 @@ export default function Receipt() {
                   Điểm uy tín mới của cơ sở: {submittedReview.updatedRecyclerAverageRating.toFixed(2)}★ ({submittedReview.updatedRecyclerTotalReviews ?? 1} đánh giá)
                 </p>
               )}
+              {reviewErr && (
+                <p
+                  role="alert"
+                  className="mt-3 rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+                >
+                  {reviewErr}
+                </p>
+              )}
               <div className="mt-3">
                 <button
                   type="button"
@@ -680,12 +797,12 @@ export default function Receipt() {
                   onClick={() => void handleDeleteReview()}
                   className="btn-ghost h-9 px-3.5 text-xs text-warn"
                 >
-                  {reviewBusy ? "Đang xóa..." : "Tự xóa vĩnh viễn đánh giá này"}
+                  {reviewBusy ? "Đang xóa..." : "Xóa đánh giá này (để gửi đánh giá mới)"}
                 </button>
               </div>
             </div>
           ) : (
-            <>
+            <form noValidate onSubmit={(e) => void handleSubmitReview(e)} className="flex flex-col gap-4">
               <div>
                 <p className="mb-1.5 text-xs font-semibold text-ink">
                   Chọn mức độ hài lòng (1 – 5 sao)
@@ -703,7 +820,10 @@ export default function Receipt() {
                     role="radio"
                     aria-checked={stars === n}
                     aria-label={`${n} sao`}
-                    onClick={() => setStars(n)}
+                    onClick={() => {
+                      setStars(n)
+                      setReviewErr("")
+                    }}
                     className={`grid size-11 place-items-center rounded-lg border text-lg transition-colors ${
                       n <= stars
                         ? "border-brand bg-brand/12 text-brand"
@@ -716,19 +836,36 @@ export default function Receipt() {
               </div>
               </div>
 
-              <textarea
-                className="input h-auto resize-y py-3 leading-6"
-                rows={3}
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Ghi lại điều gì tốt, hoặc điều gì nên sửa. Cụ thể thì cơ sở sửa được."
-              />
+              <div>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-ink">Nhận xét / góp ý (không bắt buộc)</span>
+                  <span className="text-xs text-muted">{note.trim().length}/1000 ký tự</span>
+                </div>
+                <textarea
+                  className="input h-auto resize-y py-3 leading-6"
+                  rows={3}
+                  value={note}
+                  onChange={(e) => {
+                    setNote(e.target.value)
+                    setReviewErr("")
+                  }}
+                  placeholder="Ghi lại điều gì tốt, hoặc điều gì nên sửa. Cụ thể thì cơ sở sửa được."
+                />
+              </div>
+
+              {reviewErr && (
+                <p
+                  role="alert"
+                  className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+                >
+                  {reviewErr}
+                </p>
+              )}
 
               <div className="flex flex-wrap items-center gap-4">
                 <button
-                  type="button"
-                  disabled={stars === 0 || reviewBusy}
-                  onClick={() => void handleSubmitReview()}
+                  type="submit"
+                  disabled={reviewBusy}
                   className="btn-primary h-11 px-6"
                 >
                   {reviewBusy ? "Đang gửi..." : "Gửi đánh giá"}
@@ -741,7 +878,7 @@ export default function Receipt() {
                   </p>
                 )}
               </div>
-            </>
+            </form>
           )}
         </section>
       )}

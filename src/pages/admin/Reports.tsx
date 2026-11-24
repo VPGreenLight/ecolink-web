@@ -5,6 +5,7 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { FLOWS } from "@/data/cashflow"
 import { MY_HANDOVERS } from "@/data/handover"
 import { ACCOUNTS, STATS, fmtInt, fmtVnd } from "@/data/ops"
+import { hasLiveBackendAuth } from "@/lib/session"
 import { initApiState } from "@/lib/hydration"
 import {
   exportAdminReportBlob,
@@ -156,6 +157,7 @@ export default function Reports() {
   const [format, setFormat] = useState<ReportExportFormat>("csv")
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [flash, setFlash] = useState("")
+  const [errMsg, setErrMsg] = useState("")
 
   // Số liệu tổng quan đồng bộ từ A-01
   const [kpi, setKpi] = useState(() =>
@@ -230,8 +232,13 @@ export default function Reports() {
   }, [tab, page, actionFilter, debouncedKeyword])
 
   const handleExport = async (dataset: ReportDatasetType) => {
-    setBusyKey(dataset)
+    setErrMsg("")
     setFlash("")
+    if (fromDate && toDate && fromDate > toDate) {
+      setErrMsg("Khoảng thời gian không hợp lệ: Từ ngày không được lớn hơn Đến ngày.")
+      return
+    }
+    setBusyKey(dataset)
     try {
       const { blob, fileName, rowCount } = await exportAdminReportBlob({
         dataset,
@@ -244,7 +251,15 @@ export default function Reports() {
         `Đã trích xuất ${fileName} (${rowCount} dòng, đã ẩn danh PII theo BR-ADM-06 và ghi nhận Audit Log).`,
       )
       if (tab === "audit") loadAuditLogs(1)
-    } catch {
+    } catch (err) {
+      if (hasLiveBackendAuth()) {
+        setErrMsg(
+          err instanceof Error
+            ? err.message
+            : "Không thể trích xuất báo cáo từ máy chủ lúc này.",
+        )
+        return
+      }
       downloadFallbackCsv(dataset, fromDate, toDate)
       setFlash(
         `Đã tải bản trích xuất CSV cục bộ cho "${FALLBACK_SHEETS[dataset].label}" (đã che dấu PII chuẩn BR-ADM-06).`,
@@ -373,6 +388,14 @@ export default function Reports() {
               </ul>
             </div>
 
+            {errMsg && (
+              <p
+                role="alert"
+                className="rounded-xl border border-warn/30 bg-warn/5 px-4 py-2.5 text-[13px] font-semibold text-warn"
+              >
+                {errMsg}
+              </p>
+            )}
             {flash && (
               <p role="status" className="text-[13px] font-semibold text-brand">
                 {flash}

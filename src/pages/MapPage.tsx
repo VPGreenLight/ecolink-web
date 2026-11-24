@@ -699,7 +699,7 @@ export default function MapPage() {
                 </div>
 
                 {/* Ô tìm kiếm địa danh (Submit-only cho Nominatim) */}
-                <form onSubmit={handlePlaceSubmit} className="mt-3 flex gap-2">
+                <form noValidate onSubmit={handlePlaceSubmit} className="mt-3 flex gap-2">
                   <div className="relative min-w-0 flex-1">
                     <Search
                       className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted"
@@ -727,7 +727,10 @@ export default function MapPage() {
                 </form>
 
                 {placeSearchNotice && (
-                  <p className="mt-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-body">
+                  <p
+                    role="alert"
+                    className="mt-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs font-medium text-warn"
+                  >
                     {placeSearchNotice}
                   </p>
                 )}
@@ -1134,12 +1137,18 @@ function PartnerDetail({
   const isGuest = !session && !isSsrSmokeTest()
   const [reviewsSummary, setReviewsSummary] = useState<RecyclerReviewsSummaryDto | null>(null)
   const [reportBusyId, setReportBusyId] = useState<string | null>(null)
+  const [reportingReviewId, setReportingReviewId] = useState<string | null>(null)
+  const [reportReason, setReportReason] = useState("")
+  const [reportErr, setReportErr] = useState("")
   const [reportFlash, setReportFlash] = useState("")
 
   useEffect(() => {
     const controller = new AbortController()
     setReviewsSummary(null)
     setReportFlash("")
+    setReportingReviewId(null)
+    setReportReason("")
+    setReportErr("")
     void fetchRecyclerReviews(partner.id, { pageSize: 4 }, controller.signal)
       .then((res) => {
         if (!controller.signal.aborted && res.success && res.data) {
@@ -1150,20 +1159,39 @@ function PartnerDetail({
     return () => controller.abort()
   }, [partner.id])
 
-  const handleReportReview = async (reviewId: string) => {
+  const openReportForm = (reviewId: string) => {
     if (isGuest) {
       openAuthPopup("login")
       return
     }
-    const reason = window.prompt("Nhập lý do báo cáo đánh giá vi phạm (tối thiểu 5 ký tự):")
-    if (!reason || reason.trim().length < 5) return
+    setReportingReviewId((prev) => (prev === reviewId ? null : reviewId))
+    setReportReason("")
+    setReportErr("")
+    setReportFlash("")
+  }
+
+  const submitReportReview = async (e: React.FormEvent, reviewId: string) => {
+    e.preventDefault()
+    if (reportBusyId) return
+    const clean = reportReason.trim()
+    if (clean.length < 5) {
+      setReportErr("Lý do báo cáo đánh giá vi phạm cần tối thiểu 5 ký tự.")
+      return
+    }
+    if (clean.length > 500) {
+      setReportErr("Lý do báo cáo đánh giá không được vượt quá 500 ký tự.")
+      return
+    }
     setReportBusyId(reviewId)
+    setReportErr("")
     setReportFlash("")
     try {
-      await reportReview(reviewId, reason.trim())
+      await reportReview(reviewId, clean)
       setReportFlash("Đã gửi báo cáo vi phạm đánh giá tới nhân viên kiểm duyệt.")
+      setReportingReviewId(null)
+      setReportReason("")
     } catch (err) {
-      setReportFlash(
+      setReportErr(
         err instanceof ApiError ? err.message : "Vui lòng đăng nhập để báo cáo đánh giá vi phạm.",
       )
     } finally {
@@ -1294,7 +1322,7 @@ function PartnerDetail({
         </div>
 
         {reportFlash && (
-          <p className="mt-2 rounded-lg bg-surface px-2.5 py-1.5 text-[11px] font-medium text-brand-deep">
+          <p role="status" className="mt-2 rounded-lg bg-surface px-2.5 py-1.5 text-[11px] font-medium text-brand-deep">
             {reportFlash}
           </p>
         )}
@@ -1311,13 +1339,55 @@ function PartnerDetail({
                   <button
                     type="button"
                     disabled={reportBusyId === rv.reviewId}
-                    onClick={() => void handleReportReview(rv.reviewId)}
+                    onClick={() => openReportForm(rv.reviewId)}
                     className="text-[11px] text-muted hover:text-warn hover:underline"
                   >
-                    Báo cáo vi phạm
+                    {reportingReviewId === rv.reviewId ? "Đóng" : "Báo cáo vi phạm"}
                   </button>
                 </div>
                 {rv.comment && <p className="mt-1 text-body">{rv.comment}</p>}
+                {reportingReviewId === rv.reviewId && (
+                  <form
+                    noValidate
+                    onSubmit={(e) => void submitReportReview(e, rv.reviewId)}
+                    className="mt-2 flex flex-col gap-2 rounded-lg border border-warn/30 bg-surface-2 p-2.5"
+                  >
+                    <textarea
+                      rows={2}
+                      value={reportReason}
+                      onChange={(e) => {
+                        setReportReason(e.target.value)
+                        setReportErr("")
+                      }}
+                      placeholder="Nhập lý do báo cáo đánh giá vi phạm (5–500 ký tự)..."
+                      className="input h-auto py-1.5 text-xs"
+                    />
+                    {reportErr && (
+                      <p role="alert" className="text-[11px] font-medium text-warn">
+                        {reportErr}
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        disabled={reportBusyId === rv.reviewId}
+                        className="btn-primary h-7 px-3 text-[11px]"
+                      >
+                        {reportBusyId === rv.reviewId ? "Đang gửi..." : "Gửi báo cáo"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReportingReviewId(null)
+                          setReportErr("")
+                        }}
+                        className="btn-ghost h-7 px-2.5 text-[11px]"
+                      >
+                        Hủy
+                      </button>
+                    </div>
+                  </form>
+                )}
               </li>
             ))}
           </ul>

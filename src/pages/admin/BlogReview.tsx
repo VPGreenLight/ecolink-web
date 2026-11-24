@@ -62,6 +62,7 @@ export default function BlogReview() {
 
   const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState("")
+  const [rejectErr, setRejectErr] = useState("")
   const [flash, setFlash] = useState("")
   const [error, setError] = useState("")
 
@@ -155,10 +156,11 @@ export default function BlogReview() {
 
   const submitRejectLive = async (post: BlogPostSummaryDto) => {
     const trimmed = rejectReason.trim()
-    if (!trimmed) {
-      setError("Vui lòng nhập lý do hủy bài trước khi xác nhận.")
+    if (trimmed.length < 5 || trimmed.length > 500) {
+      setRejectErr("Lý do hủy/từ chối bài viết phải từ 5 đến 500 ký tự.")
       return
     }
+    setRejectErr("")
     setBusyId(post.id)
     setError("")
     setFlash("")
@@ -200,10 +202,11 @@ export default function BlogReview() {
 
   const submitRejectOffline = (id: string) => {
     const trimmed = rejectReason.trim()
-    if (!trimmed) {
-      setError("Vui lòng nhập lý do hủy bài trước khi xác nhận.")
+    if (trimmed.length < 5 || trimmed.length > 500) {
+      setRejectErr("Lý do hủy/từ chối bài viết phải từ 5 đến 500 ký tự.")
       return
     }
+    setRejectErr("")
     setError("")
     setOfflineList((ls) =>
       ls.map((p) => (p.id === id ? { ...p, status: "rejected", note: trimmed } : p)),
@@ -427,7 +430,19 @@ export default function BlogReview() {
                   </div>
 
                   {isRejecting && (
-                    <div className="mt-1 flex flex-col gap-3 rounded-xl border border-bad/25 bg-bad/5 p-4">
+                    <form
+                      noValidate
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        void submitRejectLive(p)
+                      }}
+                      className="mt-1 flex flex-col gap-3 rounded-xl border border-bad/25 bg-bad/5 p-4"
+                    >
+                      {rejectErr && (
+                        <p role="alert" className="text-[13px] font-semibold text-bad">
+                          {rejectErr}
+                        </p>
+                      )}
                       <label
                         htmlFor={`reject-reason-${p.id}`}
                         className="text-sm font-semibold text-ink"
@@ -445,9 +460,8 @@ export default function BlogReview() {
                       />
                       <div className="flex flex-wrap gap-2">
                         <button
-                          type="button"
+                          type="submit"
                           disabled={isBusy}
-                          onClick={() => void submitRejectLive(p)}
                           className="btn-primary h-10 bg-bad px-4 text-sm hover:bg-bad/90"
                         >
                           Xác nhận hủy bài
@@ -458,6 +472,7 @@ export default function BlogReview() {
                           onClick={() => {
                             setRejectingId(null)
                             setRejectReason("")
+                            setRejectErr("")
                             setError("")
                           }}
                           className="btn-ghost h-10 px-4 text-sm"
@@ -465,7 +480,7 @@ export default function BlogReview() {
                           Đóng
                         </button>
                       </div>
-                    </div>
+                    </form>
                   )}
                 </li>
               )
@@ -524,7 +539,19 @@ export default function BlogReview() {
                   </div>
 
                   {isRejecting && (
-                    <div className="mt-1 flex flex-col gap-3 rounded-xl border border-bad/25 bg-bad/5 p-4">
+                    <form
+                      noValidate
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        submitRejectOffline(p.id)
+                      }}
+                      className="mt-1 flex flex-col gap-3 rounded-xl border border-bad/25 bg-bad/5 p-4"
+                    >
+                      {rejectErr && (
+                        <p role="alert" className="text-[13px] font-semibold text-bad">
+                          {rejectErr}
+                        </p>
+                      )}
                       <label
                         htmlFor={`reject-reason-${p.id}`}
                         className="text-sm font-semibold text-ink"
@@ -541,8 +568,7 @@ export default function BlogReview() {
                       />
                       <div className="flex flex-wrap gap-2">
                         <button
-                          type="button"
-                          onClick={() => submitRejectOffline(p.id)}
+                          type="submit"
                           className="btn-primary h-10 bg-bad px-4 text-sm hover:bg-bad/90"
                         >
                           Xác nhận hủy bài
@@ -552,6 +578,7 @@ export default function BlogReview() {
                           onClick={() => {
                             setRejectingId(null)
                             setRejectReason("")
+                            setRejectErr("")
                             setError("")
                           }}
                           className="btn-ghost h-10 px-4 text-sm"
@@ -559,7 +586,7 @@ export default function BlogReview() {
                           Đóng
                         </button>
                       </div>
-                    </div>
+                    </form>
                   )}
                 </li>
               )

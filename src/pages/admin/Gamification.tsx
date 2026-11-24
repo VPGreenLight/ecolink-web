@@ -75,6 +75,36 @@ export default function GamificationConfig() {
     if (!config) return
     setError("")
     setFlash("")
+    if (!Number.isFinite(config.defaultPointsPerKg) || config.defaultPointsPerKg < 0) {
+      setError("Điểm thưởng mặc định mỗi kg phải lớn hơn hoặc bằng 0.")
+      return
+    }
+    if (
+      !Number.isFinite(config.dailyNonTransactionCap) ||
+      config.dailyNonTransactionCap < 0 ||
+      !Number.isFinite(config.checkinBasePoints) ||
+      config.checkinBasePoints < 0 ||
+      !Number.isFinite(config.streakBonusIncrement) ||
+      config.streakBonusIncrement < 0 ||
+      !Number.isFinite(config.streakBonusCap) ||
+      config.streakBonusCap < 0
+    ) {
+      setError("Giới hạn điểm mỗi ngày và điểm điểm danh không được âm.")
+      return
+    }
+    if (
+      !Number.isFinite(config.dailyTreeCareLimit) ||
+      config.dailyTreeCareLimit < 1 ||
+      !Number.isFinite(config.voucherValidityDays) ||
+      config.voucherValidityDays < 1
+    ) {
+      setError("Giới hạn chăm sóc cây mỗi ngày và số ngày hiệu lực voucher phải từ 1 trở lên.")
+      return
+    }
+    if (config.pointRates.some((r) => !Number.isFinite(r.pointsPerKg) || r.pointsPerKg < 0)) {
+      setError("Tỷ lệ quy đổi điểm theo từng loại phế liệu phải lớn hơn hoặc bằng 0.")
+      return
+    }
 
     if (config.treeLevels.length === 0) {
       setError("Cần ít nhất 1 hạng cây ảo.")
@@ -86,8 +116,8 @@ export default function GamificationConfig() {
       requiredPoints: idx === 0 ? 0 : Math.max(0, Math.round(lvl.requiredPoints)),
     }))
     for (let i = 0; i < normalizedLevels.length; i += 1) {
-      if (!normalizedLevels[i].title) {
-        setError(`Tên hạng cấp ${normalizedLevels[i].level} không được để trống.`)
+      if (!normalizedLevels[i].title || normalizedLevels[i].title.length > 100) {
+        setError(`Tên hạng cấp ${normalizedLevels[i].level} phải từ 1 đến 100 ký tự.`)
         return
       }
       if (i > 0 && normalizedLevels[i].requiredPoints <= normalizedLevels[i - 1].requiredPoints) {
@@ -233,12 +263,21 @@ export default function GamificationConfig() {
           </div>
         ) : (
           <form
+            noValidate
             onSubmit={(e) => {
               e.preventDefault()
               void saveLiveConfig()
             }}
             className="grid gap-6 lg:grid-cols-[1fr_1.4fr]"
           >
+            {error && (
+              <p
+                role="alert"
+                className="lg:col-span-2 rounded-xl border border-bad/25 bg-bad/5 px-4 py-3 text-[13px] font-semibold text-bad"
+              >
+                {error}
+              </p>
+            )}
             <div className="flex flex-col gap-5">
               <div className="card flex flex-col gap-4 p-5 md:p-6">
                 <h2 className="text-base font-bold text-ink">Tham số tích điểm &amp; điểm danh</h2>
@@ -529,12 +568,21 @@ export default function GamificationConfig() {
       ) : (
         <div className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
           <form
+            noValidate
             onSubmit={(e) => {
               e.preventDefault()
               setFlash("Đã lưu cấu hình điểm.")
             }}
             className="card flex flex-col gap-5 p-5 md:p-6"
           >
+            {error && (
+              <p
+                role="alert"
+                className="rounded-xl border border-bad/25 bg-bad/5 px-4 py-3 text-[13px] font-semibold text-bad"
+              >
+                {error}
+              </p>
+            )}
             <Field
               label="Điểm mỗi kg bàn giao đúng loại"
               hint="Tính trên khối lượng người dùng xác nhận, không phải khối lượng ước tính."

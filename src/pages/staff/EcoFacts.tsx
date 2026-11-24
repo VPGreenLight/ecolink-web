@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react"
-import { PageHead, Field, Status } from "@/components/Portal"
+import { PageHead, Field, FormRequiredLegend, Status } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import PaginationBar, { FIXED_PAGE_SIZE } from "@/components/PaginationBar"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { ECO_FACTS, type EcoFact } from "@/data/ops"
+import { ApiError } from "@/lib/api"
 import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
+import { hasLiveBackendAuth } from "@/lib/session"
 import {
   createStaffEcoFact,
   deleteStaffEcoFact,
@@ -36,6 +38,7 @@ export default function EcoFacts() {
   const [offlineCost, setOfflineCost] = useState(500)
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState("")
+  const [errMsg, setErrMsg] = useState("")
 
   const loadFacts = async () => {
     setLoading(true)
@@ -72,19 +75,34 @@ export default function EcoFacts() {
 
   const submitForm = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!liveMode) {
-      if (title.trim().length < 8) {
-        setFlash("Tiêu đề cần ít nhất 8 ký tự.")
-        return
-      }
-      if (body.trim().length < 40) {
-        setFlash("Nội dung cần ít nhất 40 ký tự để đủ một kiến thức dùng được.")
-        return
-      }
+    setErrMsg("")
+    setFlash("")
+    const cleanTitle = title.trim()
+    const cleanBody = body.trim()
+    const cleanSource = sourceUrl.trim()
+
+    if (cleanTitle.length < 3 || cleanTitle.length > 150) {
+      setErrMsg("Tiêu đề Eco Fact phải từ 3 đến 150 ký tự.")
+      return
+    }
+    if (cleanBody.length < 10 || cleanBody.length > 1000) {
+      setErrMsg("Nội dung Eco Fact phải từ 10 đến 1000 ký tự.")
+      return
+    }
+    if (!Number.isInteger(unlockLevel) || unlockLevel < 1 || unlockLevel > 10) {
+      setErrMsg("Mốc cấp Cây Ảo mở khóa phải từ cấp 1 đến cấp 10.")
+      return
+    }
+    if (cleanSource && !/^https?:\/\/.+/i.test(cleanSource)) {
+      setErrMsg("URL nguồn tham khảo phải bắt đầu bằng http:// hoặc https://.")
+      return
+    }
+
+    if (!liveMode && !hasLiveBackendAuth()) {
       const id = `EF-${String(offlineList.length + 1).padStart(2, "0")}`
       setOfflineList((ls) => [
         ...ls,
-        { id, title: title.trim(), body: body.trim(), cost: offlineCost, open: false },
+        { id, title: cleanTitle, body: cleanBody, cost: offlineCost, open: false },
       ])
       setTitle("")
       setBody("")
@@ -94,13 +112,12 @@ export default function EcoFacts() {
 
     if (busy) return
     setBusy(true)
-    setFlash("")
     try {
       const payload = {
-        title: title.trim(),
-        content: body.trim(),
+        title: cleanTitle,
+        content: cleanBody,
         unlockTreeLevel: unlockLevel,
-        sourceUrl: sourceUrl.trim() || null,
+        sourceUrl: cleanSource || null,
       }
       if (editingId) {
         await updateStaffEcoFact(editingId, payload)
@@ -112,7 +129,7 @@ export default function EcoFacts() {
       resetForm()
       await loadFacts()
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Lưu Eco Fact thất bại.")
+      setErrMsg(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Lưu Eco Fact thất bại.")
     } finally {
       setBusy(false)
     }
@@ -127,6 +144,7 @@ export default function EcoFacts() {
       />
 
       <form onSubmit={(e) => void submitForm(e)} noValidate className="card flex flex-col gap-5 p-5 md:p-6">
+        <FormRequiredLegend />
         {editingId && (
           <div className="flex items-center justify-between rounded-lg bg-brand/6 px-3.5 py-2 text-xs font-semibold text-brand-deep">
             <span>Đang chỉnh sửa Eco Fact</span>
@@ -145,13 +163,15 @@ export default function EcoFacts() {
           />
         </Field>
 
-        <Field label="Nội dung" required hint="Tối đa 300 ký tự. Ghi rõ số liệu và tác động môi trường.">
+        <Field label="Nội dung" required hint="Từ 10 đến 1000 ký tự. Ghi rõ số liệu và tác động môi trường.">
           <textarea
             className="input h-auto resize-y py-3 leading-6"
             rows={3}
-            maxLength={300}
             value={body}
-            onChange={(e) => setBody(e.target.value)}
+            onChange={(e) => {
+              setBody(e.target.value)
+              setErrMsg("")
+            }}
           />
         </Field>
 
@@ -187,6 +207,15 @@ export default function EcoFacts() {
               onChange={(e) => setOfflineCost(Number(e.target.value))}
             />
           </Field>
+        )}
+
+        {errMsg && (
+          <p
+            role="alert"
+            className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+          >
+            {errMsg}
+          </p>
         )}
 
         <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
@@ -289,9 +318,10 @@ export default function EcoFacts() {
                               try {
                                 await setStaffEcoFactStatus(f.id, active ? "INACTIVE" : "ACTIVE")
                                 setFlash(`Đã chuyển ${f.code} sang ${active ? "INACTIVE" : "ACTIVE"}.`)
+                                setErrMsg("")
                                 await loadFacts()
                               } catch (err) {
-                                setFlash(err instanceof Error ? err.message : "Thao tác thất bại.")
+                                setErrMsg(err instanceof Error ? err.message : "Thao tác thất bại.")
                               }
                             }}
                             className="font-semibold text-brand hover:text-brand-deep"
@@ -304,9 +334,10 @@ export default function EcoFacts() {
                               try {
                                 await deleteStaffEcoFact(f.id)
                                 setFlash(`Đã xoá / gỡ ${f.code}.`)
+                                setErrMsg("")
                                 await loadFacts()
                               } catch (err) {
-                                setFlash(err instanceof Error ? err.message : "Không thể xoá.")
+                                setErrMsg(err instanceof Error ? err.message : "Không thể xoá.")
                               }
                             }}
                             className="font-semibold text-warn hover:underline"

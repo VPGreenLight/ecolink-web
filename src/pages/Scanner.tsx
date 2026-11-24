@@ -1577,14 +1577,23 @@ function InlineFeedbackReport({
   const [doneMsg, setDoneMsg] = useState("")
   const [errMsg, setErrMsg] = useState("")
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault()
     if (isGuest) {
       openAuthPopup("login")
       return
     }
-    if (!reportedLabel || sending) return
-    setSending(true)
+    if (sending) return
     setErrMsg("")
+    if (!reportedLabel) {
+      setErrMsg("Vui lòng chọn loại rác đúng thực tế trước khi gửi phản hồi.")
+      return
+    }
+    if (note.trim().length > 500) {
+      setErrMsg("Ghi chú phản hồi AI không được vượt quá 500 ký tự.")
+      return
+    }
+    setSending(true)
     try {
       const res = await submitAiFeedback({
         scanId,
@@ -1633,7 +1642,11 @@ function InlineFeedbackReport({
   }
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-3 text-xs">
+    <form
+      noValidate
+      onSubmit={(e) => void handleSubmit(e)}
+      className="rounded-xl border border-line bg-surface p-3 text-xs"
+    >
       <div className="flex items-center justify-between gap-2">
         <span className="font-semibold text-ink">Báo cáo nhãn rác đúng (cải thiện AI)</span>
         {!defaultOpen && (
@@ -1656,7 +1669,10 @@ function InlineFeedbackReport({
           <select
             aria-label="Chọn loại rác đúng"
             value={reportedLabel}
-            onChange={(e) => setReportedLabel(e.target.value)}
+            onChange={(e) => {
+              setReportedLabel(e.target.value)
+              setErrMsg("")
+            }}
             className="h-9 rounded-lg border border-sage-line bg-white px-2.5 text-xs font-normal text-ink focus:border-brand focus:outline-none"
           >
             <option value="">-- Chọn loại rác đúng --</option>
@@ -1672,24 +1688,30 @@ function InlineFeedbackReport({
           <input
             type="text"
             value={note}
-            onChange={(e) => setNote(e.target.value)}
+            onChange={(e) => {
+              setNote(e.target.value)
+              setErrMsg("")
+            }}
             placeholder="Ghi chú thêm (tuỳ chọn)"
             className="h-9 rounded-lg border border-sage-line bg-white px-2.5 text-xs font-normal text-ink placeholder:text-muted focus:border-brand focus:outline-none"
           />
         </label>
       </div>
 
-      {errMsg && <p className="mt-1.5 text-warn">{errMsg}</p>}
+      {errMsg && (
+        <p role="alert" className="mt-2 rounded-lg border border-warn/30 bg-warn/10 px-2.5 py-1.5 text-xs font-medium text-warn">
+          {errMsg}
+        </p>
+      )}
 
       <button
-        type="button"
-        disabled={!reportedLabel || sending}
-        onClick={handleSubmit}
+        type="submit"
+        disabled={sending}
         className="btn-outline mt-2 h-8 px-3 text-xs disabled:opacity-50"
       >
         {sending ? "Đang gửi..." : "Gửi phản hồi"}
       </button>
-    </div>
+    </form>
   )
 }
 

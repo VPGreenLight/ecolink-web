@@ -1,9 +1,8 @@
-import { S as signOut, T as useSession, i as ensureActiveAuthSession, l as ROLE_HOME, p as getSession, u as ROLE_LABEL, x as signIn } from "./assets/api-C1qO1Zaw.js";
-import { a as useAuthModalMode, i as openAuthPopup, t as closeAuthModal } from "./assets/popupAuth-B1lleidL.js";
-import { t as AuthForm } from "./assets/AuthForm-CBuvdjhZ.js";
-import { v as useEntitlements } from "./assets/servicePackageApi-Cj-Kb8-F.js";
-import { m as ConfirmLogoutDialog, o as Portal, p as PORTAL_NAV } from "./assets/Portal-B_rYcew2.js";
-import { i as SUPPORT, n as MOBILE_LINKS, r as NAV_LINKS, t as FOOTER_COLUMNS } from "./assets/nav-CZ7u8mgC.js";
+import { C as signIn, D as useSession, d as ROLE_LABEL, h as getSession, i as ensureActiveAuthSession, u as ROLE_HOME, w as signOut } from "./assets/api-BcucRD7x.js";
+import { a as useAuthModalMode, i as openAuthPopup, t as closeAuthModal } from "./assets/popupAuth-B0QM-H-V.js";
+import { t as AuthForm } from "./assets/AuthForm-DOk6ca7Z.js";
+import { v as useEntitlements } from "./assets/servicePackageApi-CS25DpPC.js";
+import { m as ConfirmLogoutDialog, o as Portal, p as PORTAL_NAV } from "./assets/Portal-CyX9Rhh0.js";
 import { t as AI_AVATAR } from "./assets/scanner-DJC07y4s.js";
 import { d as POSTS, f as STAFF, h as fmtVnd, i as COMPLAINTS, m as fmtInt, n as AI_CASES, o as DATASET, p as STATS, r as APPLICATIONS } from "./assets/ops-DEQYZm4o.js";
 import { n as FLOWS } from "./assets/cashflow-CHqRtMGy.js";
@@ -41,6 +40,86 @@ function CompactAuthModal() {
 		})
 	});
 }
+//#endregion
+//#region src/data/nav.ts
+var NAV_LINKS = [
+	{
+		to: "/",
+		label: "Tổng quan"
+	},
+	{
+		to: "/scanner",
+		label: "Nhận diện AI"
+	},
+	{
+		to: "/map",
+		label: "Điểm thu gom"
+	},
+	{
+		to: "/rewards",
+		label: "Đổi thưởng"
+	},
+	{
+		to: "/blog",
+		label: "Blog"
+	}
+];
+var MOBILE_LINKS = [
+	{
+		to: "/",
+		label: "Tổng quan"
+	},
+	{
+		to: "/scanner",
+		label: "Nhận diện"
+	},
+	{
+		to: "/map",
+		label: "Thu gom"
+	},
+	{
+		to: "/rewards",
+		label: "Đổi thưởng"
+	}
+];
+var FOOTER_COLUMNS = [{
+	title: "HỆ SINH THÁI",
+	links: [
+		"Nhận diện tự động qua Camera",
+		"Sàn giao dịch phế liệu GPS",
+		"Cổng liên kết nhà máy tái chế",
+		"Chứng chỉ tín chỉ tuần hoàn EPR"
+	]
+}, {
+	title: "CỘNG ĐỒNG & PHÁP LÝ",
+	links: [
+		{
+			label: "Khiếu nại và góp ý",
+			to: "/feedback"
+		},
+		{
+			label: "Hướng dẫn phân loại rác nguồn",
+			to: "/guidance"
+		},
+		{
+			label: "Quy chuẩn vật liệu tái chế",
+			to: "/waste"
+		},
+		{
+			label: "Chính sách quyền riêng tư",
+			to: "/terms?category=PRIVACY"
+		},
+		{
+			label: "Điều khoản dịch vụ môi trường",
+			to: "/terms"
+		}
+	]
+}];
+var SUPPORT = {
+	title: "TRUNG TÂM HỖ TRỢ",
+	note: "Đường dây nóng điều phối thu gom và xử lý sự cố chất thải địa phương.",
+	links: ["1900 8828 (8:00 - 18:00)", "hotro@ecolink.vn"]
+};
 //#endregion
 //#region src/components/Navbar.tsx
 function initialsOf$1(name) {
@@ -1065,14 +1144,15 @@ function AccountMenu({ name, label, items }) {
 *  đã đăng nhập sai vai trò -> về trang chủ của vai trò đó, đồng thời đối chiếu Cookie với Backend. */
 function RequireRole({ roles, children }) {
 	const session = useSession();
+	const sessionIdentity = session ? `${session.id ?? session.username ?? session.name}:${session.role}` : null;
 	useEffect(() => {
 		if (typeof window === "undefined") return;
-		if (!session) {
+		if (!sessionIdentity) {
 			openAuthPopup("login");
 			return;
 		}
 		ensureActiveAuthSession();
-	}, [session]);
+	}, [sessionIdentity]);
 	if (!session) return /* @__PURE__ */ jsx(Navigate, {
 		to: "/",
 		replace: true
@@ -1095,61 +1175,61 @@ function RequireRole({ roles, children }) {
 *  đồng bộ, `lazy` chưa resolve sẽ render ra fallback nên phải nạp trước. */
 var loaders = {
 	Home: () => import("./assets/Home-AlJHO5uZ.js"),
-	Blog: () => import("./assets/Blog-B9tpO3G0.js"),
-	BlogDetail: () => import("./assets/BlogDetail-C4FXSuF-.js"),
-	Rewards: () => import("./assets/Rewards-BG4GiSPC.js"),
-	LeaderboardPage: () => import("./assets/Leaderboard-CcxVWuFo.js"),
-	Scanner: () => import("./assets/Scanner-B6Svq89E.js"),
-	MapPage: () => import("./assets/MapPage-C1iteIan.js"),
-	Partners: () => import("./assets/Partners-CKcXFdi1.js"),
-	Feedback: () => import("./assets/Feedback-BHfGHaNx.js"),
-	Guidance: () => import("./assets/Guidance-puMRK7D9.js"),
-	Waste: () => import("./assets/Waste-BxiUOWPO.js"),
-	Chat: () => import("./assets/Chat-DNDc6xej.js"),
-	JoinRecycler: () => import("./assets/JoinRecycler-i-BWa6_-.js"),
-	ResetPassword: () => import("./assets/ResetPassword-DhdMPZGZ.js"),
-	Terms: () => import("./assets/Terms-DHuwE638.js"),
-	EcoFactsPage: () => import("./assets/EcoFactsPage-DidbEQST.js"),
-	Login: () => import("./assets/Login-G91nYru_.js"),
-	Register: () => import("./assets/Register-ZKhAKaaR.js"),
-	Logout: () => import("./assets/Logout-BdGSoJPc.js"),
+	Blog: () => import("./assets/Blog-CvMD6XIz.js"),
+	BlogDetail: () => import("./assets/BlogDetail-BI4opNVn.js"),
+	Rewards: () => import("./assets/Rewards-bZ42L3ed.js"),
+	LeaderboardPage: () => import("./assets/Leaderboard-BGW0HBg5.js"),
+	Scanner: () => import("./assets/Scanner-BiqoUbIa.js"),
+	MapPage: () => import("./assets/MapPage-DCq3HOXF.js"),
+	Partners: () => import("./assets/Partners-CIZrTiBM.js"),
+	Feedback: () => import("./assets/Feedback--UKw-4Gy.js"),
+	Guidance: () => import("./assets/Guidance-w6H09biY.js"),
+	Waste: () => import("./assets/Waste-hF-kZG7T.js"),
+	Chat: () => import("./assets/Chat-DFYEpzP4.js"),
+	JoinRecycler: () => import("./assets/JoinRecycler-D83vGm3L.js"),
+	ResetPassword: () => import("./assets/ResetPassword-BXY1Z8CK.js"),
+	Terms: () => import("./assets/Terms-BFbBVb9e.js"),
+	EcoFactsPage: () => import("./assets/EcoFactsPage-Dp83Nblb.js"),
+	Login: () => import("./assets/Login-5zEWyX6i.js"),
+	Register: () => import("./assets/Register-CwO23xID.js"),
+	Logout: () => import("./assets/Logout-CoqF1jLT.js"),
 	NotFound: () => import("./assets/NotFound-Cuzh8QZo.js"),
-	Profile: () => import("./assets/Profile-CfG8A7xr.js"),
-	Notifications: () => import("./assets/Notifications-r7pqf5np.js"),
-	Password: () => import("./assets/Password-Cze4_aqq.js"),
-	UserHome: () => import("./assets/Home-C_VKtSFh.js"),
-	Handover: () => import("./assets/Handover-B3WV6MvG.js"),
-	Receipt: () => import("./assets/Receipt-gJ68uZz1.js"),
-	Payout: () => import("./assets/Payout-B0vih0hm.js"),
-	Transactions: () => import("./assets/Transactions-DHM6ljTO.js"),
-	Gamification: () => import("./assets/Gamification-BUqS_N7S.js"),
-	RecyclerHome: () => import("./assets/Home-DE0tmboB.js"),
-	Requests: () => import("./assets/Requests-CwbcRCuN.js"),
-	Catalog: () => import("./assets/Catalog-BUnMUarC.js"),
-	RecyclerReceipt: () => import("./assets/Receipt-BMrzLVYn.js"),
-	StaffHome: () => import("./assets/Home-BUI9ry-A.js"),
-	AiReview: () => import("./assets/AiReview-M0JCv-Mk.js"),
-	Dataset: () => import("./assets/Dataset-DJqT8n59.js"),
-	Applications: () => import("./assets/Applications-_8oEojIa.js"),
-	Complaints: () => import("./assets/Complaints-CDDh-0Oe.js"),
-	Accounts: () => import("./assets/Accounts-DXh5UZ1N.js"),
-	BlogEditor: () => import("./assets/BlogEditor-iRnl_jEn.js"),
-	EcoFacts: () => import("./assets/EcoFacts-CbXG3Cfw.js"),
-	Gifts: () => import("./assets/Gifts-BQsZ4OUx.js"),
-	StaffCheckIn: () => import("./assets/CheckIn-BnxUKsns.js"),
-	AdminHome: () => import("./assets/Home-BbGHSKlB.js"),
-	Reports: () => import("./assets/Reports-Cc0elN3g.js"),
-	StaffAccounts: () => import("./assets/StaffAccounts-DMQGoCLU.js"),
-	Permissions: () => import("./assets/Permissions-BWOSMnFu.js"),
-	BlogReview: () => import("./assets/BlogReview-CM3w7EGX.js"),
-	Categories: () => import("./assets/Categories-B2o_-yQB.js"),
-	Policy: () => import("./assets/Policy-nvD7n8JB.js"),
-	GamificationConfig: () => import("./assets/Gamification-C0XSJsLB.js"),
-	LeaderboardConfig: () => import("./assets/Leaderboard-D3hfCb85.js"),
-	Fees: () => import("./assets/Fees-CfuFITus.js"),
-	Reconciliation: () => import("./assets/Reconciliation-BtV1gHDY.js"),
-	AccountProfile: () => import("./assets/AccountProfile-D_Ws4SCS.js"),
-	AccountPassword: () => import("./assets/AccountPassword-BSYlcp2b.js")
+	Profile: () => import("./assets/Profile-P4-an5Md.js"),
+	Notifications: () => import("./assets/Notifications-8p_KzkQG.js"),
+	Password: () => import("./assets/Password-CVwGZpRG.js"),
+	UserHome: () => import("./assets/Home-ASqNVj-J.js"),
+	Handover: () => import("./assets/Handover-Dz3okOxp.js"),
+	Receipt: () => import("./assets/Receipt-C61UuC0c.js"),
+	Payout: () => import("./assets/Payout-BPC0-gTi.js"),
+	Transactions: () => import("./assets/Transactions-Cse0vUXX.js"),
+	Gamification: () => import("./assets/Gamification-CVqfv_6n.js"),
+	RecyclerHome: () => import("./assets/Home-H-jCjBZn.js"),
+	Requests: () => import("./assets/Requests-C9OpDxG3.js"),
+	Catalog: () => import("./assets/Catalog-yfAbVkfi.js"),
+	RecyclerReceipt: () => import("./assets/Receipt-D9cX575l.js"),
+	StaffHome: () => import("./assets/Home-Bbhr4438.js"),
+	AiReview: () => import("./assets/AiReview-BelVBB2X.js"),
+	Dataset: () => import("./assets/Dataset-BX3nKwoL.js"),
+	Applications: () => import("./assets/Applications-BMy-h3En.js"),
+	Complaints: () => import("./assets/Complaints-CbtqabWG.js"),
+	Accounts: () => import("./assets/Accounts-B8F34lxl.js"),
+	BlogEditor: () => import("./assets/BlogEditor-Dzsw03g7.js"),
+	EcoFacts: () => import("./assets/EcoFacts-D4xisVx7.js"),
+	Gifts: () => import("./assets/Gifts-BpBbwYOu.js"),
+	StaffCheckIn: () => import("./assets/CheckIn-CI7cLTUI.js"),
+	AdminHome: () => import("./assets/Home-B-qACwe-.js"),
+	Reports: () => import("./assets/Reports-ruYFo5Pk.js"),
+	StaffAccounts: () => import("./assets/StaffAccounts-kzJn2fj5.js"),
+	Permissions: () => import("./assets/Permissions-YD37drcw.js"),
+	BlogReview: () => import("./assets/BlogReview-CG2akN1p.js"),
+	Categories: () => import("./assets/Categories-BejtZzXP.js"),
+	Policy: () => import("./assets/Policy-Bm06hDMN.js"),
+	GamificationConfig: () => import("./assets/Gamification-C76rUceX.js"),
+	LeaderboardConfig: () => import("./assets/Leaderboard-Bx-zK2G4.js"),
+	Fees: () => import("./assets/Fees-CJBVrkgF.js"),
+	Reconciliation: () => import("./assets/Reconciliation-Cx7z6DH8.js"),
+	AccountProfile: () => import("./assets/AccountProfile-D0fZtBPh.js"),
+	AccountPassword: () => import("./assets/AccountPassword-C2af9Dr6.js")
 };
 var PAGES = Object.fromEntries(Object.keys(loaders).map((name) => [name, lazy(loaders[name])]));
 function preloadPages() {

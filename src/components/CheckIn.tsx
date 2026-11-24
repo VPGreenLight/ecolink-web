@@ -61,6 +61,7 @@ export default function CheckIn({
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState(0)
   const [capNotice, setCapNotice] = useState("")
+  const [errMsg, setErrMsg] = useState("")
 
   useEffect(() => {
     if (!useLiveApi) return
@@ -98,6 +99,7 @@ export default function CheckIn({
     if (useLiveApi) {
       setBusy(true)
       setCapNotice("")
+      setErrMsg("")
       try {
         const res = await performDailyCheckin()
         if (res.data) {
@@ -110,7 +112,7 @@ export default function CheckIn({
           if (updated.data) setLiveStatus(updated.data)
         }
       } catch (err) {
-        setCapNotice(
+        setErrMsg(
           err instanceof Error ? err.message : "Không thể điểm danh lúc này.",
         )
       } finally {
@@ -254,6 +256,11 @@ export default function CheckIn({
             "Bỏ một ngày là chuỗi tính lại từ đầu."
           )}
         </p>
+        {errMsg && (
+          <p role="alert" className="w-full text-[13px] font-medium text-warn">
+            {errMsg}
+          </p>
+        )}
       </div>
     </>
   )

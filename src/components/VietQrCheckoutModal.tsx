@@ -247,7 +247,14 @@ export default function VietQrCheckoutModal({
                 </div>
               )}
 
-              {errorMsg && <p className="text-xs font-medium text-warn">{errorMsg}</p>}
+              {errorMsg && (
+                <p
+                  role="alert"
+                  className="rounded-lg border border-warn/35 bg-warn/10 px-3 py-2 text-xs font-medium text-warn"
+                >
+                  {errorMsg}
+                </p>
+              )}
 
               <div className="flex flex-col gap-2.5 rounded-xl border border-dashed border-line bg-surface-2 p-3">
                 <p className="flex items-center gap-1.5 text-[11px] font-bold tracking-wider text-muted uppercase">
@@ -289,7 +296,16 @@ export default function VietQrCheckoutModal({
                   type="button"
                   onClick={() => {
                     if (order.id.startsWith("demo-")) return
-                    void getServiceOrderStatus(order.orderCode).then((r) => onOrderUpdated(r.data))
+                    setErrorMsg("")
+                    void getServiceOrderStatus(order.orderCode)
+                      .then((r) => onOrderUpdated(r.data))
+                      .catch((err) =>
+                        setErrorMsg(
+                          err instanceof Error
+                            ? err.message
+                            : "Không thể kiểm tra trạng thái giao dịch.",
+                        ),
+                      )
                   }}
                   className="btn-ghost inline-flex h-9 items-center gap-1.5 px-3 text-xs"
                 >

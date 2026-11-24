@@ -4,6 +4,7 @@ import LocationPinPickerMap from "@/components/LocationPinPickerMap"
 import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { FormRequiredLegend, PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
+import { ApiError } from "@/lib/api"
 import { initApiLoading, initApiState } from "@/lib/hydration"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
@@ -87,7 +88,12 @@ export default function Handover() {
   const [loading, setLoading] = useState<boolean>(() => initApiLoading(true))
   const [editId, setEditId] = useState<string | null>(null)
   const [editDateIso, setEditDateIso] = useState<string>(() => getDefaultAppointmentDateAndSlot().dateIso)
+  const [cancelOrder, setCancelOrder] = useState<HandoverView | null>(null)
+  const [cancelReason, setCancelReason] = useState("")
+  const [cancelErr, setCancelErr] = useState("")
+  const [cancelling, setCancelling] = useState(false)
   const [flash, setFlash] = useState("")
+  const [actionErr, setActionErr] = useState("")
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 250)
   const [statusFilter, setStatusFilter] = useState<string>("all")
@@ -137,9 +143,11 @@ export default function Handover() {
   }, [])
 
   const reslot = async (h: HandoverView, nextDateIso: string, slot: string) => {
+    setActionErr("")
+    setFlash("")
     const errMsg = validateAppointmentSelection(nextDateIso, slot)
     if (errMsg) {
-      setFlash(errMsg)
+      setActionErr(errMsg)
       return
     }
     const nextDateVi = formatIsoDateToVi(nextDateIso)
@@ -153,23 +161,67 @@ export default function Handover() {
         `${h.displayCode}: đã đổi lịch hẹn sang ${nextDateVi} · ${slot}${res.syncedWithBackend ? " (đã cập nhật CSDL)" : ""}. Người thu gom sẽ thấy lịch mới.`,
       )
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Không thể cập nhật lịch hẹn.")
+      setActionErr(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Không thể cập nhật lịch hẹn.",
+      )
     }
   }
 
-  const cancel = async (h: HandoverView) => {
-    const reason = window.prompt(`Huỷ yêu cầu ${h.displayCode}. Lý do (người thu gom sẽ thấy):`)
-    if (!reason?.trim()) return
-    const cleanReason = reason.trim()
-    setList((ls) =>
-      ls.map((x) =>
-        x.id === h.id ? { ...x, status: "cancelled", reason: cleanReason } : x,
-      ),
-    )
-    const res = await updateHandoverOrderStatus(h.id, "user", "Cancelled", cleanReason)
-    setFlash(
-      `${h.displayCode}: đã huỷ${res.syncedWithBackend ? " trên hệ thống" : ""}. Người thu gom sẽ không tới.`,
-    )
+  const openCancelModal = (h: HandoverView) => {
+    setCancelOrder(h)
+    setCancelReason("")
+    setCancelErr("")
+    setActionErr("")
+  }
+
+  const submitCancel = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!cancelOrder || cancelling) return
+    const cleanReason = cancelReason.trim()
+    if (cleanReason.length < 5) {
+      setCancelErr("Vui lòng nhập lý do hủy yêu cầu tối thiểu 5 ký tự.")
+      return
+    }
+    if (cleanReason.length > 500) {
+      setCancelErr("Lý do hủy yêu cầu không được vượt quá 500 ký tự.")
+      return
+    }
+    setCancelErr("")
+    setActionErr("")
+    setFlash("")
+    setCancelling(true)
+    try {
+      const res = await updateHandoverOrderStatus(
+        cancelOrder.id,
+        "user",
+        "Cancelled",
+        cleanReason,
+      )
+      setList((ls) =>
+        ls.map((x) =>
+          x.id === cancelOrder.id ? { ...x, status: "cancelled", reason: cleanReason } : x,
+        ),
+      )
+      setFlash(
+        `${cancelOrder.displayCode}: đã huỷ${res.syncedWithBackend ? " trên hệ thống" : ""}. Người thu gom sẽ không tới.`,
+      )
+      setCancelOrder(null)
+      setCancelReason("")
+    } catch (err) {
+      setCancelErr(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Không thể hủy yêu cầu trên hệ thống.",
+      )
+    } finally {
+      setCancelling(false)
+    }
   }
 
   return (
@@ -193,6 +245,73 @@ export default function Handover() {
         <p role="status" className="text-[13px] font-semibold text-brand">
           {flash}
         </p>
+      )}
+      {actionErr && (
+        <p
+          role="alert"
+          className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+        >
+          {actionErr}
+        </p>
+      )}
+      {cancelOrder && (
+        <form
+          noValidate
+          onSubmit={(e) => void submitCancel(e)}
+          className="card flex flex-col gap-4 border-warn/40 p-5"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="eyebrow">HỦY YÊU CẦU THU GOM (U-08)</span>
+              <h2 className="mt-1 text-base font-bold text-ink">
+                Hủy yêu cầu {cancelOrder.displayCode}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setCancelOrder(null)
+                setCancelErr("")
+              }}
+              className="btn-ghost h-9 px-3 text-xs"
+            >
+              Đóng
+            </button>
+          </div>
+          <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-ink">
+            <span>
+              Lý do hủy (tối thiểu 5 ký tự, người thu gom sẽ thấy lý do này)
+              <RequiredMark />
+            </span>
+            <textarea
+              rows={2}
+              className="input h-auto resize-y py-2.5 text-sm"
+              value={cancelReason}
+              onChange={(e) => {
+                setCancelReason(e.target.value)
+                setCancelErr("")
+              }}
+              placeholder="Ví dụ: Đổi kế hoạch giao rác sang cuối tuần."
+            />
+          </label>
+          {cancelErr && (
+            <p
+              role="alert"
+              className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+            >
+              {cancelErr}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={cancelling}
+              className="btn-primary h-10 px-5 text-xs"
+            >
+              {cancelling ? "Đang hủy..." : "Xác nhận hủy yêu cầu"}
+            </button>
+          </div>
+        </form>
       )}
 
       {open && (
@@ -311,7 +430,7 @@ export default function Handover() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => void cancel(h)}
+                        onClick={() => openCancelModal(h)}
                         className="btn-ghost h-9 px-3 text-[13px]"
                       >
                         Huỷ yêu cầu
@@ -357,6 +476,14 @@ export default function Handover() {
                       <Link to="/user/transactions" className="btn-ghost h-9 px-3 text-[13px]">
                         Xem tiền đã nhận
                       </Link>
+                      {h.fromBackend && (
+                        <Link
+                          to={`/feedback?tab=complaint&orderId=${encodeURIComponent(h.id)}`}
+                          className="btn-ghost h-9 px-3 text-[13px] text-warn"
+                        >
+                          Khiếu nại giao dịch
+                        </Link>
+                      )}
                     </>
                   )}
                 </div>
@@ -585,9 +712,13 @@ function CreateForm({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const bad = rows.find((r) => r.kg <= 0)
+    if (rows.length === 0) {
+      setErr("Cần ít nhất một loại rác bàn giao.")
+      return
+    }
+    const bad = rows.find((r) => !Number.isFinite(r.kg) || r.kg <= 0)
     if (bad) {
-      setErr("Khối lượng phải lớn hơn 0 kg.")
+      setErr("Khối lượng mỗi loại rác phải lớn hơn 0 kg.")
       return
     }
     const scheduleErr = validateAppointmentSelection(appointmentDate, slot)
@@ -597,6 +728,10 @@ function CreateForm({
     }
     if (!address.trim()) {
       setErr("Cần ghi mô tả điểm hẹn (ví dụ: đầu ngõ, sảnh toà nhà) để người thu gom tìm tới.")
+      return
+    }
+    if (address.trim().length > 255) {
+      setErr("Mô tả điểm hẹn không được vượt quá 255 ký tự.")
       return
     }
     setErr("")
@@ -830,7 +965,11 @@ function CreateForm({
         />
       </div>
 
-      {err && <p className="text-[13px] text-warn">{err}</p>}
+      {err && (
+        <p role="alert" className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn">
+          {err}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
         <button

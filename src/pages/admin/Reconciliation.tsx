@@ -14,7 +14,7 @@ import {
   type ReconciliationLedgerItemDto,
   type ReconciliationSummaryDto,
 } from "@/lib/servicePackageApi"
-import { getAccessToken } from "@/lib/session"
+import { getAccessToken, hasLiveBackendAuth } from "@/lib/session"
 
 const DEMO_SUMMARY: ReconciliationSummaryDto = {
   totalMatchedRevenueVnd: 1_118_000,
@@ -274,7 +274,7 @@ export default function Reconciliation() {
   const [page, setPage] = useState(1)
   const pageSize = FIXED_PAGE_SIZE
   const [totalCount, setTotalCount] = useState(() => initApiState(0, DEMO_LEDGER.length))
-  const [loading, setLoading] = useState(() => initApiLoading(Boolean(getAccessToken())))
+  const [loading, setLoading] = useState(() => initApiLoading(Boolean(getAccessToken()) || hasLiveBackendAuth()))
   const [exportingFormat, setExportingFormat] = useState<"csv" | "xlsx" | null>(null)
   const [flash, setFlash] = useState("")
   const [errMsg, setErrMsg] = useState("")
@@ -292,7 +292,7 @@ export default function Reconciliation() {
   const [resolveErr, setResolveErr] = useState("")
 
   const loadLedger = useCallback(async () => {
-    if (!getAccessToken()) return
+    if (!getAccessToken() && !hasLiveBackendAuth()) return
     setLoading(true)
     setErrMsg("")
     try {
@@ -320,7 +320,7 @@ export default function Reconciliation() {
     void loadLedger()
   }, [loadLedger])
 
-  const filteredRows = getAccessToken()
+  const filteredRows = getAccessToken() || hasLiveBackendAuth()
     ? rows
     : rows.filter((r) => {
         const hitStatus =
@@ -334,10 +334,10 @@ export default function Reconciliation() {
           (r.paymentReference ?? "").toLowerCase().includes(kw)
         return hitStatus && hitKw
       })
-  const displayedRows = getAccessToken()
+  const displayedRows = getAccessToken() || hasLiveBackendAuth()
     ? filteredRows
     : paginateItems(filteredRows, page, pageSize)
-  const effectiveTotal = getAccessToken() ? totalCount : filteredRows.length
+  const effectiveTotal = getAccessToken() || hasLiveBackendAuth() ? totalCount : filteredRows.length
 
   const openResolveModal = (item: ReconciliationLedgerItemDto) => {
     const rec = item.reconciliationStatus.toUpperCase()
@@ -360,18 +360,29 @@ export default function Reconciliation() {
     if (!resolvingItem) return
     setResolveErr("")
 
-    if (action === "ManualMatchOrder" && targetOrderCode.trim().length < 6) {
-      setResolveErr("Vui lòng nhập mã đơn hàng ECO... cần khớp thủ công.")
+    if (
+      action === "ManualMatchOrder" &&
+      (targetOrderCode.trim().length < 6 || !/^ECO[A-Z0-9-]+$/i.test(targetOrderCode.trim()))
+    ) {
+      setResolveErr("Vui lòng nhập mã đơn hàng ECO... hợp lệ cần khớp thủ công.")
       return
     }
-    if (resolutionNote.trim().length < 10) {
-      setResolveErr("Biên bản ghi chú đối soát phải dài tối thiểu 10 ký tự (BR-PAY-06).")
+    if (
+      (action === "MarkRefunded" || action === "MarkExcessRefunded") &&
+      !resolutionBankRef.trim()
+    ) {
+      setResolveErr("Vui lòng nhập mã tham chiếu hoàn tiền ngân hàng khi xác nhận đã hoàn tiền.")
+      return
+    }
+    const cleanNote = resolutionNote.trim()
+    if (cleanNote.length < 10 || cleanNote.length > 500) {
+      setResolveErr("Biên bản ghi chú đối soát phải từ 10 đến 500 ký tự (BR-PAY-06).")
       return
     }
 
     setResolving(true)
     try {
-      if (!getAccessToken()) {
+      if (!getAccessToken() && !hasLiveBackendAuth()) {
         setRows((prev) =>
           prev.map((row) =>
             row.referenceCode === resolvingItem.referenceCode
@@ -422,10 +433,14 @@ export default function Reconciliation() {
   }
 
   const handleExport = async (format: "csv" | "xlsx") => {
-    setExportingFormat(format)
     setErrMsg("")
+    if (fromDate && toDate && fromDate > toDate) {
+      setErrMsg("Khoảng thời gian không hợp lệ: Từ ngày không được lớn hơn Đến ngày.")
+      return
+    }
+    setExportingFormat(format)
     try {
-      if (!getAccessToken()) {
+      if (!getAccessToken() && !hasLiveBackendAuth()) {
         const bom = "\uFEFF"
         const header = "MaThamChieu,KhachHang,EmailChe,SoDienThoaiChe,Goi,KienVongVND,ThucNhanVND,ChenhLechVND,TrangThai\n"
         const body = filteredRows
@@ -772,6 +787,7 @@ export default function Reconciliation() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
         >
           <form
+            noValidate
             onSubmit={(e) => void handleResolveSubmit(e)}
             className="relative w-full max-w-xl rounded-2xl border border-line bg-white p-5 shadow-2xl md:p-6"
           >

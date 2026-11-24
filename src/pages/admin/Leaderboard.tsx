@@ -185,8 +185,8 @@ export default function LeaderboardConfig() {
     setError("")
     setFlash("")
     const trimmed = name.trim()
-    if (!trimmed) {
-      setError("Vui lòng nhập tên chu kỳ bảng xếp hạng.")
+    if (trimmed.length < 3 || trimmed.length > 120) {
+      setError("Tên chu kỳ bảng xếp hạng phải từ 3 đến 120 ký tự.")
       return
     }
     if (!startsAt || !endsAt || endsAt <= startsAt) {
@@ -269,7 +269,15 @@ export default function LeaderboardConfig() {
       {liveMode ? (
         <>
           {showCreate && (
-            <form onSubmit={handleCreate} className="card flex flex-col gap-4 p-5 md:p-6">
+            <form noValidate onSubmit={handleCreate} className="card flex flex-col gap-4 p-5 md:p-6">
+              {error && (
+                <p
+                  role="alert"
+                  className="rounded-xl border border-bad/25 bg-bad/5 px-4 py-2.5 text-[13px] font-semibold text-bad"
+                >
+                  {error}
+                </p>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-base font-bold text-ink">Tạo chu kỳ bảng xếp hạng mới</h2>
                 <FormRequiredLegend />

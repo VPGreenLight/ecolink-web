@@ -17,6 +17,7 @@ import {
   clearSessionOnUnauthorized,
   fetchWithAutoHost,
   getResolvedApiHost,
+  resolveApiErrorMessage,
   rotateRefreshTokenSingleFlight,
 } from "@/lib/api"
 import type { ApiResponse } from "@/lib/api"
@@ -26,6 +27,7 @@ import {
   getAccessToken,
   getRefreshToken,
   getSession,
+  hasLiveBackendAuth,
   isRealJwt,
   isStoredAccessTokenExpired,
 } from "@/lib/session"
@@ -342,9 +344,28 @@ export async function uploadChatAttachment(
         const json = (await res.json()) as ApiResponse<ChatAttachmentUploadResponseDto>
         if (json?.data) return json.data
       }
-    } catch {
-      // Fallback
+
+      if (hasLiveBackendAuth() || !res.ok) {
+        let errMsg = `Không thể tải ảnh đính kèm (HTTP ${res.status}).`
+        let detailErrors: string[] | undefined
+        try {
+          const parsed = (await res.json()) as { message?: string; errors?: string[] }
+          detailErrors = Array.isArray(parsed?.errors) ? parsed.errors : undefined
+          errMsg = resolveApiErrorMessage(parsed?.message, detailErrors) || errMsg
+        } catch {
+          // ignore non-json
+        }
+        throw new ApiError({ status: res.status, message: errMsg, errors: detailErrors })
+      }
+    } catch (err) {
+      if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+        throw err
+      }
     }
+  }
+
+  if (hasLiveBackendAuth()) {
+    throw new Error("Không thể tải ảnh đính kèm lên máy chủ.")
   }
 
   // Fallback data URL cho demo

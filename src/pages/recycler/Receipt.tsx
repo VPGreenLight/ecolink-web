@@ -258,6 +258,28 @@ export default function Receipt() {
     0,
   )
 
+  const handleProofFileChange = (pickedList: FileList | null) => {
+    const picked = Array.from(pickedList ?? [])
+    setErrorMessage(null)
+    if (picked.length > 4) {
+      setErrorMessage("Chỉ được chọn tối đa 4 ảnh bằng chứng cân đo.")
+      return
+    }
+    for (const file of picked) {
+      const validType =
+        /^image\/(jpeg|jpg|png|webp)$/i.test(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name)
+      if (!validType) {
+        setErrorMessage(`Tệp "${file.name}" không phải ảnh JPG, PNG hoặc WEBP hợp lệ.`)
+        return
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setErrorMessage(`Ảnh "${file.name}" vượt quá dung lượng tối đa 10 MB.`)
+        return
+      }
+    }
+    setFiles(picked)
+  }
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!h) return
@@ -377,7 +399,7 @@ export default function Receipt() {
           </Link>
         </div>
       ) : (
-      <form onSubmit={submit} className="card flex flex-col gap-5 p-5 md:p-6">
+      <form noValidate onSubmit={submit} className="card flex flex-col gap-5 p-5 md:p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-line-soft pb-4">
           <div>
             <p className="font-bold text-ink">{h.address}</p>
@@ -451,14 +473,11 @@ export default function Receipt() {
           </span>
           <input
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/*"
+            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
             multiple
             disabled={sent || submitting}
             className="sr-only"
-            onChange={(e) => {
-              setFiles(Array.from(e.target.files ?? []).slice(0, 4))
-              setErrorMessage(null)
-            }}
+            onChange={(e) => handleProofFileChange(e.target.files)}
           />
         </label>
 
@@ -492,6 +511,12 @@ export default function Receipt() {
             Hệ thống lưu trữ biên nhận để đối chiếu và cộng Điểm Xanh, không thu phí giao dịch.
           </span>
         </div>
+
+        {errorMessage && (
+          <p role="alert" className="rounded-xl border border-warn/40 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn">
+            {errorMessage}
+          </p>
+        )}
 
         <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
           <button type="submit" disabled={sent || submitting} className="btn-primary h-11 px-6">

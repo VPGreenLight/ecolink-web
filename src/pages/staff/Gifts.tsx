@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react"
-import { PageHead, Field, Status, Table, Td } from "@/components/Portal"
+import { PageHead, Field, FormRequiredLegend, Status, Table, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
 import PaginationBar, { FIXED_PAGE_SIZE } from "@/components/PaginationBar"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { GIFTS, type Gift } from "@/data/ops"
+import { ApiError } from "@/lib/api"
 import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
+import { hasLiveBackendAuth } from "@/lib/session"
 import {
   createStaffGift,
   fetchStaffGifts,
@@ -62,6 +64,8 @@ export default function Gifts() {
   const [uploadingImg, setUploadingImg] = useState(false)
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState("")
+  const [formErr, setFormErr] = useState("")
+  const [actionErr, setActionErr] = useState("")
 
   const loadGifts = async () => {
     setLoading(true)
@@ -114,30 +118,55 @@ export default function Gifts() {
 
   const add = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!liveMode) {
-      if (name.trim().length < 5) {
-        setFlash("Tên quà cần ít nhất 5 ký tự.")
-        return
-      }
+    setFormErr("")
+    setActionErr("")
+    setFlash("")
+
+    const cleanName = name.trim()
+    const cleanDesc = description.trim()
+    const cleanImg = imageUrl.trim()
+
+    if (cleanName.length < 2 || cleanName.length > 150) {
+      setFormErr("Tên quà tặng phải từ 2 đến 150 ký tự.")
+      return
+    }
+    if (!Number.isInteger(cost) || cost <= 0) {
+      setFormErr("Điểm đổi quà phải là số nguyên dương lớn hơn 0.")
+      return
+    }
+    if (!Number.isInteger(stock) || stock < 0) {
+      setFormErr("Số lượng tồn kho phải là số nguyên không âm (>= 0).")
+      return
+    }
+
+    if (!liveMode && !hasLiveBackendAuth()) {
       const id = `g-${Date.now().toString(36)}`
       setOfflineList((ls) => [
         ...ls,
-        { id, name: name.trim(), cost, stock, kind: "gift", active: true },
+        { id, name: cleanName, cost, stock, kind: "gift", active: true },
       ])
       setName("")
-      setFlash(`Đã thêm ${name.trim()}. Người dùng thấy nó ngay ở trang đổi thưởng.`)
+      setFlash(`Đã thêm ${cleanName}. Người dùng thấy nó ngay ở trang đổi thưởng.`)
+      return
+    }
+
+    if (cleanDesc.length > 500) {
+      setFormErr("Mô tả quà tặng không được vượt quá 500 ký tự.")
+      return
+    }
+    if (!cleanImg) {
+      setFormErr("Vui lòng nhập URL ảnh hoặc tải ảnh quà tặng lên.")
       return
     }
 
     if (busy) return
     setBusy(true)
-    setFlash("")
     try {
       await createStaffGift({
-        name: name.trim(),
+        name: cleanName,
         type: giftType,
-        description: description.trim() || null,
-        imageUrl: imageUrl.trim() || null,
+        description: cleanDesc || null,
+        imageUrl: cleanImg,
         pointsRequired: cost,
         stockQuantity: stock,
       })
@@ -147,7 +176,7 @@ export default function Gifts() {
       setFlash("Đã thêm quà vào kho.")
       await loadAll()
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Không thể thêm quà.")
+      setFormErr(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Không thể thêm quà.")
     } finally {
       setBusy(false)
     }
@@ -170,6 +199,7 @@ export default function Gifts() {
       />
 
       <form onSubmit={(e) => void add(e)} noValidate className="card flex flex-col gap-5 p-5 md:p-6">
+        <FormRequiredLegend />
         <div className="grid gap-5 sm:grid-cols-[2fr_1fr_1fr]">
           <Field label="Tên quà" required>
             <input
@@ -240,8 +270,20 @@ export default function Gifts() {
                         const file = e.target.files?.[0]
                         e.target.value = ""
                         if (!file) return
-                        setUploadingImg(true)
+                        setFormErr("")
                         setFlash("")
+                        const validType =
+                          /^image\/(jpeg|jpg|png|webp)$/i.test(file.type) ||
+                          /\.(jpe?g|png|webp)$/i.test(file.name)
+                        if (!validType) {
+                          setFormErr(`Tệp "${file.name}" không phải ảnh JPG, PNG hoặc WEBP hợp lệ.`)
+                          return
+                        }
+                        if (file.size > 10 * 1024 * 1024) {
+                          setFormErr(`Ảnh "${file.name}" vượt quá dung lượng tối đa 10 MB.`)
+                          return
+                        }
+                        setUploadingImg(true)
                         try {
                           const upRes = await uploadStaffGiftImage(file)
                           if (upRes.data?.fileUrl) {
@@ -249,7 +291,7 @@ export default function Gifts() {
                             setFlash("Đã tải ảnh quà tặng lên hệ thống.")
                           }
                         } catch (err) {
-                          setFlash(err instanceof Error ? err.message : "Tải ảnh thất bại.")
+                          setFormErr(err instanceof Error ? err.message : "Tải ảnh thất bại.")
                         } finally {
                           setUploadingImg(false)
                         }
@@ -290,6 +332,15 @@ export default function Gifts() {
           </div>
         )}
 
+        {formErr && (
+          <p
+            role="alert"
+            className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+          >
+            {formErr}
+          </p>
+        )}
+
         <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
           <button type="submit" disabled={busy} className="btn-primary h-11 px-6">
             {busy ? "Đang thêm..." : "Thêm vào kho"}
@@ -301,6 +352,15 @@ export default function Gifts() {
           )}
         </div>
       </form>
+
+      {actionErr && (
+        <p
+          role="alert"
+          className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+        >
+          {actionErr}
+        </p>
+      )}
 
       {liveMode ? (
         <>
@@ -389,6 +449,11 @@ export default function Gifts() {
                           <button
                             type="button"
                             onClick={async () => {
+                              setActionErr("")
+                              if (!Number.isInteger(g.pointsRequired) || g.pointsRequired <= 0) {
+                                setActionErr(`Điểm đổi của "${g.name}" phải lớn hơn 0.`)
+                                return
+                              }
                               try {
                                 await updateStaffGift(g.id, {
                                   name: g.name,
@@ -401,7 +466,7 @@ export default function Gifts() {
                                 setFlash(`Đã cập nhật điểm đổi cho "${g.name}".`)
                                 await loadAll()
                               } catch (err) {
-                                setFlash(err instanceof Error ? err.message : "Cập nhật thất bại.")
+                                setActionErr(err instanceof Error ? err.message : "Cập nhật thất bại.")
                               }
                             }}
                             className="text-brand-deep hover:underline"
@@ -421,7 +486,7 @@ export default function Gifts() {
                                 }
                                 await loadAll()
                               } catch (err) {
-                                setFlash(err instanceof Error ? err.message : "Nhập kho thất bại.")
+                                setActionErr(err instanceof Error ? err.message : "Nhập kho thất bại.")
                               }
                             }}
                             className="text-brand hover:underline"
@@ -438,7 +503,7 @@ export default function Gifts() {
                                 )
                                 await loadAll()
                               } catch (err) {
-                                setFlash(err instanceof Error ? err.message : "Đổi trạng thái thất bại.")
+                                setActionErr(err instanceof Error ? err.message : "Đổi trạng thái thất bại.")
                               }
                             }}
                             className="text-muted hover:text-ink"
@@ -528,7 +593,7 @@ export default function Gifts() {
                                 setFlash(`Đã xác nhận bàn giao đơn ${r.redemptionCode}.`)
                                 await loadAll()
                               } catch (err) {
-                                setFlash(err instanceof Error ? err.message : "Xử lý thất bại.")
+                                setActionErr(err instanceof Error ? err.message : "Xử lý thất bại.")
                               }
                             }}
                             className="text-brand hover:underline"
@@ -546,7 +611,7 @@ export default function Gifts() {
                                 setFlash(`Đã hủy và hoàn điểm đơn ${r.redemptionCode}.`)
                                 await loadAll()
                               } catch (err) {
-                                setFlash(err instanceof Error ? err.message : "Hủy thất bại.")
+                                setActionErr(err instanceof Error ? err.message : "Hủy thất bại.")
                               }
                             }}
                             className="text-warn hover:underline"

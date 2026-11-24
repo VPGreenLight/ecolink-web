@@ -18,7 +18,7 @@ import {
   type StaffComplaintDossierDto,
   type TransactionReviewDto,
 } from "@/lib/reviewComplaintApi"
-import { getAccessToken } from "@/lib/session"
+import { getAccessToken, hasLiveBackendAuth } from "@/lib/session"
 
 const OUTCOME_OPTIONS: ComplaintResolutionOutcomeCode[] = [
   "ConfirmReceiptAsIs",
@@ -75,6 +75,9 @@ export default function Complaints() {
   const [warningReason, setWarningReason] = useState("")
   const [modReasons, setModReasons] = useState<Record<string, string>>({})
   const [flash, setFlash] = useState("")
+  const [errMsg, setErrMsg] = useState("")
+  const [resolveErr, setResolveErr] = useState("")
+  const [reviewErrs, setReviewErrs] = useState<Record<string, string>>({})
   const [busyId, setBusyId] = useState("")
 
   const loadLiveQueue = async (
@@ -105,15 +108,23 @@ export default function Complaints() {
           reportedReviewsCount: res.data.reportedReviewsCount,
         })
       }
-    } catch {
-      setUsingLiveApi(false)
+    } catch (err) {
+      if (hasLiveBackendAuth()) {
+        setErrMsg(
+          err instanceof ApiError
+            ? err.message
+            : "Không tải được danh sách khiếu nại từ máy chủ.",
+        )
+      } else {
+        setUsingLiveApi(false)
+      }
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    if (!getAccessToken()) {
+    if (!getAccessToken() && !hasLiveBackendAuth()) {
       setLoading(false)
       return
     }
@@ -124,6 +135,8 @@ export default function Complaints() {
   const openDossier = async (complaintId: string) => {
     setLoadingDossier(true)
     setFlash("")
+    setErrMsg("")
+    setResolveErr("")
     try {
       const res = await fetchStaffComplaintDossier(complaintId, true)
       if (res.success && res.data) {
@@ -138,7 +151,7 @@ export default function Complaints() {
         await loadLiveQueue()
       }
     } catch (err) {
-      setFlash(err instanceof ApiError ? err.message : "Không thể tải hồ sơ trọng tài 360°.")
+      setErrMsg(err instanceof ApiError ? err.message : "Không thể tải hồ sơ trọng tài 360°.")
     } finally {
       setLoadingDossier(false)
     }
@@ -147,26 +160,36 @@ export default function Complaints() {
   const handleResolveLive = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!dossier) return
+    setResolveErr("")
+    setFlash("")
+    if (!outcome) {
+      setResolveErr("Vui lòng chọn quyết định phán quyết trọng tài.")
+      return
+    }
     const cleanNote = resolutionNote.trim()
-    if (cleanNote.length < 10) {
-      setFlash("Biên bản giải trình phán quyết phải từ 10 ký tự trở lên (BR-DSP-04).")
+    if (cleanNote.length < 10 || cleanNote.length > 1000) {
+      setResolveErr("Biên bản giải trình phán quyết phải từ 10 đến 1000 ký tự (BR-DSP-04).")
+      return
+    }
+    const cleanWarn = warningReason.trim()
+    if (issueWarning && (cleanWarn.length < 5 || cleanWarn.length > 500)) {
+      setResolveErr("Khi ghi cảnh cáo vi phạm, vui lòng nhập lý do cảnh cáo từ 5 đến 500 ký tự.")
       return
     }
 
     setBusyId(dossier.complaint.complaintId)
-    setFlash("")
     try {
       const res = await resolveStaffComplaint(dossier.complaint.complaintId, {
         resolutionOutcome: outcome,
         resolutionNote: cleanNote,
         issueWarningToRespondent: issueWarning,
-        warningReason: warningReason.trim() || undefined,
+        warningReason: issueWarning ? cleanWarn : undefined,
       })
       setFlash(res.message || "Đã ban hành phán quyết trọng tài thành công.")
       setDossier(null)
       await loadLiveQueue()
     } catch (err) {
-      setFlash(err instanceof ApiError ? err.message : "Giải quyết khiếu nại thất bại.")
+      setResolveErr(err instanceof ApiError ? err.message : "Giải quyết khiếu nại thất bại.")
     } finally {
       setBusyId("")
     }
@@ -174,18 +197,29 @@ export default function Complaints() {
 
   const handleModerateReview = async (reviewId: string, action: "Hide" | "Restore") => {
     const reason = (modReasons[reviewId] ?? "").trim()
-    if (reason.length < 5) {
-      setFlash("Vui lòng nhập lý do kiểm duyệt ít nhất 5 ký tự.")
+    setFlash("")
+    if (reason.length < 5 || reason.length > 500) {
+      setReviewErrs((m) => ({
+        ...m,
+        [reviewId]: "Vui lòng nhập lý do kiểm duyệt từ 5 đến 500 ký tự.",
+      }))
       return
     }
+    setReviewErrs((m) => {
+      const next = { ...m }
+      delete next[reviewId]
+      return next
+    })
     setBusyId(reviewId)
-    setFlash("")
     try {
       const res = await moderateReview(reviewId, { action, moderationReason: reason })
       setFlash(res.message || "Đã cập nhật kiểm duyệt đánh giá và tính lại điểm sao trung bình.")
       await loadLiveQueue()
     } catch (err) {
-      setFlash(err instanceof ApiError ? err.message : "Kiểm duyệt đánh giá thất bại.")
+      setReviewErrs((m) => ({
+        ...m,
+        [reviewId]: err instanceof ApiError ? err.message : "Kiểm duyệt đánh giá thất bại.",
+      }))
     } finally {
       setBusyId("")
     }
@@ -199,14 +233,15 @@ export default function Complaints() {
 
   const resolveOffline = (id: string) => {
     const text = (offlineReply[id] ?? "").trim()
-    if (text.length < 10) {
-      setFlash("Cần viết phản hồi ít nhất 10 ký tự trước khi đóng khiếu nại.")
+    if (text.length < 10 || text.length > 1000) {
+      setErrMsg("Cần viết phản hồi từ 10 đến 1000 ký tự trước khi đóng khiếu nại.")
       return
     }
     setOfflineList((ls) =>
       ls.map((c) => (c.id === id ? { ...c, status: "resolved", reply: text } : c)),
     )
-    setFlash("")
+    setErrMsg("")
+    setFlash(`Đã đóng khiếu nại ${id}.`)
   }
 
   const openOffline = offlineList.filter((c) => c.status !== "resolved")
@@ -220,8 +255,13 @@ export default function Complaints() {
         body="Đối chiếu Hồ sơ Trọng tài 360° gồm ảnh bằng chứng hai bên, biên nhận cân điện tử và lịch sử chat bất biến trước khi ban hành phán quyết."
       />
 
+      {errMsg && (
+        <p role="alert" className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-3 text-[13px] font-medium text-warn">
+          {errMsg}
+        </p>
+      )}
       {flash && (
-        <p role="status" className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-[13px] font-semibold text-ink">
+        <p role="status" className="rounded-xl border border-brand/30 bg-brand/10 px-4 py-3 text-[13px] font-semibold text-brand-deep">
           {flash}
         </p>
       )}
@@ -427,7 +467,11 @@ export default function Complaints() {
                   </div>
 
                   {dossier.complaint.status === "Open" || dossier.complaint.status === "Investigating" ? (
-                    <form onSubmit={(e) => void handleResolveLive(e)} className="flex flex-col gap-3 border-t border-line-soft pt-4">
+                    <form
+                      noValidate
+                      onSubmit={(e) => void handleResolveLive(e)}
+                      className="flex flex-col gap-3 border-t border-line-soft pt-4"
+                    >
                       <h3 className="text-sm font-bold text-ink">Ban hành Phán quyết Trọng tài (BR-DSP-04)</h3>
                       <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
                         <span>
@@ -436,7 +480,10 @@ export default function Complaints() {
                         </span>
                         <select
                           value={outcome}
-                          onChange={(e) => setOutcome(e.target.value as ComplaintResolutionOutcomeCode)}
+                          onChange={(e) => {
+                            setOutcome(e.target.value as ComplaintResolutionOutcomeCode)
+                            setResolveErr("")
+                          }}
                           className="input h-10"
                         >
                           {OUTCOME_OPTIONS.map((opt) => (
@@ -448,14 +495,17 @@ export default function Complaints() {
                       </label>
                       <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
                         <span>
-                          Biên bản giải trình phán quyết (tối thiểu 10 ký tự)
+                          Biên bản giải trình phán quyết (10–1000 ký tự)
                           <RequiredMark />
                         </span>
                         <textarea
                           className="input h-auto resize-y py-2.5 text-sm font-normal"
                           rows={3}
                           value={resolutionNote}
-                          onChange={(e) => setResolutionNote(e.target.value)}
+                          onChange={(e) => {
+                            setResolutionNote(e.target.value)
+                            setResolveErr("")
+                          }}
                           placeholder="Nhập biên bản giải trình phán quyết tối thiểu 10 ký tự..."
                         />
                       </label>
@@ -463,18 +513,38 @@ export default function Complaints() {
                         <input
                           type="checkbox"
                           checked={issueWarning}
-                          onChange={(e) => setIssueWarning(e.target.checked)}
+                          onChange={(e) => {
+                            setIssueWarning(e.target.checked)
+                            setResolveErr("")
+                          }}
                         />
                         Ghi cảnh cáo vi phạm vào hồ sơ bên bị khiếu nại (AccountModerationLog)
                       </label>
                       {issueWarning && (
-                        <input
-                          type="text"
-                          value={warningReason}
-                          onChange={(e) => setWarningReason(e.target.value)}
-                          placeholder="Lý do cảnh cáo cụ thể (tùy chọn, mặc định dùng nội dung phán quyết)..."
-                          className="input h-9 text-xs"
-                        />
+                        <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+                          <span>
+                            Lý do cảnh cáo vi phạm (tối thiểu 5 ký tự)
+                            <RequiredMark />
+                          </span>
+                          <input
+                            type="text"
+                            value={warningReason}
+                            onChange={(e) => {
+                              setWarningReason(e.target.value)
+                              setResolveErr("")
+                            }}
+                            placeholder="Nhập lý do cảnh cáo vi phạm tối thiểu 5 ký tự..."
+                            className="input h-9 text-xs font-normal"
+                          />
+                        </label>
+                      )}
+                      {resolveErr && (
+                        <p
+                          role="alert"
+                          className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-medium text-warn"
+                        >
+                          {resolveErr}
+                        </p>
                       )}
                       <div>
                         <button
@@ -608,33 +678,55 @@ export default function Complaints() {
                         Lý do báo cáo: {rv.lastReportReason}
                       </p>
                     )}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <input
-                        type="text"
-                        value={modReasons[rv.reviewId] ?? ""}
-                        onChange={(e) =>
-                          setModReasons((m) => ({ ...m, [rv.reviewId]: e.target.value }))
-                        }
-                        placeholder="Nhập lý do kiểm duyệt tối thiểu 5 ký tự..."
-                        className="input h-9 min-w-[240px] flex-1 text-xs"
-                      />
-                      <button
-                        type="button"
-                        disabled={busyId === rv.reviewId}
-                        onClick={() => void handleModerateReview(rv.reviewId, "Hide")}
-                        className="btn-primary h-9 px-3.5 text-xs"
-                      >
-                        Ẩn đánh giá
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busyId === rv.reviewId}
-                        onClick={() => void handleModerateReview(rv.reviewId, "Restore")}
-                        className="btn-outline h-9 px-3.5 text-xs"
-                      >
-                        Khôi phục (Giữ lại)
-                      </button>
-                    </div>
+                    <form
+                      noValidate
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        void handleModerateReview(rv.reviewId, "Hide")
+                      }}
+                      className="flex flex-col gap-2"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          value={modReasons[rv.reviewId] ?? ""}
+                          onChange={(e) => {
+                            setModReasons((m) => ({ ...m, [rv.reviewId]: e.target.value }))
+                            setReviewErrs((errs) => {
+                              if (!errs[rv.reviewId]) return errs
+                              const next = { ...errs }
+                              delete next[rv.reviewId]
+                              return next
+                            })
+                          }}
+                          placeholder="Nhập lý do kiểm duyệt tối thiểu 5 ký tự..."
+                          className="input h-9 min-w-[240px] flex-1 text-xs"
+                        />
+                        <button
+                          type="submit"
+                          disabled={busyId === rv.reviewId}
+                          className="btn-primary h-9 px-3.5 text-xs"
+                        >
+                          Ẩn đánh giá
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyId === rv.reviewId}
+                          onClick={() => void handleModerateReview(rv.reviewId, "Restore")}
+                          className="btn-outline h-9 px-3.5 text-xs"
+                        >
+                          Khôi phục (Giữ lại)
+                        </button>
+                      </div>
+                      {reviewErrs[rv.reviewId] && (
+                        <p
+                          role="alert"
+                          className="rounded-lg border border-warn/30 bg-warn/10 px-3 py-1.5 text-xs font-medium text-warn"
+                        >
+                          {reviewErrs[rv.reviewId]}
+                        </p>
+                      )}
+                    </form>
                   </div>
                 ))}
                       <PaginationBar

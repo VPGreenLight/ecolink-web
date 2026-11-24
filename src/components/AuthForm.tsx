@@ -136,6 +136,10 @@ export default function AuthForm({
       setErr("Họ và tên cần có ít nhất 2 ký tự.")
       return
     }
+    if (regFullName.trim().length > 100) {
+      setErr("Họ và tên không được vượt quá 100 ký tự.")
+      return
+    }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(regEmail.trim())) {
       setErr("Email chưa đúng định dạng.")
       return
@@ -149,6 +153,10 @@ export default function AuthForm({
     }
     if (regPassword.length < 8) {
       setErr("Mật khẩu cần tối thiểu 8 ký tự.")
+      return
+    }
+    if (regPassword.length > 100) {
+      setErr("Mật khẩu không được vượt quá 100 ký tự.")
       return
     }
 

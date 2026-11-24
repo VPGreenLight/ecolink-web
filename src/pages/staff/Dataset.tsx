@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
 import { PageHead, RequiredMark, Stat, Status, Table, Td } from "@/components/Portal"
 import { DATASET, fmtInt } from "@/data/ops"
+import { ApiError } from "@/lib/api"
 import { initApiState } from "@/lib/hydration"
-import { getAccessToken } from "@/lib/session"
+import { getAccessToken, hasLiveBackendAuth } from "@/lib/session"
 import {
   createAiDatasetVersion,
   downloadDatasetVersionZip,
@@ -76,10 +77,11 @@ export default function Dataset() {
   const [creating, setCreating] = useState(false)
   const [exportingId, setExportingId] = useState<string | null>(null)
   const [flash, setFlash] = useState("")
+  const [errMsg, setErrMsg] = useState("")
 
   const loadDashboard = async () => {
     const token = getAccessToken()
-    if (!token) return
+    if (!token && !hasLiveBackendAuth()) return
     try {
       const res = await fetchAiDatasetDashboard()
       if (res.success && res.data) {
@@ -88,8 +90,14 @@ export default function Dataset() {
         const nextMinor = (res.data.versions?.length ?? 0) + 1
         setVersionCode(`v1.${nextMinor}.0`)
       }
-    } catch {
-      // Fallback êm khi offline hoặc thiếu quyền CURATE_DATASET
+    } catch (err) {
+      if (hasLiveBackendAuth()) {
+        setErrMsg(
+          err instanceof ApiError
+            ? err.message
+            : "Không tải được dữ liệu Dashboard AI Dataset.",
+        )
+      }
     }
   }
 
@@ -99,17 +107,29 @@ export default function Dataset() {
 
   const handleCreateVersion = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!versionCode.trim() || !versionName.trim()) {
-      setFlash("Vui lòng nhập mã phiên bản (SemVer vX.Y.Z) và tên mô tả.")
+    setErrMsg("")
+    setFlash("")
+    const cleanCode = versionCode.trim()
+    const cleanName = versionName.trim()
+    const cleanDesc = description.trim()
+    if (!/^v?\d+\.\d+\.\d+$/i.test(cleanCode)) {
+      setErrMsg("Mã phiên bản phải theo chuẩn SemVer (ví dụ: v1.0.0).")
+      return
+    }
+    if (cleanName.length < 2 || cleanName.length > 100) {
+      setErrMsg("Tên phiên bản phải từ 2 đến 100 ký tự.")
+      return
+    }
+    if (cleanDesc.length > 500) {
+      setErrMsg("Ghi chú phát hành không được vượt quá 500 ký tự.")
       return
     }
     setCreating(true)
-    setFlash("")
     try {
       const res = await createAiDatasetVersion({
-        versionCode: versionCode.trim(),
-        versionName: versionName.trim(),
-        description: description.trim() || undefined,
+        versionCode: cleanCode,
+        versionName: cleanName,
+        description: cleanDesc || undefined,
         trainRatio: 70,
         valRatio: 20,
         testRatio: 10,
@@ -119,7 +139,7 @@ export default function Dataset() {
       setFlash((res.message || "Đã đóng gói phiên bản Dataset mới.") + warn)
       await loadDashboard()
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Không thể đóng gói phiên bản Dataset.")
+      setErrMsg(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Không thể đóng gói phiên bản Dataset.")
     } finally {
       setCreating(false)
     }
@@ -128,6 +148,7 @@ export default function Dataset() {
   const handleDownloadZip = async (versionId: string, format: "yolo" | "imagefolder") => {
     setExportingId(`${versionId}-${format}`)
     setFlash("")
+    setErrMsg("")
     try {
       const { blob, fileName, sampleCount } = await downloadDatasetVersionZip(versionId, format)
       const url = URL.createObjectURL(blob)
@@ -140,7 +161,7 @@ export default function Dataset() {
       URL.revokeObjectURL(url)
       setFlash(`Đã tải xuống ${fileName} (${sampleCount} ảnh chuẩn hóa).`)
     } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Xuất tệp .zip thất bại.")
+      setErrMsg(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Xuất tệp .zip thất bại.")
     } finally {
       setExportingId(null)
     }
@@ -209,7 +230,7 @@ export default function Dataset() {
           ))}
       </Table>
 
-      <form onSubmit={handleCreateVersion} className="card flex flex-col gap-4 p-5">
+      <form noValidate onSubmit={handleCreateVersion} className="card flex flex-col gap-4 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-bold text-ink">
@@ -265,6 +286,15 @@ export default function Dataset() {
             />
           </label>
         </div>
+
+        {errMsg && (
+          <p
+            role="alert"
+            className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-medium text-warn"
+          >
+            {errMsg}
+          </p>
+        )}
 
         <div className="flex flex-wrap items-center gap-4">
           <button
