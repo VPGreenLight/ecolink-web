@@ -73,8 +73,8 @@ export default function Blog() {
   return (
     <div className="page flex flex-col pb-20">
       {/* Blog Hero Header */}
-      <section className="relative pt-12 pb-16 md:pt-16 md:pb-20 text-center max-w-4xl mx-auto">
-        <h1 className="text-3xl sm:text-4xl md:text-[54px] font-extrabold tracking-tight text-ink leading-[1.12]">
+      <section className="relative pt-12 pb-16 md:pt-16 md:pb-20 text-center max-w-5xl mx-auto">
+        <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-[46px] xl:text-[50px] font-extrabold tracking-tight text-ink leading-[1.15] sm:whitespace-nowrap">
           Bài viết về rác thải &amp; kinh tế tuần hoàn
         </h1>
         <p className="mt-4 text-base sm:text-xl leading-relaxed text-body max-w-3xl mx-auto font-normal">

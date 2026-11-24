@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, NavLink, useNavigate } from "react-router-dom"
-import { ROLE_HOME, ROLE_LABEL, signOut, useSession, type Role } from "@/lib/session"
+import { ROLE_HOME, ROLE_LABEL, signOut, useSession } from "@/lib/session"
 import { openAuthPopup } from "@/lib/popupAuth"
 import { useEntitlements } from "@/lib/servicePackageApi"
 import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
@@ -149,19 +149,6 @@ function AccountMenu() {
       document.removeEventListener("keydown", onKey)
     }
   }, [open])
-
-  useEffect(() => {
-    const onMessage = (e: MessageEvent) => {
-      if (e.data?.type === "AUTH_SUCCESS") {
-        const role = e.data.role as Role
-        navigate(role === "user" ? "/" : ROLE_HOME[role] || "/")
-      } else if (e.data?.type === "AUTH_LOGOUT") {
-        navigate("/")
-      }
-    }
-    window.addEventListener("message", onMessage)
-    return () => window.removeEventListener("message", onMessage)
-  }, [navigate])
 
   const logout = () => {
     setOpen(false)

@@ -1,11 +1,11 @@
-import { Suspense } from "react"
-import { BrowserRouter, Outlet, Route, Routes } from "react-router-dom"
+import { Suspense, useEffect } from "react"
+import { BrowserRouter, Outlet, Route, Routes, useNavigate } from "react-router-dom"
 import AuthLayout from "@/components/AuthLayout"
 import Layout from "@/components/Layout"
 import Portal from "@/components/Portal"
 import AdminShell from "@/components/admin/Shell"
 import RequireRole from "@/components/RequireRole"
-import { useSession } from "@/lib/session"
+import { ROLE_HOME, signOut, syncSessionState, useSession, type Role } from "@/lib/session"
 
 import { PAGES } from "@/lazyPages"
 
@@ -38,9 +38,31 @@ function RolePortal() {
   return <Portal role={session?.role === "recycler" ? "recycler" : "user"} />
 }
 
+function GlobalAuthListener() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type === "AUTH_SUCCESS") {
+        const session = syncSessionState(e.data?.session)
+        const role = (e.data?.role as Role) || session?.role || "user"
+        navigate(role === "user" ? "/" : ROLE_HOME[role] || "/")
+      } else if (e.data?.type === "AUTH_LOGOUT") {
+        signOut()
+        navigate("/")
+      }
+    }
+    window.addEventListener("message", onMessage)
+    return () => window.removeEventListener("message", onMessage)
+  }, [navigate])
+
+  return null
+}
+
 export function AppRoutes() {
   return (
     <>
+    <GlobalAuthListener />
     <Suspense fallback={null}>
       <Routes>
         <Route path="/logout" element={<Logout />} />

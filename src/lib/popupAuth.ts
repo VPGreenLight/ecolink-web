@@ -12,8 +12,11 @@ export function isAuthPopup(): boolean {
 
 /** Mở cửa sổ Đăng nhập / Đăng ký ở chính giữa màn hình. Nếu trình duyệt chặn
  *  popup (gọi ngoài user gesture) thì điều hướng thẳng tới trang `/login` hoặc
- *  `/register` (trang riêng, không phủ form lên trang chủ). */
-export function openAuthPopup(mode: AuthModalMode = "login"): Window | null {
+ *  `/register` (trang riêng, không phủ form lên trang chủ) nếu `fallbackRedirect` là true. */
+export function openAuthPopup(
+  mode: AuthModalMode = "login",
+  fallbackRedirect: boolean = true,
+): Window | null {
   if (typeof window === "undefined") return null
 
   const width = 480
@@ -29,7 +32,9 @@ export function openAuthPopup(mode: AuthModalMode = "login"): Window | null {
   )
 
   if (!popup) {
-    window.location.href = url
+    if (fallbackRedirect) {
+      window.location.href = url
+    }
     return null
   }
 
