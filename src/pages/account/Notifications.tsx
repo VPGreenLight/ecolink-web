@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { CardListSkeleton, PageHead, Status } from "@/components/Portal"
 import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
@@ -27,6 +27,7 @@ const INITIAL_NOTES: Note[] = [
     title: "Lịch thu gom đã được xác nhận",
     text: "Cô Ba Thu Gom đã nhận yêu cầu của bạn và chốt khung giờ 10:00 - 12:00.",
     time: "Hôm nay, 09:34",
+    notificationType: "HANDOVER_REQUESTED",
     isRead: false,
     needsAction: true,
     isBackend: false,
@@ -36,6 +37,7 @@ const INITIAL_NOTES: Note[] = [
     title: "Biên nhận hoàn tất",
     text: "Tiền giao dịch BH-2609-0184 đã chuyển về tài khoản của bạn.",
     time: "Hôm nay, 11:02",
+    notificationType: "RECEIPT_ISSUED",
     isRead: false,
     needsAction: false,
     isBackend: false,
@@ -45,8 +47,9 @@ const INITIAL_NOTES: Note[] = [
     title: "Nhắc nhở điểm danh",
     text: "Bạn bỏ lỡ điểm danh hôm qua, chuỗi đã tính lại từ đầu.",
     time: "Hôm qua, 20:00",
-    isRead: false,
-    needsAction: true,
+    notificationType: "GAMIFICATION",
+    isRead: true,
+    needsAction: false,
     isBackend: false,
   },
 ]
@@ -71,11 +74,50 @@ function mapDtoToNote(n: NotificationDto): Note {
   }
 }
 
+function getNotificationIcon(type?: string) {
+  switch (type) {
+    case "HANDOVER_REQUESTED":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4.5 text-brand-deep">
+          <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+          <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+        </svg>
+      )
+    case "RECEIPT_ISSUED":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4.5 text-emerald-600">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="16" y1="13" x2="8" y2="13" />
+          <line x1="16" y1="17" x2="8" y2="17" />
+          <polyline points="10 9 9 9 8 9" />
+        </svg>
+      )
+    case "RECEIPT_DISPUTED":
+    case "KYB_VERIFICATION":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4.5 text-amber-600">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+      )
+    default:
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4.5 text-brand">
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+        </svg>
+      )
+  }
+}
+
 export default function Notifications() {
   const [notes, setNotes] = useState<Note[]>(() => initApiState([], INITIAL_NOTES))
   const [loading, setLoading] = useState(() => initApiLoading(true))
   const [unreadOverride, setUnreadOverride] = useState<number | null>(null)
   const [isLiveMode, setIsLiveMode] = useState(false)
+  const [filter, setFilter] = useState<"all" | "unread">("all")
 
   useEffect(() => {
     const token = getAccessToken()
@@ -128,7 +170,12 @@ export default function Notifications() {
     }
   }, [])
 
-  const unread = unreadOverride ?? notes.filter((n) => !n.isRead).length
+  const unreadCount = unreadOverride ?? notes.filter((n) => !n.isRead).length
+
+  const filteredNotes = useMemo(() => {
+    if (filter === "unread") return notes.filter((n) => !n.isRead)
+    return notes
+  }, [notes, filter])
 
   const handleMarkOne = async (note: Note) => {
     if (note.isRead) return
@@ -164,63 +211,145 @@ export default function Notifications() {
   }
 
   return (
-    <div className="page flex flex-col gap-6">
+    <div className="page flex flex-col gap-6 py-6 md:py-8 max-w-4xl mx-auto">
       <PageHead
         eyebrow="TÀI KHOẢN"
         title="Thông báo hệ thống"
-        body="Cập nhật tiến độ thu gom, xác nhận giao dịch và tin tức từ EcoLink."
+        body="Cập nhật tiến độ thu gom, biên nhận giao dịch và tin tức từ EcoLink."
       />
 
-      <section className="card flex flex-col gap-4 p-5 md:p-6 max-w-2xl">
-        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line-soft pb-3">
-          <h2 className="text-base font-bold text-ink">Danh sách thông báo</h2>
-          <span className="text-[13px] text-muted">
-            {unread === 0 ? "Đã đọc hết" : `${unread} chưa đọc`}
-          </span>
-        </div>
-
-        <ul className="flex flex-col gap-2.5">
-          {loading ? (
-            <li>
-              <CardListSkeleton count={3} />
-            </li>
-          ) : notes.length === 0 ? (
-            <li className="rounded-xl border border-line-soft bg-surface p-4 text-sm text-muted">
-              Bạn chưa có thông báo hệ thống nào.
-            </li>
-          ) : (
-            notes.map((n) => (
-              <li
-                key={n.id}
-                onClick={() => void handleMarkOne(n)}
-                className={`cursor-pointer rounded-xl border p-4 transition-colors ${
-                  n.isRead ? "border-line-soft bg-surface" : "border-brand/25 bg-brand/6"
+      {/* Double-Bezel Card Container */}
+      <div className="rounded-2xl border border-line-soft bg-surface-2/60 p-2 sm:p-2.5">
+        <section className="flex flex-col gap-5 rounded-xl border border-line-soft bg-surface p-5 sm:p-6 shadow-sm">
+          {/* Header & Controls bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-line-soft pb-4">
+            {/* Filter Tabs */}
+            <div className="inline-flex h-10 items-center rounded-xl bg-surface-2 p-1 border border-line-soft/80">
+              <button
+                type="button"
+                onClick={() => setFilter("all")}
+                className={`flex h-8 items-center gap-1.5 rounded-lg px-3.5 text-xs font-semibold transition-all duration-200 ${
+                  filter === "all"
+                    ? "bg-white text-ink shadow-[0_1px_3px_rgba(15,31,21,0.08)]"
+                    : "text-muted hover:text-ink"
                 }`}
               >
-                {n.title && (
-                  <p className="mb-1 text-sm font-semibold text-ink">{n.title}</p>
+                <span>Tất cả</span>
+                <span className="rounded-full bg-surface-3 px-1.5 py-0.2 text-[11px] font-bold text-muted">
+                  {notes.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilter("unread")}
+                className={`flex h-8 items-center gap-1.5 rounded-lg px-3.5 text-xs font-semibold transition-all duration-200 ${
+                  filter === "unread"
+                    ? "bg-white text-ink shadow-[0_1px_3px_rgba(15,31,21,0.08)]"
+                    : "text-muted hover:text-ink"
+                }`}
+              >
+                <span>Chưa đọc</span>
+                {unreadCount > 0 && (
+                  <span className="rounded-full bg-brand/12 px-1.5 py-0.2 text-[11px] font-bold text-brand-deep">
+                    {unreadCount}
+                  </span>
                 )}
-                <p className="text-sm leading-relaxed text-ink">{n.text}</p>
-                <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted">
-                  <span>{n.time}</span>
-                  {n.needsAction && !n.isRead && <Status tone="wait">Cần xử lý</Status>}
-                </div>
-              </li>
-            ))
-          )}
-        </ul>
+              </button>
+            </div>
 
-        <div className="pt-2">
-          <button
-            type="button"
-            onClick={() => void handleMarkAll()}
-            disabled={unread === 0}
-            className="btn-ghost h-10 px-4 text-xs font-semibold disabled:opacity-50"
-          >
-            Đánh dấu đã đọc tất cả
-          </button>
-        </div>
-      </section>
+            {/* Quick Action: Mark all read */}
+            <button
+              type="button"
+              onClick={() => void handleMarkAll()}
+              disabled={unreadCount === 0}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-line px-3 text-xs font-medium text-body transition-colors hover:border-sage-line hover:bg-surface-2 hover:text-ink disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-3.5">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <span>Đánh dấu đã đọc tất cả</span>
+            </button>
+          </div>
+
+          {/* List items */}
+          <ul className="flex flex-col gap-2.5">
+            {loading ? (
+              <li>
+                <CardListSkeleton count={3} />
+              </li>
+            ) : filteredNotes.length === 0 ? (
+              <li className="flex flex-col items-center justify-center rounded-xl border border-dashed border-line-soft bg-surface-2/40 py-12 px-4 text-center">
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-surface-3 text-muted mb-3">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="size-6">
+                    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                  </svg>
+                </div>
+                <p className="text-sm font-medium text-ink">
+                  {filter === "unread" ? "Không có thông báo chưa đọc" : "Chưa có thông báo nào"}
+                </p>
+                <p className="mt-1 text-xs text-muted max-w-sm">
+                  {filter === "unread"
+                    ? "Bạn đã xem hết các thông báo từ hệ thống. Các tin tức mới sẽ hiển thị tại đây."
+                    : "Mọi hoạt động thu gom, thanh toán và sự kiện sẽ được gửi đến tài khoản của bạn."}
+                </p>
+              </li>
+            ) : (
+              filteredNotes.map((n) => (
+                <li
+                  key={n.id}
+                  onClick={() => void handleMarkOne(n)}
+                  className={`group relative flex items-start gap-3.5 rounded-xl border p-4 transition-all duration-200 cursor-pointer ${
+                    n.isRead
+                      ? "border-line-soft bg-white hover:border-line hover:bg-surface-2/50"
+                      : "border-brand/25 bg-brand/[0.035] hover:border-brand/40 hover:bg-brand/[0.06] shadow-[0_1px_2px_rgba(0,112,61,0.04)]"
+                  }`}
+                >
+                  {/* Leading icon container */}
+                  <div className={`shrink-0 flex size-9 items-center justify-center rounded-lg border transition-colors ${
+                    n.isRead
+                      ? "border-line-soft bg-surface-2"
+                      : "border-brand/20 bg-brand/10"
+                  }`}>
+                    {getNotificationIcon(n.notificationType)}
+                  </div>
+
+                  {/* Content */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        {n.title && (
+                          <h3 className={`text-sm font-semibold truncate ${
+                            n.isRead ? "text-ink" : "text-brand-deep font-bold"
+                          }`}>
+                            {n.title}
+                          </h3>
+                        )}
+                        {!n.isRead && (
+                          <span className="size-1.5 rounded-full bg-brand shrink-0" />
+                        )}
+                      </div>
+                      <time className="shrink-0 text-[11px] text-muted whitespace-nowrap">
+                        {n.time}
+                      </time>
+                    </div>
+
+                    <p className="mt-1 text-xs leading-relaxed text-body">
+                      {n.text}
+                    </p>
+
+                    {n.needsAction && !n.isRead && (
+                      <div className="mt-2.5 flex items-center gap-2">
+                        <Status tone="wait">Cần xử lý</Status>
+                      </div>
+                    )}
+                  </div>
+                </li>
+              ))
+            )}
+          </ul>
+        </section>
+      </div>
     </div>
   )
 }

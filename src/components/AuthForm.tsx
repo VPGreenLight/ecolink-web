@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { ROLE_HOME, type Role } from "@/lib/session"
-import { closeAuthModal, isAuthPopup } from "@/lib/popupAuth"
+import { isAuthPopup } from "@/lib/popupAuth"
 import {
   SEEDED_DEMO_ACCOUNTS,
   authenticateWithGoogleToken,
@@ -17,7 +17,6 @@ type Mode = "login" | "register"
 const COPY = {
   login: {
     title: "Đăng nhập",
-    body: "Đăng nhập để quản lý lịch thu gom và theo dõi đóng góp xanh của bạn.",
     submit: "Đăng nhập",
     switchText: "Chưa có tài khoản?",
     switchLink: "Đăng ký miễn phí",
@@ -25,7 +24,6 @@ const COPY = {
   },
   register: {
     title: "Tạo tài khoản",
-    body: "Tham gia cộng đồng sống xanh và tích lũy giá trị từ rác tái chế.",
     submit: "Tạo tài khoản",
     switchText: "Đã có tài khoản?",
     switchLink: "Đăng nhập",
@@ -65,7 +63,6 @@ export default function AuthForm({
   }, [])
 
   const dismissModal = () => {
-    closeAuthModal()
     onClose?.()
   }
 
@@ -287,7 +284,6 @@ export default function AuthForm({
           <h1 className="text-[26px] font-bold tracking-tight text-ink">
             {copy.title}
           </h1>
-          <p className="mt-2 text-sm leading-[1.6] text-muted">{copy.body}</p>
         </div>
 
         <form onSubmit={submit} noValidate className="flex flex-col gap-4">

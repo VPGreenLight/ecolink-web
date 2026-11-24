@@ -421,33 +421,37 @@ export default function Rewards() {
           totalCount={liveRewardsUser ? filteredLiveGifts.length : offlineSorted.length}
           countLabel="phần quà"
         >
-          <select
-            className="input h-9 text-xs"
-            value={giftTypeFilter}
-            onChange={(e) => {
-              setGiftTypeFilter(e.target.value)
-              setGiftPage(1)
-            }}
-            aria-label="Lọc loại quà"
-          >
-            <option value="">Tất cả loại quà</option>
-            <option value="Physical">Quà vật lý</option>
-            <option value="Voucher">E-Voucher</option>
-          </select>
-          <select
-            className="input h-9 text-xs"
-            value={giftSort}
-            onChange={(e) => {
-              const v = e.target.value
-              setGiftSort(v === "points_desc" ? "points_desc" : v === "newest" ? "newest" : "points_asc")
-              setGiftPage(1)
-            }}
-            aria-label="Sắp xếp quà tặng"
-          >
-            <option value="points_asc">Điểm tăng dần</option>
-            <option value="points_desc">Điểm giảm dần</option>
-            <option value="newest">Mới nhất</option>
-          </select>
+          <div className="w-full md:w-[11rem]">
+            <select
+              className="input"
+              value={giftTypeFilter}
+              onChange={(e) => {
+                setGiftTypeFilter(e.target.value)
+                setGiftPage(1)
+              }}
+              aria-label="Lọc loại quà"
+            >
+              <option value="">Tất cả loại quà</option>
+              <option value="Physical">Quà vật lý</option>
+              <option value="Voucher">E-Voucher</option>
+            </select>
+          </div>
+          <div className="w-full md:w-[11rem]">
+            <select
+              className="input"
+              value={giftSort}
+              onChange={(e) => {
+                const v = e.target.value
+                setGiftSort(v === "points_desc" ? "points_desc" : v === "newest" ? "newest" : "points_asc")
+                setGiftPage(1)
+              }}
+              aria-label="Sắp xếp quà tặng"
+            >
+              <option value="points_asc">Điểm tăng dần</option>
+              <option value="points_desc">Điểm giảm dần</option>
+              <option value="newest">Mới nhất</option>
+            </select>
+          </div>
         </SearchFilterBar>
 
         {liveRewardsUser ? (

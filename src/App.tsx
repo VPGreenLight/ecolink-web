@@ -1,6 +1,6 @@
 import { Suspense } from "react"
 import { BrowserRouter, Outlet, Route, Routes } from "react-router-dom"
-import CompactAuthModal from "@/components/CompactAuthModal"
+import AuthLayout from "@/components/AuthLayout"
 import Layout from "@/components/Layout"
 import Portal from "@/components/Portal"
 import AdminShell from "@/components/admin/Shell"
@@ -46,9 +46,13 @@ export function AppRoutes() {
         <Route path="/logout" element={<Logout />} />
         <Route path="/reset-password" element={<ResetPassword />} />
 
+        {/* auth pages own the whole screen — no nav, no footer */}
+        <Route element={<AuthLayout />}>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+        </Route>
+
         <Route element={<Layout />}>
-          <Route path="login" element={<Login />} />
-          <Route path="register" element={<Register />} />
           {/* ---- công khai: G-01, và các trang khách xem được ---- */}
           <Route index element={<Home />} />
           <Route path="blog" element={<Blog />} />
@@ -170,7 +174,6 @@ export function AppRoutes() {
           </Route>
       </Routes>
     </Suspense>
-    <CompactAuthModal />
   </>
   )
 }

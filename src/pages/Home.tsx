@@ -1,28 +1,6 @@
 import { useRef, useState } from "react"
 import { Link } from "react-router-dom"
 
-/** Ba việc app thật sự làm, mỗi việc trỏ tới một route có thật */
-const FEATURES = [
-  {
-    to: "/scanner",
-    kicker: "01",
-    title: "Nhận diện bằng AI",
-    body: "Chụp ảnh rác, nhận vật liệu và đơn giá tham khảo trong vài giây, kèm hướng dẫn cách xử lý đúng.",
-  },
-  {
-    to: "/map",
-    kicker: "02",
-    title: "Kết nối người thu gom",
-    body: "Xem điểm thu gom quanh bạn và đặt lịch người thu gom đến tận nhà, theo dõi lộ trình.",
-  },
-  {
-    to: "/partners",
-    kicker: "03",
-    title: "Nối chuỗi giá trị",
-    body: "Kết nối trực tiếp với nhà máy tái chế đạt chuẩn, có chứng chỉ ISO và FSC công khai.",
-  },
-] as const
-
 const STEPS = [
   "Chụp ảnh vật rác cần phân loại",
   "Nhận vật liệu, định giá và cách xử lý",
@@ -128,38 +106,6 @@ export default function Home() {
         </ol>
       </section>
 
-      {/* 3 tính năng */}
-      <section className="py-12 md:py-14">
-        <h2 className="text-2xl leading-8 font-bold tracking-tight text-ink">
-          Nền tảng gồm những gì
-        </h2>
-        <div className="mt-6 grid gap-6 md:grid-cols-3">
-          {FEATURES.map((f) => (
-            <Link
-              key={f.to}
-              to={f.to}
-              className="card group flex flex-col p-6 transition-colors hover:border-brand/40 hover:bg-surface-2/60"
-            >
-              <span className="text-xs font-semibold tracking-[0.12em] text-brand uppercase">
-                {f.kicker}
-              </span>
-              <h3 className="mt-3 text-lg leading-7 font-bold text-ink">
-                {f.title}
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-body">{f.body}</p>
-              <span className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-semibold text-brand">
-                Tìm hiểu
-                <span
-                  aria-hidden="true"
-                  className="transition-transform duration-200 group-hover:translate-x-0.5"
-                >
-                  →
-                </span>
-              </span>
-            </Link>
-          ))}
-        </div>
-      </section>
     </div>
   )
 }

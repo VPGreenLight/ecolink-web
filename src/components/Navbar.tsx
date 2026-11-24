@@ -75,16 +75,6 @@ const ACCOUNT_ITEMS = [
     ),
   },
   {
-    to: "/account/notifications",
-    label: "Thông báo",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4 text-muted">
-        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-        <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-      </svg>
-    ),
-  },
-  {
     to: "/account/password",
     label: "Đổi mật khẩu",
     icon: (
@@ -387,6 +377,32 @@ export default function Navbar() {
             >
               Đăng nhập
             </button>
+          )}
+          {session && (
+            <Link
+              to="/account/notifications"
+              aria-label="Thông báo"
+              className="group relative flex size-10 items-center justify-center rounded-full border border-line bg-white text-muted shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-[color,border-color,background-color,transform] duration-200 ease-out hover:border-sage-line hover:bg-surface-2 hover:text-ink active:scale-[0.96]"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="size-[18px] transition-transform duration-200 group-hover:scale-105"
+              >
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+              </svg>
+              {/* Notification dot indicator */}
+              <span className="absolute top-2 right-2 flex size-2">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-brand opacity-75" />
+                <span className="relative inline-flex size-2 rounded-full border-2 border-white bg-brand shadow-[0_0_0_1px_rgba(0,112,61,0.2)]" />
+              </span>
+            </Link>
           )}
           <AccountMenu />
         </div>

@@ -5,16 +5,13 @@ import { ARTICLES, FEATURED, METRICS } from "@/data/insights"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
 import {
-  estimateReadTime,
   fetchPublishedBlogs,
   formatViDate,
   type BlogPostSummaryDto,
 } from "@/lib/blogApi"
 
-/** Chỉ con số thành tích mới mang màu. Trước đây 350M+ và 9% tô cam cảnh
- *  báo ở cỡ 48px, biến chúng thành hai mảng nổi bật nhất trang. */
 const VALUE_TONE = {
-  good: "text-brand",
+  good: "text-brand-deep",
   warn: "text-ink",
 } as const
 
@@ -74,237 +71,281 @@ export default function Blog() {
   ).slice(0, 8)
 
   return (
-    <div className="page flex flex-col">
-      {/* Blog hero */}
-      <section className="py-10 text-center md:py-16">
-        <p className="eyebrow">Tin tức &amp; phân tích</p>
-        <h1 className="display mt-3 text-4xl leading-none md:text-[48px] md:leading-[48px]">
+    <div className="page flex flex-col pb-20">
+      {/* Blog Hero Header */}
+      <section className="relative pt-12 pb-16 md:pt-16 md:pb-20 text-center max-w-4xl mx-auto">
+        <h1 className="text-3xl sm:text-4xl md:text-[54px] font-extrabold tracking-tight text-ink leading-[1.12]">
           Bài viết về rác thải &amp; kinh tế tuần hoàn
         </h1>
-        <p className="mt-4 text-base leading-[26px] text-body">
-          Chuỗi giá trị tái chế, hạn ngạch EPR và cách hạ tầng thu gom đang thay
-          đổi tại Việt Nam.
+        <p className="mt-4 text-base sm:text-xl leading-relaxed text-body max-w-3xl mx-auto font-normal">
+          Chuỗi giá trị tái chế, chính sách trách nhiệm mở rộng của nhà sản xuất (EPR) và cách hạ tầng thu gom tuần hoàn đang đổi mới tại Việt Nam.
         </p>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            setQueryText(search.trim())
-          }}
-          className="mx-auto mt-6 flex max-w-md gap-2"
-        >
-          <input
-            className="input h-10 flex-1"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Tìm bài viết tái chế, phân loại..."
-            aria-label="Tìm kiếm bài viết blog"
-          />
-          <button type="submit" className="btn-primary h-10 shrink-0 px-4 text-sm">
-            Tìm
-          </button>
-          {(queryText || activeTag) && (
+        {/* Search Bar - High-End Double Bezel shape enlarged ~20% */}
+        <div className="mx-auto mt-9 max-w-2xl">
+          <form
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault()
+              setQueryText(search.trim())
+              setPage(1)
+            }}
+            className="flex items-center gap-2 rounded-2xl border border-line-soft bg-surface-2/60 p-2 shadow-[0_4px_16px_rgba(15,31,21,0.06)] focus-within:border-brand/40 focus-within:ring-2 focus-within:ring-brand/10 transition-all"
+          >
+            <div className="flex flex-1 items-center gap-3 px-3.5">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-5 text-muted shrink-0">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                className="w-full bg-transparent text-base text-ink placeholder:text-muted focus:outline-none"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Tìm bài viết tái chế, phân loại, chính sách EPR..."
+                aria-label="Tìm kiếm bài viết blog"
+              />
+            </div>
             <button
-              type="button"
-              onClick={() => {
-                setSearch("")
-                setQueryText("")
-                setActiveTag("")
-              }}
-              className="btn-ghost h-10 shrink-0 px-3 text-sm"
+              type="submit"
+              className="inline-flex h-11 items-center rounded-xl bg-brand px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-deep shrink-0 active:scale-[0.98]"
             >
-              Xóa lọc
+              Tìm kiếm
             </button>
-          )}
-        </form>
+            {(queryText || activeTag) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("")
+                  setQueryText("")
+                  setActiveTag("")
+                }}
+                className="inline-flex h-11 items-center rounded-xl px-3.5 text-sm font-medium text-muted hover:text-ink hover:bg-surface-3 transition-colors shrink-0"
+              >
+                Xóa lọc
+              </button>
+            )}
+          </form>
 
-        {availableTags.length > 0 && (
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            {availableTags.map((tag) => {
-              const selected = activeTag === tag
-              return (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => {
-                    setActiveTag(selected ? "" : tag)
-                    setPage(1)
-                  }}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-                    selected
-                      ? "bg-brand text-white"
-                      : "border border-line bg-surface text-body hover:border-brand/50"
-                  }`}
-                >
-                  #{tag}
-                </button>
-              )
-            })}
-          </div>
-        )}
+          {/* Tag Pills */}
+          {availableTags.length > 0 && (
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              {availableTags.map((tag) => {
+                const selected = activeTag === tag
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => {
+                      setActiveTag(selected ? "" : tag)
+                      setPage(1)
+                    }}
+                    className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-200 ${
+                      selected
+                        ? "bg-brand text-white shadow-sm"
+                        : "border border-line-soft bg-white text-body hover:border-brand/40 hover:text-brand-deep"
+                    }`}
+                  >
+                    #{tag}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </section>
 
-      {/* Featured story */}
+      {/* Featured Editorial Story */}
       {loading && posts === null ? (
-        <section className="pb-16 text-center text-sm text-muted">
+        <section className="py-12 text-center text-sm text-muted">
           Đang tải bài viết mới nhất từ hệ thống...
         </section>
       ) : featuredLive ? (
-        <section className="grid items-center gap-10 pb-20 md:grid-cols-12">
-          <div className="aspect-[16/10] overflow-clip rounded-2xl bg-surface-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)] md:col-span-7">
-            <img
-              src={featuredLive.coverImageUrl || FEATURED.image}
-              alt={featuredLive.title}
-              className="h-full w-full object-cover"
-              loading="lazy"
-            />
-          </div>
+        <section className="mb-16">
+          <div className="rounded-2xl border border-line-soft bg-surface-2/60 p-2 sm:p-3">
+            <div className="group grid items-center gap-8 rounded-xl border border-line-soft bg-white p-5 sm:p-7 shadow-sm transition-all duration-300 hover:shadow-md md:grid-cols-12">
+              <div className="aspect-[16/10] overflow-hidden rounded-xl bg-surface-2 md:col-span-7">
+                <img
+                  src={featuredLive.coverImageUrl || FEATURED.image}
+                  alt={featuredLive.title}
+                  className="size-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]"
+                  loading="lazy"
+                />
+              </div>
 
-          <div className="md:col-span-5">
-            <div className="mb-4 flex flex-wrap items-center gap-3 text-xs">
-              <span className="font-semibold tracking-[0.6px] text-brand uppercase">
-                {featuredLive.tags[0] || "TIÊU ĐIỂM"}
-              </span>
-              <span className="text-body">
-                • {formatViDate(featuredLive.publishedAt || featuredLive.createdAt)}
-              </span>
-              <span className="text-body">{featuredLive.author?.fullName || "EcoLink"}</span>
+              <div className="flex flex-col justify-center md:col-span-5 md:pr-4">
+                <div className="mb-3 flex flex-wrap items-center gap-2.5 text-xs text-muted">
+                  <span className="rounded-full bg-brand/10 px-2.5 py-0.5 font-bold tracking-wide text-brand-deep uppercase">
+                    {featuredLive.tags[0] || "Tiêu điểm"}
+                  </span>
+                  <span>•</span>
+                  <time>{formatViDate(featuredLive.publishedAt || featuredLive.createdAt)}</time>
+                  <span>•</span>
+                  <span>{featuredLive.author?.fullName || "EcoLink"}</span>
+                </div>
+
+                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-ink leading-snug group-hover:text-brand-deep transition-colors">
+                  <Link to={`/blog/${featuredLive.slug}`}>
+                    {featuredLive.title}
+                  </Link>
+                </h2>
+                {featuredLive.summary && (
+                  <p className="mt-3.5 text-sm sm:text-base leading-relaxed text-body line-clamp-3">
+                    {featuredLive.summary}
+                  </p>
+                )}
+
+                <div className="mt-5">
+                  <Link
+                    to={`/blog/${featuredLive.slug}`}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-deep hover:text-brand transition-colors"
+                  >
+                    <span>Đọc bài chi tiết</span>
+                    <ArrowRight />
+                  </Link>
+                </div>
+              </div>
             </div>
-
-            <h2 className="text-3xl leading-9 font-bold tracking-tight text-ink">
-              {featuredLive.title}
-            </h2>
-            {featuredLive.summary && (
-              <p className="mt-6 text-base leading-6 text-body">{featuredLive.summary}</p>
-            )}
-
-            <Link to={`/blog/${featuredLive.slug}`} className="link-underline mt-4 inline-flex">
-              Đọc bài chi tiết
-              <ArrowRight />
-            </Link>
           </div>
         </section>
       ) : !useBackend ? (
-        <section className="grid items-center gap-10 pb-20 md:grid-cols-12">
-          <div className="overflow-clip rounded-2xl bg-surface-2 shadow-[0_1px_2px_rgba(0,0,0,0.05)] md:col-span-7">
-            <img
-              src={FEATURED.image}
-              alt={FEATURED.title}
-              className="h-full w-full object-cover"
-              loading="lazy"
-            />
-          </div>
+        <section className="mb-16">
+          <div className="rounded-2xl border border-line-soft bg-surface-2/60 p-2 sm:p-3">
+            <div className="group grid items-center gap-8 rounded-xl border border-line-soft bg-white p-5 sm:p-7 shadow-sm transition-all duration-300 hover:shadow-md md:grid-cols-12">
+              <div className="aspect-[16/10] overflow-hidden rounded-xl bg-surface-2 md:col-span-7">
+                <img
+                  src={FEATURED.image}
+                  alt={FEATURED.title}
+                  className="size-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]"
+                  loading="lazy"
+                />
+              </div>
 
-          <div className="md:col-span-5">
-            <div className="mb-4 flex flex-wrap items-center gap-3 text-xs">
-              <span className="font-semibold tracking-[0.6px] text-brand uppercase">
-                {FEATURED.kicker}
-              </span>
-              <span className="text-body">• {FEATURED.readTime}</span>
-              <span className="text-body">{FEATURED.publication}</span>
+              <div className="flex flex-col justify-center md:col-span-5 md:pr-4">
+                <div className="mb-3 flex flex-wrap items-center gap-2.5 text-xs text-muted">
+                  <span className="rounded-full bg-brand/10 px-2.5 py-0.5 font-bold tracking-wide text-brand-deep uppercase">
+                    {FEATURED.kicker}
+                  </span>
+                  <span>•</span>
+                  <span>{FEATURED.readTime}</span>
+                  <span>•</span>
+                  <span>{FEATURED.publication}</span>
+                </div>
+
+                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-ink leading-snug group-hover:text-brand-deep transition-colors">
+                  <a href="#curated">
+                    {FEATURED.title}
+                  </a>
+                </h2>
+                <p className="mt-3.5 text-sm sm:text-base leading-relaxed text-body line-clamp-3">
+                  {FEATURED.excerpt}
+                </p>
+
+                <div className="mt-5">
+                  <a
+                    href="#curated"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-deep hover:text-brand transition-colors"
+                  >
+                    <span>Đọc bài phân tích</span>
+                    <ArrowRight />
+                  </a>
+                </div>
+              </div>
             </div>
-
-            <h2 className="text-3xl leading-9 font-bold tracking-tight text-ink">
-              {FEATURED.title}
-            </h2>
-            <p className="mt-6 text-base leading-6 text-body">{FEATURED.excerpt}</p>
-
-            <a href="#curated" className="link-underline mt-2">
-              Đọc bài phân tích
-              <ArrowRight />
-            </a>
           </div>
         </section>
       ) : null}
 
-      {/* Metrics */}
-      <section className="flex flex-col gap-12 border-y border-line py-12 sm:flex-row">
-        {METRICS.map((m, i) => (
-          <div
-            key={m.label}
-            className={i === 0 ? "flex-1" : "flex-1 border-line pl-0 sm:border-l sm:pl-12"}
-          >
-            <p className="text-xs font-medium tracking-[1.2px] text-body uppercase">
-              {m.label}
-            </p>
-            <p
-              className={`text-[48px] leading-[48px] font-bold tracking-tight ${VALUE_TONE[m.tone]}`}
+      {/* High-End Bento Metrics Grid */}
+      <section className="mb-16">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {METRICS.map((m) => (
+            <div
+              key={m.label}
+              className="flex flex-col justify-between rounded-2xl border border-line-soft bg-surface-2/40 p-5 sm:p-6 transition-all hover:bg-surface-2/70"
             >
-              {m.value}
-            </p>
-            <p className="text-xs leading-[19.5px] text-body">{m.note}</p>
-          </div>
-        ))}
+              <p className="text-xs font-semibold tracking-wider text-muted uppercase">
+                {m.label}
+              </p>
+              <div className="my-3">
+                <span className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${VALUE_TONE[m.tone]}`}>
+                  {m.value}
+                </span>
+              </div>
+              <p className="text-xs leading-relaxed text-body">{m.note}</p>
+            </div>
+          ))}
+        </div>
       </section>
 
-      {/* Curated articles */}
-      <section id="curated" className="max-w-[896px] pt-20 pb-16">
-        <header className="flex items-baseline justify-between border-b border-line pb-4">
-          <h2 className="text-2xl leading-8 font-bold tracking-tight text-ink">
-            Bài viết chọn lọc
-          </h2>
-          <span className="text-xs text-body">
-            {useBackend ? `${posts.length} bài đã xuất bản` : "Cập nhật hằng tuần"}
-          </span>
-        </header>
+      {/* Curated Articles - Bento / Card Grid */}
+      <section id="curated" className="flex flex-col gap-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-line-soft pb-4">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-ink">
+              Bài viết chọn lọc
+            </h2>
+            <p className="text-xs text-muted mt-0.5">
+              {useBackend ? `${posts?.length ?? 0} bài đã xuất bản` : "Cập nhật định kỳ từ chuyên gia EcoLink"}
+            </p>
+          </div>
+        </div>
 
         {useBackend ? (
           restLive.length === 0 ? (
-            <p className="py-10 text-sm text-muted">
-              {posts.length === 0
-                ? "Không tìm thấy bài viết phù hợp với bộ lọc hiện tại."
-                : "Bài viết mới nhất đang được hiển thị ở mục Tiêu điểm phía trên."}
-            </p>
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-line-soft bg-surface-2/30 py-16 px-4 text-center">
+              <p className="text-sm font-medium text-ink">
+                {posts.length === 0
+                  ? "Không tìm thấy bài viết phù hợp với bộ lọc hiện tại."
+                  : "Bài viết mới nhất đang được hiển thị ở mục Tiêu điểm phía trên."}
+              </p>
+            </div>
           ) : (
             <>
-              <ul>
-                {pagedRestLive.map((p, i) => (
-                  <li
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {pagedRestLive.map((p) => (
+                  <article
                     key={p.id}
-                    className={`flex flex-col gap-6 pt-8 pb-8 sm:flex-row sm:gap-8 ${
-                      i > 0 ? "border-t border-line" : ""
-                    }`}
+                    className="group flex flex-col overflow-hidden rounded-2xl border border-line-soft bg-white shadow-sm transition-all duration-200 hover:border-line hover:shadow-md"
                   >
                     <Link
                       to={`/blog/${p.slug}`}
-                      className="h-36 w-full shrink-0 overflow-clip rounded-xl bg-surface-2 sm:h-32 sm:w-48"
+                      className="aspect-[16/10] w-full overflow-hidden bg-surface-2"
                     >
                       <img
                         src={p.coverImageUrl || "/assets/insights/c4ba2.png"}
                         alt={p.title}
-                        className="size-full object-cover"
+                        className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-105"
                         loading="lazy"
                       />
                     </Link>
 
-                    <div className="flex flex-1 flex-col">
-                      <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
-                        <span className="font-semibold text-brand">
+                    <div className="flex flex-1 flex-col p-5">
+                      <div className="mb-2 flex items-center gap-2 text-xs text-muted">
+                        <span className="font-semibold text-brand-deep">
                           {p.author?.fullName || "EcoLink"}
                         </span>
-                        <span className="text-body">
-                          • {formatViDate(p.publishedAt || p.createdAt)}
-                        </span>
-                        <span className="text-body">
-                          • {estimateReadTime(p.summary)}
-                        </span>
+                        <span>•</span>
+                        <time>{formatViDate(p.publishedAt || p.createdAt)}</time>
                       </div>
-                      <h3 className="text-xl leading-7 font-bold tracking-tight text-ink">
-                        <Link to={`/blog/${p.slug}`} className="hover:text-brand">
+
+                      <h3 className="text-base font-bold tracking-tight text-ink group-hover:text-brand-deep transition-colors line-clamp-2">
+                        <Link to={`/blog/${p.slug}`}>
                           {p.title}
                         </Link>
                       </h3>
+
                       {p.summary && (
-                        <p className="mt-2 text-sm leading-[22.75px] text-body">
+                        <p className="mt-2 text-xs leading-relaxed text-body line-clamp-3 flex-1">
                           {p.summary}
                         </p>
                       )}
+
                       {p.tags.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                          {p.tags.map((t) => (
+                        <div className="mt-4 flex flex-wrap gap-1.5 pt-3 border-t border-line-soft">
+                          {p.tags.slice(0, 3).map((t) => (
                             <span
                               key={t}
-                              className="rounded-full bg-surface-2 px-2.5 py-0.5 text-[11px] font-medium text-muted"
+                              className="rounded-md bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-muted"
                             >
                               #{t}
                             </span>
@@ -312,63 +353,74 @@ export default function Blog() {
                         </div>
                       )}
                     </div>
-                  </li>
+                  </article>
                 ))}
-              </ul>
-              <PaginationBar
-                page={page}
-                pageSize={pageSize}
-                totalCount={restLive.length}
-                onPageChange={setPage}
-                itemLabel="bài viết"
-              />
+              </div>
+
+              <div className="mt-8">
+                <PaginationBar
+                  page={page}
+                  pageSize={pageSize}
+                  totalCount={restLive.length}
+                  onPageChange={setPage}
+                  itemLabel="bài viết"
+                />
+              </div>
             </>
           )
         ) : pagedOfflineArticles.length === 0 ? (
-          <p className="py-10 text-sm text-muted">
-            Không tìm thấy bài viết phù hợp với từ khóa hiện tại.
-          </p>
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-line-soft bg-surface-2/30 py-16 px-4 text-center">
+            <p className="text-sm font-medium text-ink">
+              Không tìm thấy bài viết phù hợp với từ khóa hiện tại.
+            </p>
+          </div>
         ) : (
           <>
-            <ul>
-              {pagedOfflineArticles.map((a, i) => (
-                <li
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {pagedOfflineArticles.map((a) => (
+                <article
                   key={a.title}
-                  className={`flex gap-8 pt-8 pb-8 ${i > 0 ? "border-t border-line" : ""}`}
+                  className="group flex flex-col overflow-hidden rounded-2xl border border-line-soft bg-white shadow-sm transition-all duration-200 hover:border-line hover:shadow-md"
                 >
-                  <div className="h-32 w-48 shrink-0 overflow-clip rounded-xl bg-surface-2">
+                  <div className="aspect-[16/10] w-full overflow-hidden bg-surface-2">
                     <img
                       src={a.image}
                       alt={a.source}
-                      className="size-full object-cover"
+                      className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-105"
                       loading="lazy"
                     />
                   </div>
 
-                  <div className="flex flex-1 flex-col">
-                    <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
-                      <span className="font-semibold text-brand">{a.source}</span>
-                      <span className="text-body">• {a.readTime}</span>
+                  <div className="flex flex-1 flex-col p-5">
+                    <div className="mb-2 flex items-center gap-2 text-xs text-muted">
+                      <span className="font-semibold text-brand-deep">{a.source}</span>
+                      <span>•</span>
+                      <span>{a.readTime}</span>
                     </div>
-                    <h3 className="text-xl leading-7 font-bold tracking-tight text-ink">
+
+                    <h3 className="text-base font-bold tracking-tight text-ink group-hover:text-brand-deep transition-colors line-clamp-2">
                       {a.title}
                     </h3>
+
                     {a.excerpt && (
-                      <p className="mt-2 text-sm leading-[22.75px] text-body">
+                      <p className="mt-2 text-xs leading-relaxed text-body line-clamp-3 flex-1">
                         {a.excerpt}
                       </p>
                     )}
                   </div>
-                </li>
+                </article>
               ))}
-            </ul>
-            <PaginationBar
-              page={page}
-              pageSize={pageSize}
-              totalCount={filteredOfflineArticles.length}
-              onPageChange={setPage}
-              itemLabel="bài viết"
-            />
+            </div>
+
+            <div className="mt-8">
+              <PaginationBar
+                page={page}
+                pageSize={pageSize}
+                totalCount={filteredOfflineArticles.length}
+                onPageChange={setPage}
+                itemLabel="bài viết"
+              />
+            </div>
           </>
         )}
       </section>
@@ -379,16 +431,17 @@ export default function Blog() {
 function ArrowRight() {
   return (
     <svg
-      width="12"
-      height="12"
-      viewBox="0 0 12 12"
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
       fill="none"
       aria-hidden="true"
+      className="transition-transform group-hover:translate-x-0.5"
     >
       <path
-        d="M2 6h8m0 0L6.5 2.5M10 6l-3.5 3.5"
+        d="M2.5 7h9m0 0L8 3.5M11.5 7L8 10.5"
         stroke="currentColor"
-        strokeWidth="1.4"
+        strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
