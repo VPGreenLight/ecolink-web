@@ -66,7 +66,7 @@ const FALLBACK_ROWS: AccountRow[] = ACCOUNTS.map((a) => ({
  * S-06 Xem danh sách & chi tiết User/Recycler · S-07 Khoá / vô hiệu hoá tài khoản.
  *
  * Tuân thủ BR-ADM-03 (bắt buộc nhập lý do >= 10 ký tự & thu hồi Refresh Token)
- * và BR-ADM-04 (chỉ vô hiệu hoá mềm khi chưa có giao dịch hoàn tất để giữ đối soát).
+ * và BR-ADM-04 (chỉ vô hiệu hoá mềm Deactivated kèm lý do kiểm toán, không xóa vật lý bản ghi).
  */
 export default function Accounts() {
   const [list, setList] = useState<AccountRow[]>(() => initApiState([], FALLBACK_ROWS))
@@ -135,12 +135,6 @@ export default function Accounts() {
   const openModerationModal = (target: AccountRow, kind: "lock" | "unlock" | "deactivate") => {
     setActionErr("")
     setFlash("")
-    if (!hasLiveBackendAuth() && !isLive && kind === "deactivate" && target.deals > 0) {
-      setActionErr(
-        `${target.name} đã có ${target.deals} giao dịch hoàn tất nên bản mô phỏng ngoại tuyến chặn xoá (BR-ADM-04). Hãy dùng chức năng Khoá tài khoản hoặc kết nối Backend để vô hiệu hoá mềm.`,
-      )
-      return
-    }
     setModalAction({ target, kind })
     setReasonText("")
     setAddWarning(kind === "lock")
@@ -478,9 +472,9 @@ export default function Accounts() {
               )}
 
               <p className="text-[13px] leading-5 text-muted">
-                {pick.deals > 0
-                  ? `Tài khoản này đã có ${pick.deals} giao dịch hoàn tất nên hệ thống chặn xoá/vô hiệu hoá (BR-ADM-04) để bảo toàn đối soát dòng tiền.`
-                  : "Tài khoản chưa phát sinh giao dịch hoàn tất nên có thể vô hiệu hoá mềm kèm lý do."}
+                Theo quy tắc BR-ADM-04, thao tác vô hiệu hoá chỉ chuyển trạng thái sang{" "}
+                <b>Vô hiệu hoá mềm (Deactivated)</b> kèm lý do kiểm toán bắt buộc, tuyệt đối không xóa vật lý bản ghi nhằm bảo toàn{" "}
+                {pick.deals > 0 ? `${pick.deals} giao dịch hoàn tất và dấu vết đối soát.` : "toàn bộ lịch sử kiểm toán."}
               </p>
 
               {historyList.length > 0 && (

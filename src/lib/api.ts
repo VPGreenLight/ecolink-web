@@ -113,6 +113,7 @@ interface RefreshAuthDto {
     currentGreenPoints?: number
     treeLevel?: number
     totalRecycledKg?: number
+    permissions?: string[]
   } | null
 }
 
@@ -267,6 +268,7 @@ export async function rotateRefreshTokenSingleFlight(): Promise<string | null> {
           currentGreenPoints: dto.user.currentGreenPoints,
           treeLevel: dto.user.treeLevel,
           totalRecycledKg: dto.user.totalRecycledKg,
+          ...(Array.isArray(dto.user.permissions) ? { permissions: dto.user.permissions } : {}),
           fromBackend: true,
         })
       }
@@ -332,6 +334,7 @@ async function verifySessionWithBackend(): Promise<boolean> {
               currentGreenPoints: user.currentGreenPoints,
               treeLevel: user.treeLevel,
               totalRecycledKg: user.totalRecycledKg,
+              ...(Array.isArray(user.permissions) ? { permissions: user.permissions } : {}),
               fromBackend: true,
             })
           } else {
@@ -346,6 +349,7 @@ async function verifySessionWithBackend(): Promise<boolean> {
               currentGreenPoints: user.currentGreenPoints,
               treeLevel: user.treeLevel,
               totalRecycledKg: user.totalRecycledKg,
+              ...(Array.isArray(user.permissions) ? { permissions: user.permissions } : {}),
               fromBackend: true,
             })
           }

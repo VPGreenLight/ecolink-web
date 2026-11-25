@@ -2,11 +2,10 @@ import { useEffect, useState } from "react"
 import PaginationBar, { extractPagedMeta, FIXED_PAGE_SIZE } from "@/components/PaginationBar"
 import { Empty, Field, PageHead, Stat, Status, Table, Td } from "@/components/admin/ui"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
-import { FLOWS } from "@/data/cashflow"
 import { MY_HANDOVERS } from "@/data/handover"
 import { ACCOUNTS, STATS, fmtInt, fmtVnd } from "@/data/ops"
 import { hasLiveBackendAuth } from "@/lib/session"
-import { initApiState } from "@/lib/hydration"
+import { initApiState, isSsrSmokeTest } from "@/lib/hydration"
 import {
   exportAdminReportBlob,
   getAdminAuditLogs,
@@ -16,6 +15,10 @@ import {
   type ReportDatasetType,
   type ReportExportFormat,
 } from "@/lib/governanceApi"
+import {
+  getAdminReconciliationLedger,
+  type ReconciliationLedgerItemDto,
+} from "@/lib/servicePackageApi"
 
 type Row = Record<string, string | number>
 
@@ -55,16 +58,8 @@ const FALLBACK_SHEETS: Record<
   cashflow: {
     label: "Đối soát dòng tiền & Phí dịch vụ VietQR",
     desc: "Biên nhận giao dịch hoàn tất và hoá đơn gói dịch vụ nền tảng.",
-    head: ["Ngày", "Mã giao dịch", "Mã bàn giao", "Loại", "Số tiền", "Đối tác"],
-    rows: () =>
-      FLOWS.map((f) => ({
-        Ngày: f.date,
-        "Mã giao dịch": f.id,
-        "Mã bàn giao": f.handoverId,
-        Loại: f.kind,
-        "Số tiền": f.amount,
-        "Đối tác": f.party,
-      })),
+    head: ["Mã đối soát", "Người thanh toán", "Gói dịch vụ", "Số tiền nhận", "Trạng thái"],
+    rows: () => [],
   },
   audit: {
     label: "Nhật ký kiểm toán hệ thống (Audit Logs)",
@@ -144,6 +139,14 @@ function downloadFallbackCsv(sheet: ReportDatasetType, fromDate: string, toDate:
   triggerBlobDownload(blob, `ecolink-${sheet}-${fromDate || "all"}-${toDate || "now"}.csv`)
 }
 
+function formatIsoDateOffset(daysOffset: number): string {
+  const dt = new Date(Date.now() + daysOffset * 86_400_000)
+  const y = dt.getFullYear()
+  const m = String(dt.getMonth() + 1).padStart(2, "0")
+  const d = String(dt.getDate()).padStart(2, "0")
+  return `${y}-${m}-${d}`
+}
+
 /**
  * A-02 Xuất báo cáo dữ liệu (CSV / XLSX) & Tra cứu Nhật ký kiểm toán bất biến (Audit Log).
  *
@@ -152,8 +155,8 @@ function downloadFallbackCsv(sheet: ReportDatasetType, fromDate: string, toDate:
  */
 export default function Reports() {
   const [tab, setTab] = useState<"export" | "audit">("export")
-  const [fromDate, setFromDate] = useState("2026-09-01")
-  const [toDate, setToDate] = useState("2026-11-30")
+  const [fromDate, setFromDate] = useState(() => formatIsoDateOffset(-30))
+  const [toDate, setToDate] = useState(() => formatIsoDateOffset(0))
   const [format, setFormat] = useState<ReportExportFormat>("csv")
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [flash, setFlash] = useState("")
@@ -172,20 +175,26 @@ export default function Reports() {
     ),
   )
 
-  // Trạng thái tab Audit Logs
+  // Trạng thái tab Audit Logs — mặc định không giới hạn ngày hẹp để luôn hiện các bản ghi mới nhất hôm nay
   const [auditLogs, setAuditLogs] = useState<AuditLogItemDto[]>(() =>
     initApiState([], FALLBACK_AUDIT_LOGS),
   )
   const [auditTotal, setAuditTotal] = useState<number>(() =>
     initApiState(0, FALLBACK_AUDIT_LOGS.length),
   )
+  const [auditFromDate, setAuditFromDate] = useState("")
+  const [auditToDate, setAuditToDate] = useState("")
+  const [auditErr, setAuditErr] = useState("")
   const [actionFilter, setActionFilter] = useState("")
   const [keyword, setKeyword] = useState("")
   const debouncedKeyword = useDebouncedValue(keyword, 300)
   const [page, setPage] = useState(1)
   const [selectedLog, setSelectedLog] = useState<AuditLogItemDto | null>(null)
+  const [ledgerPreview, setLedgerPreview] = useState<ReconciliationLedgerItemDto[]>([])
+  const [ledgerErr, setLedgerErr] = useState("")
 
   useEffect(() => {
+    if (isSsrSmokeTest()) return
     let cancelled = false
     getAdminKpiSummary("30d")
       .then((res) => {
@@ -197,20 +206,48 @@ export default function Reports() {
           fee30d: res.data.platformFeeRevenueVnd + res.data.vietQrServiceRevenueVnd,
         })
       })
-      .catch(() => {
-        // Giữ fallback STATS
+      .catch((err) => {
+        if (!cancelled && hasLiveBackendAuth()) {
+          setErrMsg(
+            err instanceof Error ? err.message : "Không thể tải số liệu tổng quan báo cáo.",
+          )
+        }
+      })
+
+    getAdminReconciliationLedger({ pageNumber: 1, pageSize: 8 })
+      .then((res) => {
+        if (cancelled || !res.data?.items?.items) return
+        setLedgerPreview(res.data.items.items)
+      })
+      .catch((err) => {
+        if (!cancelled && hasLiveBackendAuth()) {
+          setLedgerErr(
+            err instanceof Error ? err.message : "Không thể tải bảng xem trước đối soát dòng tiền.",
+          )
+        }
       })
     return () => {
       cancelled = true
     }
   }, [])
 
-  const loadAuditLogs = (targetPage = page, targetKeyword = debouncedKeyword) => {
+  const loadAuditLogs = (
+    targetPage = page,
+    targetKeyword = debouncedKeyword,
+    targetFrom = auditFromDate,
+    targetTo = auditToDate,
+    targetAction = actionFilter,
+  ) => {
+    setAuditErr("")
+    if (targetFrom && targetTo && targetFrom > targetTo) {
+      setAuditErr("Khoảng thời gian tra cứu không hợp lệ: Từ ngày không được lớn hơn Đến ngày.")
+      return
+    }
     getAdminAuditLogs({
-      action: actionFilter || undefined,
+      action: targetAction || undefined,
       keyword: targetKeyword.trim() || undefined,
-      fromDate: fromDate || undefined,
-      toDate: toDate || undefined,
+      fromDate: targetFrom || undefined,
+      toDate: targetTo || undefined,
       pageNumber: targetPage,
       pageSize: FIXED_PAGE_SIZE,
     })
@@ -219,17 +256,23 @@ export default function Reports() {
         setAuditLogs(res.data.items)
         setAuditTotal(extractPagedMeta(res.data).totalCount)
       })
-      .catch(() => {
-        // Giữ dữ liệu mẫu khi chưa đăng nhập Admin
+      .catch((err) => {
+        if (hasLiveBackendAuth()) {
+          setAuditErr(
+            err instanceof Error
+              ? err.message
+              : "Không thể tải nhật ký kiểm toán từ máy chủ lúc này.",
+          )
+        }
       })
   }
 
   useEffect(() => {
     if (tab === "audit") {
-      loadAuditLogs(page, debouncedKeyword)
+      loadAuditLogs(page, debouncedKeyword, auditFromDate, auditToDate, actionFilter)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, page, actionFilter, debouncedKeyword])
+  }, [tab, page, actionFilter, debouncedKeyword, auditFromDate, auditToDate])
 
   const handleExport = async (dataset: ReportDatasetType) => {
     setErrMsg("")
@@ -408,19 +451,46 @@ export default function Reports() {
               Xem trước dữ liệu đối soát dòng tiền
             </h2>
             <p className="mt-1 text-sm text-muted">
-              Xem trước cấu trúc bản ghi tài chính trước khi mở trong Excel, Google Sheets hoặc LibreOffice.
+              8 giao dịch gói dịch vụ &amp; VietQR gần nhất từ sổ đối soát hệ thống.
             </p>
+            {ledgerErr && (
+              <p
+                role="alert"
+                className="mt-3 rounded-xl border border-warn/30 bg-warn/5 px-4 py-2.5 text-[13px] font-semibold text-warn"
+              >
+                {ledgerErr}
+              </p>
+            )}
             <div className="mt-4">
-              <Table head={["Ngày", "Mã bàn giao", "Loại", "Số tiền"]}>
-                {FALLBACK_SHEETS.cashflow.rows().map((r, i) => (
-                  <tr key={i}>
-                    <Td className="tabular-nums whitespace-nowrap">{r["Ngày"]}</Td>
-                    <Td className="tabular-nums whitespace-nowrap">{r["Mã bàn giao"]}</Td>
-                    <Td className="whitespace-nowrap">{r["Loại"]}</Td>
-                    <Td className="tabular-nums">{fmtVnd(Number(r["Số tiền"]))}</Td>
-                  </tr>
-                ))}
-              </Table>
+              {ledgerPreview.length === 0 ? (
+                <Empty>Chưa có bản ghi đối soát dòng tiền nào từ Backend.</Empty>
+              ) : (
+                <Table head={["Mã đối soát", "Người thanh toán", "Gói dịch vụ", "Số tiền nhận", "Trạng thái"]}>
+                  {ledgerPreview.map((r, i) => (
+                    <tr key={r.referenceCode || String(i)}>
+                      <Td className="font-mono text-xs font-semibold whitespace-nowrap text-ink">
+                        {r.referenceCode}
+                      </Td>
+                      <Td>{r.payerName || "—"}</Td>
+                      <Td className="whitespace-nowrap">{r.packageName || r.packageCode}</Td>
+                      <Td className="tabular-nums whitespace-nowrap">{fmtVnd(r.paidAmountVnd)}</Td>
+                      <Td className="whitespace-nowrap">
+                        <Status
+                          tone={
+                            r.reconciliationStatus === "Matched"
+                              ? "ok"
+                              : r.reconciliationStatus === "Anomaly"
+                                ? "off"
+                                : "wait"
+                          }
+                        >
+                          {r.reconciliationStatus}
+                        </Status>
+                      </Td>
+                    </tr>
+                  ))}
+                </Table>
+              )}
             </div>
           </section>
         </>
@@ -441,7 +511,7 @@ export default function Reports() {
             </Field>
             <Field label="Loại hành động">
               <select
-                className="input w-56"
+                className="input w-60"
                 value={actionFilter}
                 onChange={(e) => {
                   setActionFilter(e.target.value)
@@ -449,28 +519,120 @@ export default function Reports() {
                 }}
               >
                 <option value="">Tất cả hành động</option>
-                <option value="LOCK_ACCOUNT">LOCK_ACCOUNT</option>
-                <option value="UNLOCK_ACCOUNT">UNLOCK_ACCOUNT</option>
-                <option value="DEACTIVATE_ACCOUNT">DEACTIVATE_ACCOUNT</option>
-                <option value="CREATE_STAFF">CREATE_STAFF</option>
-                <option value="UPDATE_STAFF_PERMISSIONS">UPDATE_STAFF_PERMISSIONS</option>
-                <option value="EXPORT_REPORT">EXPORT_REPORT</option>
+                <optgroup label="Nhân sự, Tài khoản &amp; Phân quyền">
+                  <option value="CREATE_STAFF">CREATE_STAFF</option>
+                  <option value="UPDATE_STAFF">UPDATE_STAFF</option>
+                  <option value="UPDATE_STAFF_STATUS">UPDATE_STAFF_STATUS</option>
+                  <option value="UPDATE_STAFF_PERMISSIONS">UPDATE_STAFF_PERMISSIONS</option>
+                  <option value="LOCK_ACCOUNT">LOCK_ACCOUNT</option>
+                  <option value="UNLOCK_ACCOUNT">UNLOCK_ACCOUNT</option>
+                  <option value="DEACTIVATE_ACCOUNT">DEACTIVATE_ACCOUNT</option>
+                  <option value="STAFF_CHECK_IN">STAFF_CHECK_IN</option>
+                  <option value="STAFF_CHECK_OUT">STAFF_CHECK_OUT</option>
+                </optgroup>
+                <optgroup label="Dữ liệu AI, Danh mục &amp; Chính sách">
+                  <option value="REVIEW_AI_FEEDBACK">REVIEW_AI_FEEDBACK</option>
+                  <option value="ASSIGN_GROUND_TRUTH_LABEL">ASSIGN_GROUND_TRUTH_LABEL</option>
+                  <option value="BATCH_ASSIGN_AI_LABELS">BATCH_ASSIGN_AI_LABELS</option>
+                  <option value="CREATE_AI_DATASET_VERSION">CREATE_AI_DATASET_VERSION</option>
+                  <option value="EXPORT_AI_DATASET_VERSION">EXPORT_AI_DATASET_VERSION</option>
+                  <option value="CREATE_WASTE_CATEGORY">CREATE_WASTE_CATEGORY</option>
+                  <option value="UPDATE_WASTE_CATEGORY">UPDATE_WASTE_CATEGORY</option>
+                  <option value="TOGGLE_WASTE_CATEGORY_STATUS">TOGGLE_WASTE_CATEGORY_STATUS</option>
+                  <option value="PUBLISH_SORTING_RULE">PUBLISH_SORTING_RULE</option>
+                </optgroup>
+                <optgroup label="Khiếu nại, Đánh giá &amp; Nội dung">
+                  <option value="CLAIM_COMPLAINT">CLAIM_COMPLAINT</option>
+                  <option value="RESOLVE_COMPLAINT">RESOLVE_COMPLAINT</option>
+                  <option value="CREATE_REVIEW">CREATE_REVIEW</option>
+                  <option value="DELETE_OWN_REVIEW">DELETE_OWN_REVIEW</option>
+                  <option value="MODERATE_REVIEW">MODERATE_REVIEW</option>
+                  <option value="BLOG_APPROVE">BLOG_APPROVE</option>
+                  <option value="BLOG_REJECT">BLOG_REJECT</option>
+                  <option value="CREATE_PLATFORM_POLICY">CREATE_PLATFORM_POLICY</option>
+                  <option value="UPDATE_PLATFORM_POLICY">UPDATE_PLATFORM_POLICY</option>
+                  <option value="UPDATE_PLATFORM_POLICY_STATUS">UPDATE_PLATFORM_POLICY_STATUS</option>
+                  <option value="DELETE_PLATFORM_POLICY">DELETE_PLATFORM_POLICY</option>
+                </optgroup>
+                <optgroup label="Điểm, Bảng xếp hạng, VietQR &amp; Báo cáo">
+                  <option value="GAMIFICATION_CONFIG_UPDATE">GAMIFICATION_CONFIG_UPDATE</option>
+                  <option value="GAMIFICATION_CONFIG_RESET">GAMIFICATION_CONFIG_RESET</option>
+                  <option value="LEADERBOARD_CYCLE_CREATE">LEADERBOARD_CYCLE_CREATE</option>
+                  <option value="LEADERBOARD_CYCLE_UPDATE">LEADERBOARD_CYCLE_UPDATE</option>
+                  <option value="LEADERBOARD_CYCLE_ACTIVATE">LEADERBOARD_CYCLE_ACTIVATE</option>
+                  <option value="LEADERBOARD_CYCLE_FINALIZE">LEADERBOARD_CYCLE_FINALIZE</option>
+                  <option value="CREATE_SERVICE_PACKAGE">CREATE_SERVICE_PACKAGE</option>
+                  <option value="UPDATE_SERVICE_PACKAGE">UPDATE_SERVICE_PACKAGE</option>
+                  <option value="TOGGLE_SERVICE_PACKAGE_STATUS">TOGGLE_SERVICE_PACKAGE_STATUS</option>
+                  <option value="RESOLVE_PAYMENT_ANOMALY">RESOLVE_PAYMENT_ANOMALY</option>
+                  <option value="EXPORT_RECONCILIATION">EXPORT_RECONCILIATION</option>
+                  <option value="EXPORT_REPORT">EXPORT_REPORT</option>
+                </optgroup>
               </select>
+            </Field>
+            <Field label="Từ ngày">
+              <input
+                className="input w-40"
+                type="date"
+                value={auditFromDate}
+                onChange={(e) => {
+                  setAuditFromDate(e.target.value)
+                  setPage(1)
+                }}
+                aria-label="Audit Từ ngày"
+              />
+            </Field>
+            <Field label="Đến ngày">
+              <input
+                className="input w-40"
+                type="date"
+                value={auditToDate}
+                onChange={(e) => {
+                  setAuditToDate(e.target.value)
+                  setPage(1)
+                }}
+                aria-label="Audit Đến ngày"
+              />
             </Field>
             <button
               type="button"
               onClick={() => {
                 setPage(1)
-                loadAuditLogs(1, keyword)
+                loadAuditLogs(1, keyword, auditFromDate, auditToDate, actionFilter)
               }}
               className="btn-outline h-12 px-4 text-[13px]"
             >
               Tra cứu
             </button>
+            {(keyword || actionFilter || auditFromDate || auditToDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setKeyword("")
+                  setActionFilter("")
+                  setAuditFromDate("")
+                  setAuditToDate("")
+                  setPage(1)
+                  loadAuditLogs(1, "", "", "", "")
+                }}
+                className="btn-ghost h-12 px-3 text-[13px]"
+              >
+                Đặt lại
+              </button>
+            )}
             <span className="ml-auto text-[12px] text-muted">
               Tổng cộng <b className="tabular-nums text-ink">{auditTotal}</b> bản ghi bất biến (BR-ADM-05)
             </span>
           </div>
+
+          {auditErr && (
+            <p
+              role="alert"
+              className="rounded-xl border border-warn/30 bg-warn/5 px-4 py-2.5 text-[13px] font-semibold text-warn"
+            >
+              {auditErr}
+            </p>
+          )}
 
           {auditLogs.length === 0 ? (
             <Empty>Chưa có bản ghi kiểm toán nào khớp bộ lọc hiện tại.</Empty>

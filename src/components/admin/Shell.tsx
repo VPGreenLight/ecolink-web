@@ -1,10 +1,40 @@
-import { Suspense, useEffect, useRef, useState } from "react"
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom"
+import { Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
 import { PORTAL_NAV } from "@/data/portal"
-import { ROLE_LABEL, signOut, useSession } from "@/lib/session"
+import { fetchCurrentUserProfile } from "@/lib/authApi"
+import { isSsrSmokeTest } from "@/lib/hydration"
+import {
+  createNotificationHubConnection,
+  fetchMyNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  NOTIFICATIONS_UPDATED_EVENT,
+  type NotificationDto,
+} from "@/lib/notificationsApi"
+import { hasLiveBackendAuth, ROLE_LABEL, signOut, useSession } from "@/lib/session"
 import { openAuthPopup } from "@/lib/popupAuth"
 import Assistant from "@/components/admin/Assistant"
 import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
+
+const STAFF_ROUTE_PERMISSIONS: Record<string, readonly string[]> = {
+  "/staff/ai-review": ["REVIEW_AI", "ai.review"],
+  "/staff/dataset": ["CURATE_DATASET", "ai.dataset"],
+  "/staff/applications": ["VERIFY_RECYCLER", "partner.verify"],
+  "/staff/complaints": ["HANDLE_COMPLAINT", "complaint.handle"],
+  "/staff/accounts": ["MANAGE_ACCOUNTS", "account.manage"],
+  "/staff/blog": ["MANAGE_BLOG", "blog.write"],
+  "/staff/ecofacts": ["MANAGE_INVENTORY", "gift.manage"],
+  "/staff/gifts": ["MANAGE_INVENTORY", "gift.manage"],
+}
+
+function hasStaffRouteAccess(path: string, permissions?: readonly string[]): boolean {
+  const normalizedPath = path.replace(/\/+$/, "") || "/"
+  const required = STAFF_ROUTE_PERMISSIONS[normalizedPath]
+  if (!required) return true
+  if (!permissions || permissions.length === 0) return false
+  const granted = new Set(permissions.map((p) => p.trim().toUpperCase()))
+  return required.some((req) => granted.has(req.toUpperCase()))
+}
 
 /** Menu tài khoản nội bộ.
  *
@@ -44,8 +74,32 @@ const ACCOUNT_ITEMS = {
 export default function AdminShell({ role }: { role: "staff" | "admin" }) {
   const session = useSession()
   const navigate = useNavigate()
+  const location = useLocation()
   const [open, setOpen] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
+
+  useEffect(() => {
+    if (role === "staff" && session?.fromBackend && !Array.isArray(session.permissions)) {
+      void fetchCurrentUserProfile()
+    }
+  }, [role, session?.fromBackend, session?.permissions])
+
+  const enforceStaffRbac =
+    role === "staff" && Boolean(session?.fromBackend) && Array.isArray(session?.permissions)
+
+  const navSections = useMemo(() => {
+    const sections = PORTAL_NAV[role]
+    if (!enforceStaffRbac) return sections
+    return sections
+      .map((sec) => ({
+        ...sec,
+        items: sec.items.filter((item) => hasStaffRouteAccess(item.to, session?.permissions)),
+      }))
+      .filter((sec) => sec.items.length > 0)
+  }, [enforceStaffRbac, role, session?.permissions])
+
+  const staffRouteAllowed =
+    !enforceStaffRbac || hasStaffRouteAccess(location.pathname, session?.permissions)
 
   const logout = () => {
     setConfirmLogout(true)
@@ -79,7 +133,8 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
             {ROLE_LABEL[role]}
           </span>
 
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2.5">
+            <NotificationBellPopover role={role} />
             <AccountMenu
               name={session?.name ?? ""}
               label={ROLE_LABEL[role]}
@@ -98,7 +153,7 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
             aria-label="Điều hướng khu vực quản trị"
             className={`${open ? "block" : "hidden"} lg:block lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-4 lg:py-6`}
           >
-            {PORTAL_NAV[role].map((sec) => (
+            {navSections.map((sec) => (
               <div key={sec.title} className="px-4 pb-5 lg:px-0">
                 <h2 className="px-3 text-[11px] font-bold tracking-[0.12em] text-brand uppercase">
                   {sec.title}
@@ -139,9 +194,30 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
         </aside>
 
         <main className="min-w-0 flex-1 px-4 py-6 lg:px-8 lg:py-8">
-          <Suspense fallback={null}>
-            <Outlet />
-          </Suspense>
+          {!staffRouteAllowed ? (
+            <div
+              role="alert"
+              className="mx-auto max-w-xl rounded-2xl border border-warn/30 bg-warn/5 p-6 text-sm text-ink"
+            >
+              <p className="text-base font-bold text-warn">
+                Bạn chưa được cấp quyền cho chức năng này (BR-ADM-02)
+              </p>
+              <p className="mt-2 leading-6 text-body">
+                Tài khoản Nhân viên hiện chưa có mã quyền vận hành phù hợp cho trang{" "}
+                <code className="rounded bg-white px-1.5 py-0.5 text-xs">{location.pathname}</code>.
+                Vui lòng liên hệ Quản trị viên để được bật quyền tại mục Phân quyền Staff.
+              </p>
+              <div className="mt-4">
+                <Link to="/staff" className="btn-primary inline-flex h-10 items-center px-4 text-xs font-semibold">
+                  Quay về tổng quan Nhân viên
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <Suspense fallback={null}>
+              <Outlet />
+            </Suspense>
+          )}
         </main>
       </div>
 
@@ -265,6 +341,229 @@ function AccountMenu({
               </svg>
               Đổi tài khoản
             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NotificationBellPopover({ role }: { role: "staff" | "admin" }) {
+  const session = useSession()
+  const live = Boolean(session) && !isSsrSmokeTest() && hasLiveBackendAuth()
+  const [open, setOpen] = useState(false)
+  const [items, setItems] = useState<NotificationDto[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [busyAll, setBusyAll] = useState(false)
+  const [err, setErr] = useState("")
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDocClick = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("mousedown", onDocClick)
+    document.addEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("mousedown", onDocClick)
+      document.removeEventListener("keydown", onKey)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!live) {
+      setItems([])
+      setUnreadCount(0)
+      return
+    }
+    let active = true
+
+    const syncNotifications = () => {
+      setLoading(true)
+      void fetchMyNotifications({ pageNumber: 1, pageSize: 10 })
+        .then((res) => {
+          if (!active || !res.success || !res.data) return
+          setItems(res.data.items ?? [])
+          setUnreadCount(res.data.unreadCount ?? 0)
+          setErr("")
+        })
+        .catch((error) => {
+          if (active) {
+            setErr(error instanceof Error ? error.message : "Không tải được thông báo.")
+          }
+        })
+        .finally(() => {
+          if (active) setLoading(false)
+        })
+    }
+
+    syncNotifications()
+
+    const onUpdated = (e: Event) => {
+      const detail = (e as CustomEvent<{ unreadCount?: number; delta?: number }>).detail
+      if (typeof detail?.unreadCount === "number") {
+        setUnreadCount(Math.max(0, detail.unreadCount))
+        if (detail.unreadCount === 0) {
+          setItems((prev) => prev.map((it) => ({ ...it, isRead: true })))
+        }
+        return
+      }
+      if (typeof detail?.delta === "number") {
+        setUnreadCount((c) => Math.max(0, c + detail.delta!))
+        return
+      }
+      syncNotifications()
+    }
+    window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, onUpdated)
+
+    const connection = createNotificationHubConnection({
+      onReceiveNotification: (incoming) => {
+        if (!active) return
+        setItems((prev) => [incoming, ...prev.filter((x) => x.id !== incoming.id)].slice(0, 10))
+        if (!incoming.isRead) setUnreadCount((c) => c + 1)
+      },
+      onUnreadCountUpdated: (payload) => {
+        if (active && typeof payload?.unreadCount === "number") {
+          setUnreadCount(Math.max(0, payload.unreadCount))
+        }
+      },
+    })
+    if (connection) {
+      connection.start().catch(() => {})
+    }
+
+    return () => {
+      active = false
+      window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, onUpdated)
+      if (connection) {
+        connection.stop().catch(() => {})
+      }
+    }
+  }, [live])
+
+  const handleMarkOne = async (n: NotificationDto) => {
+    if (n.isRead || !live) return
+    try {
+      await markNotificationRead(n.id)
+      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x)))
+    } catch {
+      // ignore inline click errors
+    }
+  }
+
+  const handleMarkAll = async () => {
+    if (!live || busyAll || unreadCount === 0) return
+    setBusyAll(true)
+    try {
+      await markAllNotificationsRead()
+      setItems((prev) => prev.map((x) => ({ ...x, isRead: true })))
+      setUnreadCount(0)
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : "Không thể đánh dấu đã đọc tất cả.")
+    } finally {
+      setBusyAll(false)
+    }
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label={unreadCount > 0 ? `Thông báo (${unreadCount} chưa đọc)` : "Thông báo"}
+        aria-expanded={open}
+        className="relative grid size-9 place-items-center rounded-full border border-line bg-white text-muted transition-colors hover:border-sage-line hover:bg-surface-2 hover:text-ink"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4">
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+        </svg>
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 inline-flex min-w-[17px] items-center justify-center rounded-full border-2 border-white bg-brand px-1 text-[10px] leading-[13px] font-bold text-white tabular-nums">
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Hộp thông báo nội bộ"
+          className="absolute top-full right-0 mt-2 w-80 overflow-hidden rounded-2xl border border-line bg-white shadow-[0_18px_44px_-8px_rgba(15,31,21,0.18)] sm:w-96"
+        >
+          <div className="flex items-center justify-between border-b border-line-soft bg-surface-2/70 px-4 py-3">
+            <div>
+              <p className="text-sm font-bold text-ink">Thông báo hệ thống</p>
+              <p className="text-[11px] text-muted">
+                {unreadCount > 0 ? `${unreadCount} thông báo chưa đọc` : "Đã đọc tất cả"}
+              </p>
+            </div>
+            {live && unreadCount > 0 && (
+              <button
+                type="button"
+                disabled={busyAll}
+                onClick={() => void handleMarkAll()}
+                className="text-xs font-semibold text-brand-deep hover:underline disabled:opacity-50"
+              >
+                {busyAll ? "Đang xử lý..." : "Đọc tất cả"}
+              </button>
+            )}
+          </div>
+
+          <div className="max-h-80 overflow-y-auto divide-y divide-line-soft">
+            {err && (
+              <p role="alert" className="px-4 py-2.5 text-xs font-medium text-warn">
+                {err}
+              </p>
+            )}
+            {!live ? (
+              <p className="px-4 py-6 text-center text-xs text-muted">
+                Kết nối tài khoản Backend để nhận thông báo thời gian thực.
+              </p>
+            ) : loading && items.length === 0 ? (
+              <p className="px-4 py-6 text-center text-xs text-muted">Đang tải thông báo...</p>
+            ) : items.length === 0 ? (
+              <p className="px-4 py-6 text-center text-xs text-muted">
+                Chưa có thông báo nào.
+              </p>
+            ) : (
+              items.map((n) => (
+                <button
+                  key={n.id}
+                  type="button"
+                  onClick={() => void handleMarkOne(n)}
+                  className={`flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-surface-2 ${
+                    n.isRead ? "bg-white" : "bg-brand/5"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-xs font-bold text-ink">{n.title}</span>
+                    {!n.isRead && (
+                      <span className="mt-1 size-2 shrink-0 rounded-full bg-brand" aria-hidden="true" />
+                    )}
+                  </div>
+                  <p className="text-xs leading-5 text-body">{n.message}</p>
+                  <span className="text-[11px] text-muted tabular-nums">
+                    {new Date(n.createdAt).toLocaleString("vi-VN")}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+
+          <div className="border-t border-line-soft bg-surface-2/40 px-4 py-2.5 text-right">
+            <Link
+              to={`/${role}/account`}
+              onClick={() => setOpen(false)}
+              className="text-xs font-semibold text-brand-deep hover:underline"
+            >
+              Mở trang Hồ sơ &amp; Thông báo →
+            </Link>
           </div>
         </div>
       )}

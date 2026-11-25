@@ -9,12 +9,26 @@ import {
 } from "@/lib/aiCurationApi"
 import { fetchStaffBlogs } from "@/lib/blogApi"
 import { fetchStaffEcoFacts, fetchStaffGifts } from "@/lib/gamificationApi"
+import { fetchStaffApplications } from "@/lib/recyclerWorkflowApi"
 import { fetchStaffComplaints } from "@/lib/reviewComplaintApi"
+import { getSession, hasLiveBackendAuth } from "@/lib/session"
 
 /** Tổng quan nhân viên (Staff). */
 export default function StaffHome() {
-  const [liveAuth] = useState(() => !isSsrSmokeTest())
+  const [liveAuth] = useState(() => !isSsrSmokeTest() && hasLiveBackendAuth())
+  const session = getSession()
+  const can = (perm: string) => {
+    if (!liveAuth) return false
+    if (session?.role === "admin") return true
+    if (session?.role === "staff") {
+      return !Array.isArray(session.permissions) || session.permissions.includes(perm)
+    }
+    return false
+  }
+  const hasPermFilter = liveAuth && session?.role === "staff" && Array.isArray(session.permissions)
+
   const [pendingAiCount, setPendingAiCount] = useState<number>(liveAuth ? 0 : STATS.pending.aiCases)
+  const [pendingAppCount, setPendingAppCount] = useState<number>(liveAuth ? 0 : STATS.pending.applications)
   const [openComplaintCount, setOpenComplaintCount] = useState<number>(
     liveAuth ? 0 : STATS.pending.complaints,
   )
@@ -41,82 +55,115 @@ export default function StaffHome() {
     labeled: liveAuth ? 0 : DATASET.labeled,
     total: liveAuth ? 0 : DATASET.total,
   })
+  const [loadErr, setLoadErr] = useState("")
 
   useEffect(() => {
     if (!liveAuth) return
+    let active = true
+    const recordErr = (err: unknown) => {
+      if (!active) return
+      const msg = err instanceof Error ? err.message : "Không thể tải một số dữ liệu tổng quan."
+      setLoadErr((prev) => prev || msg)
+    }
 
-    fetchStaffAiFeedbackQueue({ pageSize: 1 })
-      .then((res) => {
-        if (res.success && res.data) {
-          setPendingAiCount(res.data.pendingCount)
-        }
-      })
-      .catch(() => { })
+    if (can("REVIEW_AI")) {
+      fetchStaffAiFeedbackQueue({ pageSize: 1 })
+        .then((res) => {
+          if (active && res.success && res.data) {
+            setPendingAiCount(res.data.pendingCount)
+          }
+        })
+        .catch(recordErr)
+    }
 
-    fetchAiDatasetDashboard()
-      .then((res) => {
-        if (res.success && res.data?.summary) {
-          setDatasetStats({
-            accuracy: res.data.summary.empiricalAccuracyPercent,
-            labeled: res.data.summary.verifiedLabeledCount,
-            total: res.data.summary.totalPoolItems,
-          })
-        }
-      })
-      .catch(() => { })
+    if (can("CURATE_DATASET")) {
+      fetchAiDatasetDashboard()
+        .then((res) => {
+          if (active && res.success && res.data?.summary) {
+            setDatasetStats({
+              accuracy: res.data.summary.empiricalAccuracyPercent,
+              labeled: res.data.summary.verifiedLabeledCount,
+              total: res.data.summary.totalPoolItems,
+            })
+          }
+        })
+        .catch(recordErr)
+    }
 
-    fetchStaffComplaints({ pageSize: 1, includeReportedReviews: false })
-      .then((res) => {
-        if (res.success && res.data) {
-          setOpenComplaintCount(res.data.openCount + res.data.investigatingCount)
-        }
-      })
-      .catch(() => { })
+    if (can("VERIFY_RECYCLER")) {
+      fetchStaffApplications()
+        .then((res) => {
+          if (active) {
+            setPendingAppCount(res.items.filter((a) => a.status === "pending").length)
+          }
+        })
+        .catch(recordErr)
+    }
 
-    fetchStaffBlogs({ pageSize: 50 })
-      .then((res) => {
-        if (res.data?.items) {
-          setPendingBlogCount(
-            res.data.items.filter((b) => b.status === "Pending_Approval").length,
-          )
-          setPublishedBlogCount(
-            res.data.items.filter((b) => b.status === "Approved").length,
-          )
-        }
-      })
-      .catch(() => { })
+    if (can("HANDLE_COMPLAINT")) {
+      fetchStaffComplaints({ pageSize: 1, includeReportedReviews: false })
+        .then((res) => {
+          if (active && res.success && res.data) {
+            setOpenComplaintCount(res.data.openCount + res.data.investigatingCount)
+          }
+        })
+        .catch(recordErr)
+    }
 
-    fetchStaffGifts({ pageSize: 50 })
-      .then((res) => {
-        if (res.data?.items) {
-          setActiveGiftsCount(
-            res.data.items.filter((g) => g.status === "ACTIVE").length,
-          )
-          setOutOfStockCount(
-            res.data.items.filter((g) => g.stockQuantity <= 0).length,
-          )
-        }
-      })
-      .catch(() => { })
+    if (can("MANAGE_BLOG")) {
+      fetchStaffBlogs({ pageSize: 50 })
+        .then((res) => {
+          if (active && res.data?.items) {
+            setPendingBlogCount(
+              res.data.items.filter((b) => b.status === "Pending_Approval").length,
+            )
+            setPublishedBlogCount(
+              res.data.items.filter((b) => b.status === "Approved").length,
+            )
+          }
+        })
+        .catch(recordErr)
+    }
 
-    fetchStaffEcoFacts({ pageSize: 50 })
-      .then((res) => {
-        if (res.data?.items) {
-          setTotalFactsCount(res.data.totalCount)
-          setActiveFactsCount(
-            res.data.items.filter((f) => f.status === "ACTIVE").length,
-          )
-        }
-      })
-      .catch(() => { })
+    if (can("MANAGE_INVENTORY")) {
+      fetchStaffGifts({ pageSize: 50 })
+        .then((res) => {
+          if (active && res.data?.items) {
+            setActiveGiftsCount(
+              res.data.items.filter((g) => g.status === "ACTIVE").length,
+            )
+            setOutOfStockCount(
+              res.data.items.filter((g) => g.stockQuantity <= 0).length,
+            )
+          }
+        })
+        .catch(recordErr)
+
+      fetchStaffEcoFacts({ pageSize: 50 })
+        .then((res) => {
+          if (active && res.data?.items) {
+            setTotalFactsCount(res.data.totalCount)
+            setActiveFactsCount(
+              res.data.items.filter((f) => f.status === "ACTIVE").length,
+            )
+          }
+        })
+        .catch(recordErr)
+    }
+
+    return () => {
+      active = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveAuth])
 
-  const queue = [
-    { to: "/staff/ai-review", label: "Ảnh AI nhận diện sai", n: pendingAiCount, unit: "ảnh" },
-    { to: "/staff/applications", label: "Hồ sơ đối tác thu mua", n: liveAuth ? 0 : STATS.pending.applications, unit: "hồ sơ" },
-    { to: "/staff/complaints", label: "Khiếu nại giao dịch", n: openComplaintCount, unit: "khiếu nại" },
-    { to: "/staff/blog", label: "Bài blog chờ duyệt", n: pendingBlogCount, unit: "bài" },
+  const allQueue = [
+    { perm: "REVIEW_AI", to: "/staff/ai-review", label: "Ảnh AI nhận diện sai", n: pendingAiCount, unit: "ảnh" },
+    { perm: "VERIFY_RECYCLER", to: "/staff/applications", label: "Hồ sơ đối tác thu mua", n: pendingAppCount, unit: "hồ sơ" },
+    { perm: "HANDLE_COMPLAINT", to: "/staff/complaints", label: "Khiếu nại giao dịch", n: openComplaintCount, unit: "khiếu nại" },
+    { perm: "MANAGE_BLOG", to: "/staff/blog", label: "Bài blog chờ duyệt", n: pendingBlogCount, unit: "bài" },
   ]
+  const queue = hasPermFilter ? allQueue.filter((q) => can(q.perm)) : allQueue
 
   return (
     <div className="flex flex-col gap-6">
@@ -125,6 +172,15 @@ export default function StaffHome() {
         title="Việc đang chờ bạn xử lý"
         body="Danh sách này là toàn bộ việc tồn đọng của đội ngũ. Xong hết thì báo Admin, không tự ý thêm việc ngoài danh sách này."
       />
+
+      {loadErr && (
+        <p
+          role="alert"
+          className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+        >
+          {loadErr}
+        </p>
+      )}
 
       <ul className="grid gap-4 sm:grid-cols-2">
         {queue.map((q) => (

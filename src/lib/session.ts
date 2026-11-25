@@ -100,6 +100,7 @@ export type Session = {
   currentGreenPoints?: number
   treeLevel?: number
   totalRecycledKg?: number
+  permissions?: string[]
   fromBackend?: boolean
 }
 
@@ -151,6 +152,9 @@ function normalizeSessionObject(
       : {}),
     ...(typeof v.treeLevel === "number" ? { treeLevel: v.treeLevel } : {}),
     ...(typeof v.totalRecycledKg === "number" ? { totalRecycledKg: v.totalRecycledKg } : {}),
+    ...(Array.isArray(v.permissions)
+      ? { permissions: v.permissions.filter((p): p is string => typeof p === "string") }
+      : {}),
     ...(typeof v.fromBackend === "boolean" ? { fromBackend: v.fromBackend } : {}),
   }
 }

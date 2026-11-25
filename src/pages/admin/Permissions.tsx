@@ -5,11 +5,26 @@ import { hasLiveBackendAuth } from "@/lib/session"
 import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
   getAdminStaffList,
-  toCanonicalPerm,
+  getPermissionCatalog,
+  getStaffPermissions,
   toUiPerm,
   updateStaffPermissions,
+  type PermissionCatalogItemDto,
   type StaffMemberDto,
 } from "@/lib/governanceApi"
+
+type CatalogColumn = {
+  id: string
+  code: string
+  label: string
+  description?: string
+}
+
+const DEFAULT_CATALOG: CatalogColumn[] = PERMS.map((p) => ({
+  id: p.id,
+  code: p.id.toUpperCase(),
+  label: p.label,
+}))
 
 type StaffPermRow = Staff & {
   backendUserId?: string
@@ -37,22 +52,41 @@ function mapStaffToPermRow(dto: StaffMemberDto): StaffPermRow {
  */
 export default function Permissions() {
   const [list, setList] = useState<StaffPermRow[]>(() => initApiState([], STAFF))
+  const [catalog, setCatalog] = useState<CatalogColumn[]>(DEFAULT_CATALOG)
   const [loading, setLoading] = useState(() => initApiLoading(true))
   const [isLive, setIsLive] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [refreshingId, setRefreshingId] = useState<string | null>(null)
   const [flash, setFlash] = useState("")
   const [errMsg, setErrMsg] = useState("")
 
   useEffect(() => {
     let cancelled = false
-    getAdminStaffList()
-      .then((res) => {
-        if (cancelled || !Array.isArray(res.data)) return
-        setList(res.data.map(mapStaffToPermRow))
-        setIsLive(true)
+    Promise.all([
+      getAdminStaffList(),
+      getPermissionCatalog().catch(() => null),
+    ])
+      .then(([staffRes, catRes]) => {
+        if (cancelled) return
+        if (Array.isArray(staffRes.data)) {
+          setList(staffRes.data.map(mapStaffToPermRow))
+          setIsLive(true)
+        }
+        if (catRes?.success && Array.isArray(catRes.data) && catRes.data.length > 0) {
+          setCatalog(
+            catRes.data.map((c: PermissionCatalogItemDto) => ({
+              id: toUiPerm(c.code || c.legacyAlias),
+              code: c.code,
+              label: c.label,
+              description: c.description,
+            })),
+          )
+        }
       })
-      .catch(() => {
-        // Fallback nếu chưa đăng nhập Admin
+      .catch((err) => {
+        if (!cancelled && hasLiveBackendAuth()) {
+          setErrMsg(err instanceof Error ? err.message : "Không tải được danh sách phân quyền.")
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -61,6 +95,31 @@ export default function Permissions() {
       cancelled = true
     }
   }, [])
+
+  const refreshRowPermissions = async (row: StaffPermRow) => {
+    if (!row.backendUserId) return
+    setRefreshingId(row.backendUserId)
+    setErrMsg("")
+    setFlash("")
+    try {
+      const res = await getStaffPermissions(row.backendUserId)
+      if (res.success && res.data) {
+        const nextPerms = res.data.permissions.map(toUiPerm)
+        setList((ls) =>
+          ls.map((item) =>
+            item.backendUserId === row.backendUserId
+              ? { ...item, perms: nextPerms, dirty: false }
+              : item,
+          ),
+        )
+        setFlash(`Đã đồng bộ quyền mới nhất của ${row.name}.`)
+      }
+    } catch (err) {
+      setErrMsg(err instanceof Error ? err.message : "Không thể đồng bộ quyền nhân viên.")
+    } finally {
+      setRefreshingId(null)
+    }
+  }
 
   const flip = (id: string, perm: string) =>
     setList((ls) =>
@@ -135,16 +194,16 @@ export default function Permissions() {
               >
                 Nhân viên
               </th>
-              {PERMS.map((p) => (
+              {catalog.map((p) => (
                 <th
                   key={p.id}
                   scope="col"
-                  title={toCanonicalPerm(p.id)}
+                  title={p.description ? `${p.code} — ${p.description}` : p.code}
                   className="px-3 py-2.5 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase"
                 >
                   {p.label}
                   <span className="block font-mono text-[9px] font-normal text-muted/80">
-                    {toCanonicalPerm(p.id)}
+                    {p.code}
                   </span>
                 </th>
               ))}
@@ -160,8 +219,8 @@ export default function Permissions() {
                     {s.dirty ? " · Chưa lưu" : ""}
                   </span>
                 </Td>
-                {PERMS.map((p) => (
-                  <td key={p.id} className="px-3 py-3">
+                {catalog.map((p) => (
+                  <td key={p.id} className="px-3 py-3" title={p.description}>
                     <input
                       type="checkbox"
                       className="size-4 accent-brand"
@@ -202,7 +261,7 @@ export default function Permissions() {
           onClick={() => {
             setErrMsg("")
             setList((ls) =>
-              ls.map((s) => ({ ...s, dirty: true, perms: PERMS.map((p) => p.id) })),
+              ls.map((s) => ({ ...s, dirty: true, perms: catalog.map((p) => p.id) })),
             )
             setFlash("Đã chọn toàn bộ quyền. Nhấn 'Lưu cấu hình phân quyền' để áp dụng lên máy chủ.")
           }}
@@ -239,7 +298,19 @@ export default function Permissions() {
           <Table head={["Nhân viên", "Tài khoản", "Số quyền", "Tóm tắt quyền hạn"]}>
             {list.map((s) => (
               <tr key={s.backendUserId ?? s.id}>
-                <Td className="font-semibold text-ink">{s.name}</Td>
+                <Td className="font-semibold text-ink">
+              {s.name}
+              {s.backendUserId && (
+                <button
+                  type="button"
+                  disabled={refreshingId === s.backendUserId}
+                  onClick={() => void refreshRowPermissions(s)}
+                  className="ml-2 text-xs font-medium text-brand hover:underline"
+                >
+                  {refreshingId === s.backendUserId ? "Đang tải..." : "Đồng bộ quyền"}
+                </button>
+              )}
+            </Td>
                 <Td>
                   <Status tone={s.status === "active" ? "ok" : "off"}>
                     {s.status === "active" ? "Hoạt động" : "Đã khoá"}

@@ -14,6 +14,7 @@ import {
   fetchLeaderboard,
   fetchLeaderboardCycles,
   finalizeLeaderboardCycle,
+  updateLeaderboardCycle,
   type LeaderboardCycleDto,
   type LeaderboardViewDto,
 } from "@/lib/gamificationApi"
@@ -71,6 +72,7 @@ export default function LeaderboardConfig() {
   const [confirmFinalizeId, setConfirmFinalizeId] = useState<string | null>(null)
 
   const [showCreate, setShowCreate] = useState(false)
+  const [editingCycleId, setEditingCycleId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState("")
   const [periodType, setPeriodType] = useState<"Weekly" | "Monthly" | "Quarterly">("Monthly")
@@ -180,41 +182,84 @@ export default function LeaderboardConfig() {
     }
   }
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const openEditCycle = (c: LeaderboardCycleDto) => {
+    setEditingCycleId(c.id)
+    setName(c.name)
+    setPeriodType(
+      c.periodType === "Weekly" || c.periodType === "Quarterly" ? c.periodType : "Monthly",
+    )
+    setStartsAt(c.startsAt.slice(0, 10))
+    setEndsAt(c.endsAt.slice(0, 10))
+    setTop1Bonus(c.top1BonusPoints)
+    setTop2Bonus(c.top2BonusPoints)
+    setTop3Bonus(c.top3BonusPoints)
+    setActivateNow(c.isActive)
+    setError("")
+    setFlash("")
+    setShowCreate(true)
+  }
+
+  const handleSaveCycle = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
     setFlash("")
     const trimmed = name.trim()
-    if (trimmed.length < 3 || trimmed.length > 120) {
-      setError("Tên chu kỳ bảng xếp hạng phải từ 3 đến 120 ký tự.")
+    if (trimmed.length < 3 || trimmed.length > 150) {
+      setError("Tên chu kỳ bảng xếp hạng phải từ 3 đến 150 ký tự.")
       return
     }
     if (!startsAt || !endsAt || endsAt <= startsAt) {
       setError("Ngày kết thúc phải sau ngày bắt đầu.")
       return
     }
+    const b1 = Math.round(top1Bonus)
+    const b2 = Math.round(top2Bonus)
+    const b3 = Math.round(top3Bonus)
+    if (b1 < 0 || b2 < 0 || b3 < 0) {
+      setError("Điểm thưởng Top 1/2/3 không được âm.")
+      return
+    }
+    if (b1 < b2 || b2 < b3) {
+      setError("Điểm thưởng phải giảm dần: Thưởng Top 1 >= Thưởng Top 2 >= Thưởng Top 3.")
+      return
+    }
 
     setCreating(true)
+    const payload = {
+      name: trimmed,
+      periodType,
+      startsAt: new Date(`${startsAt}T00:00:00Z`).toISOString(),
+      endsAt: new Date(`${endsAt}T23:59:59Z`).toISOString(),
+      isActive: activateNow,
+      top1BonusPoints: b1,
+      top2BonusPoints: b2,
+      top3BonusPoints: b3,
+    }
     try {
-      const res = await createLeaderboardCycle({
-        name: trimmed,
-        periodType,
-        startsAt: new Date(`${startsAt}T00:00:00Z`).toISOString(),
-        endsAt: new Date(`${endsAt}T23:59:59Z`).toISOString(),
-        isActive: activateNow,
-        top1BonusPoints: Math.max(0, Math.round(top1Bonus)),
-        top2BonusPoints: Math.max(0, Math.round(top2Bonus)),
-        top3BonusPoints: Math.max(0, Math.round(top3Bonus)),
-      })
-      const created = res.data
-      setName("")
-      setActivateNow(false)
-      setShowCreate(false)
-      await loadData(created?.id)
-      setFlash(`Đã tạo chu kỳ "${created?.name ?? trimmed}".`)
+      if (editingCycleId) {
+        const res = await updateLeaderboardCycle(editingCycleId, payload)
+        setEditingCycleId(null)
+        setName("")
+        setActivateNow(false)
+        setShowCreate(false)
+        await loadData(res.data?.id ?? editingCycleId)
+        setFlash(`Đã cập nhật chu kỳ "${res.data?.name ?? trimmed}".`)
+      } else {
+        const res = await createLeaderboardCycle(payload)
+        const created = res.data
+        setName("")
+        setActivateNow(false)
+        setShowCreate(false)
+        await loadData(created?.id)
+        setFlash(`Đã tạo chu kỳ "${created?.name ?? trimmed}".`)
+      }
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : "Không thể tạo chu kỳ bảng xếp hạng mới.",
+        err instanceof ApiError
+          ? err.message
+          : editingCycleId
+            ? "Không thể cập nhật chu kỳ bảng xếp hạng."
+            : "Không thể tạo chu kỳ bảng xếp hạng mới.",
       )
     } finally {
       setCreating(false)
@@ -269,7 +314,7 @@ export default function LeaderboardConfig() {
       {liveMode ? (
         <>
           {showCreate && (
-            <form noValidate onSubmit={handleCreate} className="card flex flex-col gap-4 p-5 md:p-6">
+            <form noValidate onSubmit={handleSaveCycle} className="card flex flex-col gap-4 p-5 md:p-6">
               {error && (
                 <p
                   role="alert"
@@ -279,7 +324,9 @@ export default function LeaderboardConfig() {
                 </p>
               )}
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-bold text-ink">Tạo chu kỳ bảng xếp hạng mới</h2>
+                <h2 className="text-base font-bold text-ink">
+                  {editingCycleId ? "Chỉnh sửa chu kỳ bảng xếp hạng" : "Tạo chu kỳ bảng xếp hạng mới"}
+                </h2>
                 <FormRequiredLegend />
               </div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -368,12 +415,15 @@ export default function LeaderboardConfig() {
 
               <div className="flex flex-wrap gap-3">
                 <button type="submit" disabled={creating} className="btn-primary h-10 px-5">
-                  {creating ? "Đang tạo..." : "Lưu chu kỳ mới"}
+                  {creating ? "Đang lưu..." : editingCycleId ? "Lưu cập nhật" : "Lưu chu kỳ mới"}
                 </button>
                 <button
                   type="button"
                   disabled={creating}
-                  onClick={() => setShowCreate(false)}
+                  onClick={() => {
+                    setShowCreate(false)
+                    setEditingCycleId(null)
+                  }}
                   className="btn-ghost h-10 px-4"
                 >
                   Huỷ
@@ -455,6 +505,16 @@ export default function LeaderboardConfig() {
                         >
                           {isSelected ? "Đang xem BXH" : "Xem BXH"}
                         </button>
+                        {!isFinalized && c.status !== "Cancelled" && (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => openEditCycle(c)}
+                            className="btn-ghost h-8 px-3 text-xs text-ink"
+                          >
+                            Sửa
+                          </button>
+                        )}
                         {!isFinalized &&
                           (confirmFinalizeId === c.id ? (
                             <div className="flex items-center gap-1.5">

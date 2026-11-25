@@ -8,18 +8,18 @@ import {
   formatAuthError,
   updateCurrentUserProfile,
 } from "@/lib/authApi"
-import { FLOWS } from "@/data/cashflow"
 import { MY_HANDOVERS } from "@/data/handover"
 import { LEADERBOARD, RANK_POINTS, getSpendPoints, fmt, tierProgress } from "@/data/rewards"
 import { initApiState, isSsrSmokeTest } from "@/lib/hydration"
 import { fetchMyNotifications, markAllNotificationsRead } from "@/lib/notificationsApi"
 import { fetchHandoverOrdersResult, fetchUserTransactions } from "@/lib/recyclerWorkflowApi"
 import { fetchLeaderboard } from "@/lib/gamificationApi"
+import { uploadComplaintEvidence } from "@/lib/reviewComplaintApi"
 
 /** SU-01 Xem và cập nhật hồ sơ · SU-03 Thông báo hệ thống.
  *
- *  Đồng bộ trực tiếp với `GET /api/v1/auth/me` (nạp email, SĐT, điểm xanh, hạng cây ảo,
- *  tổng khối lượng tái chế từ PostgreSQL) và `PUT /api/v1/auth/profile` khi bấm Lưu hồ sơ. */
+ *  Đồng bộ trực tiếp với `GET /api/v1/auth/me` (nạp email, SĐT, ảnh đại diện, điểm xanh,
+ *  hạng cây ảo, tổng khối lượng tái chế từ PostgreSQL) và `PUT /api/v1/auth/profile` khi bấm Lưu hồ sơ. */
 export default function Profile() {
   const session = useSession()
   const entitlements = useEntitlements()
@@ -27,9 +27,8 @@ export default function Profile() {
   const [phone, setPhone] = useState(() =>
     session?.phoneNumber ?? initApiState("", "0901 234 567"),
   )
-  const [area, setArea] = useState(() =>
-    initApiState("", "Khu Công nghệ cao Hòa Lạc, Hà Nội"),
-  )
+  const [avatarUrl, setAvatarUrl] = useState(session?.avatarUrl ?? "")
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [completedDeals, setCompletedDeals] = useState(() =>
     initApiState(0, MY_HANDOVERS.filter((h) => h.status === "done").length),
   )
@@ -37,7 +36,7 @@ export default function Profile() {
     initApiState(0, MY_HANDOVERS.length),
   )
   const [payoutCount, setPayoutCount] = useState(() =>
-    initApiState(0, FLOWS.filter((f) => f.kind === "payout").length),
+    initApiState(0, MY_HANDOVERS.filter((h) => h.status === "done").length),
   )
   const [rankDisplay, setRankDisplay] = useState<string>(() =>
     initApiState("—", `#${LEADERBOARD.findIndex((r) => r.you) + 1}`),
@@ -50,12 +49,16 @@ export default function Profile() {
   const [err, setErr] = useState("")
 
   useEffect(() => {
+    if (isSsrSmokeTest()) return
     let active = true
     void fetchCurrentUserProfile().then((profile) => {
       if (!active || !profile) return
       setName(profile.fullName || profile.username)
       if (profile.phoneNumber) {
         setPhone(profile.phoneNumber)
+      }
+      if (typeof profile.avatarUrl === "string") {
+        setAvatarUrl(profile.avatarUrl)
       }
     })
     if (getAccessToken()) {
@@ -71,7 +74,7 @@ export default function Profile() {
           setCompletedDeals(orders.filter((o) => o.status === "done").length)
         }
         if (txRes.status === "fulfilled" && txRes.value.fromBackend) {
-          setPayoutCount(txRes.value.data.items.length)
+          setPayoutCount(txRes.value.data.totalCount ?? txRes.value.data.items.length)
         }
         if (lbRes.status === "fulfilled" && lbRes.value.data?.myEntry) {
           const me = lbRes.value.data.myEntry
@@ -84,6 +87,34 @@ export default function Profile() {
       active = false
     }
   }, [session?.role])
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    if (!file.type.startsWith("image/")) {
+      setErr("Vui lòng chọn tệp hình ảnh hợp lệ (JPG, PNG, WEBP).")
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setErr("Ảnh đại diện không được vượt quá 5 MB.")
+      return
+    }
+    setErr("")
+    setSavedMsg("")
+    setUploadingAvatar(true)
+    try {
+      const up = await uploadComplaintEvidence(file)
+      if (up.data?.fileUrl) {
+        setAvatarUrl(up.data.fileUrl)
+        setSavedMsg("Đã tải ảnh đại diện lên thành công. Hãy bấm Lưu hồ sơ để áp dụng.")
+      }
+    } catch (error) {
+      setErr(formatAuthError(error))
+    } finally {
+      setUploadingAvatar(false)
+    }
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -103,6 +134,11 @@ export default function Profile() {
       setSavedMsg("")
       return
     }
+    if (avatarUrl.trim().length > 500) {
+      setErr("Đường dẫn ảnh đại diện không được vượt quá 500 ký tự.")
+      setSavedMsg("")
+      return
+    }
 
     setErr("")
     setSubmitting(true)
@@ -110,6 +146,7 @@ export default function Profile() {
       const res = await updateCurrentUserProfile({
         fullName: name,
         phoneNumber: phone,
+        avatarUrl: avatarUrl.trim(),
       })
       setSavedMsg(res.message)
     } catch (error) {
@@ -170,12 +207,43 @@ export default function Profile() {
             />
           </Field>
 
-          <Field label="Khu vực" hint="Dùng để đề xuất điểm thu gom gần bạn nhất.">
-            <input
-              className="input"
-              value={area}
-              onChange={(e) => setArea(e.target.value)}
-            />
+          <Field label="Ảnh đại diện" hint="Tải ảnh lên hoặc dán đường dẫn ảnh (tối đa 500 ký tự).">
+            <div className="flex flex-wrap items-center gap-3">
+              {avatarUrl.trim() ? (
+                <img
+                  src={avatarUrl.trim()}
+                  alt="Xem trước ảnh đại diện"
+                  className="size-12 shrink-0 rounded-full border border-line object-cover"
+                />
+              ) : (
+                <span className="grid size-12 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-xs font-bold text-muted">
+                  Ảnh
+                </span>
+              )}
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                <input
+                  className="input min-w-[180px] flex-1"
+                  value={avatarUrl}
+                  onChange={(e) => {
+                    setAvatarUrl(e.target.value)
+                    setSavedMsg("")
+                  }}
+                  placeholder="https://..."
+                />
+                <label className="btn-outline h-10 cursor-pointer px-3.5 text-xs">
+                  {uploadingAvatar ? "Đang tải..." : "Chọn ảnh"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingAvatar}
+                    onChange={(e) => {
+                      void handleAvatarUpload(e)
+                    }}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
+            </div>
           </Field>
 
           <Field label="Email">
@@ -222,7 +290,7 @@ export default function Profile() {
                   ? [["Tổng phế liệu tái chế", `${session.totalRecycledKg} kg`]]
                   : []),
                 ["Giao dịch đã hoàn tất", String(completedDeals)],
-                ["Khoản đã nhận", String(payoutCount)],
+                ["Biên nhận hoàn tất", String(payoutCount)],
               ].map(([k, v]) => (
                 <div
                   key={k}
@@ -276,7 +344,7 @@ const NOTES: Note[] = [
   },
   {
     id: "n2",
-    text: "Tiền giao dịch BH-2609-0184 đã chuyển về tài khoản của bạn.",
+    text: "Biên nhận bàn giao BH-2609-0184 đã hoàn tất và cập nhật Điểm Mầm Xanh.",
     time: "Hôm nay, 11:02",
     needsAction: false,
   },

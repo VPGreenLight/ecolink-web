@@ -35,7 +35,7 @@ import {
 } from "@/lib/reviewComplaintApi"
 import { isSsrSmokeTest } from "@/lib/hydration"
 import { maskPhoneForGuest, openAuthPopup } from "@/lib/popupAuth"
-import { useSession } from "@/lib/session"
+import { hasLiveBackendAuth, useSession } from "@/lib/session"
 
 /** Dữ liệu dự phòng chỉ dùng khi máy chủ Backend chưa được bật để người xem giao diện
  *  vẫn kiểm tra được bản đồ tương tác tại Hòa Lạc - Hà Nội & toàn quốc. */
@@ -193,15 +193,15 @@ const OFFLINE_PARTNERS: CollectionPartnerDto[] = [
   },
   {
     id: "22222222-2222-2222-2222-222222222222",
-    facilityName: "Vựa phế liệu EcoGreen",
+    facilityName: "Vựa phế liệu EcoGreen Hòa Lạc",
     representativeName: "Trần Thu Gom",
-    address: "123 Đường Nguyễn Hữu Cảnh, P. 22, Bình Thạnh, TP.HCM",
-    latitude: 10.7938,
-    longitude: 106.7182,
-    distanceKm: 2.54,
+    address: "Số 18 Đại lộ Thăng Long, Khu CNC Hòa Lạc, Thạch Thất, Hà Nội",
+    latitude: 21.0138,
+    longitude: 105.5256,
+    distanceKm: 0.16,
     contactPhone: "0988776655",
     operatingHours: "07:30 - 18:30",
-    description: "Chuyên thu mua nhựa sạch, bìa carton và vỏ lon nhôm tận nơi.",
+    description: "Chuyên thu mua nhựa sạch, bìa carton và vỏ lon nhôm tận nơi quanh Khu CNC Hòa Lạc.",
     materials: [
       {
         categoryCode: "plastic",
@@ -480,8 +480,20 @@ export default function MapPage() {
         if (controller.signal.aborted || (err as { name?: string })?.name === "AbortError") {
           return
         }
-        // Dự phòng khi Backend lỗi kết nối hoặc phản hồi sự cố hệ thống:
-        // Tự động chuyển sang chế độ Offline Demo để hiển thị đầy đủ 4 cơ sở Hòa Lạc và cơ sở lân cận
+        const liveError = hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)
+        if (liveError) {
+          setIsOfflineDemo(false)
+          setPartners([])
+          setFallback(null)
+          setSelectedId(null)
+          setErrorMsg(
+            err instanceof Error
+              ? err.message
+              : "Không thể tải danh sách cơ sở thu mua gần bạn từ máy chủ.",
+          )
+          return
+        }
+        // Dự phòng chỉ dành cho chế độ Offline Demo khi chưa đăng nhập Backend và mất kết nối mạng:
         setIsOfflineDemo(true)
         const filteredOffline = applyOfflineWorkflowToPartners(OFFLINE_PARTNERS)
           .map((p) => ({

@@ -20,7 +20,6 @@ export default function GamificationConfig() {
   const [liveMode] = useState(() => !isSsrSmokeTest())
 
   // Offline / SSR fallback state
-  const [pointsPerKg, setPointsPerKg] = useState(GAMIFICATION.pointsPerKg)
   const [labelBonus, setLabelBonus] = useState(GAMIFICATION.labelBonus)
   const [tiers, setTiers] = useState([...GAMIFICATION.tiers])
 
@@ -157,7 +156,7 @@ export default function GamificationConfig() {
         })
       }
       setConfirmReset(false)
-      setFlash("Đã lưu toàn bộ cấu hình điểm, tỷ lệ quy đổi và mốc cây ảo.")
+      setFlash("Đã lưu cấu hình điểm danh, chăm sóc cây ảo và mốc hạng.")
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : "Không thể lưu cấu hình gamification.",
@@ -199,7 +198,7 @@ export default function GamificationConfig() {
       <PageHead
         eyebrow="CẤU HÌNH"
         title="Cấu hình điểm và hạng cây ảo"
-        body="Điểm người dùng tích luỹ từ giao rác đúng phân loại và hoạt động xanh. Đổi hạng hoặc tỷ lệ điểm ở đây sẽ áp dụng cho toàn hệ thống."
+        body="Cấu hình điểm danh hằng ngày, giới hạn chăm sóc cây ảo, thời hạn voucher và các mốc hạng cây ảo áp dụng cho toàn hệ thống."
         action={
           liveMode && config ? (
             <div className="flex flex-wrap gap-2">
@@ -281,23 +280,6 @@ export default function GamificationConfig() {
             <div className="flex flex-col gap-5">
               <div className="card flex flex-col gap-4 p-5 md:p-6">
                 <h2 className="text-base font-bold text-ink">Tham số tích điểm &amp; điểm danh</h2>
-
-                <Field
-                  label="Điểm mặc định mỗi kg bàn giao"
-                  hint="Áp dụng khi loại phế liệu chưa có hệ số riêng."
-                >
-                  <input
-                    className="input tabular-nums"
-                    type="number"
-                    min={0}
-                    value={config.defaultPointsPerKg}
-                    onChange={(e) =>
-                      setConfig((c) =>
-                        c ? { ...c, defaultPointsPerKg: Number(e.target.value) } : c,
-                      )
-                    }
-                  />
-                </Field>
 
                 <Field
                   label="Trần điểm/ngày ngoài giao dịch"
@@ -386,46 +368,6 @@ export default function GamificationConfig() {
                     />
                   </Field>
                 </div>
-
-                {config.pointRates.length > 0 && (
-                  <div className="border-t border-line-soft pt-4">
-                    <p className="text-sm font-semibold text-ink">
-                      Hệ số điểm theo loại phế liệu (điểm/kg)
-                    </p>
-                    <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
-                      {config.pointRates.map((rate, idx) => (
-                        <label
-                          key={rate.categoryCode}
-                          className="flex items-center justify-between gap-2 rounded-lg border border-line-soft px-3 py-2 text-xs"
-                        >
-                          <span className="font-semibold text-ink uppercase">
-                            {rate.categoryCode}
-                          </span>
-                          <input
-                            type="number"
-                            min={0}
-                            className="input h-8 w-24 tabular-nums"
-                            value={rate.pointsPerKg}
-                            onChange={(e) => {
-                              const nextVal = Number(e.target.value)
-                              setConfig((c) =>
-                                c
-                                  ? {
-                                      ...c,
-                                      pointRates: c.pointRates.map((r, rIdx) =>
-                                        rIdx === idx ? { ...r, pointsPerKg: nextVal } : r,
-                                      ),
-                                    }
-                                  : c,
-                              )
-                            }}
-                            aria-label={`Điểm/kg cho ${rate.categoryCode}`}
-                          />
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 <button type="submit" disabled={saving} className="btn-primary h-11 px-6">
                   {saving ? "Đang lưu cấu hình..." : "Lưu cấu hình"}
@@ -583,19 +525,6 @@ export default function GamificationConfig() {
                 {error}
               </p>
             )}
-            <Field
-              label="Điểm mỗi kg bàn giao đúng loại"
-              hint="Tính trên khối lượng người dùng xác nhận, không phải khối lượng ước tính."
-            >
-              <input
-                className="input tabular-nums"
-                type="number"
-                min={0}
-                value={pointsPerKg}
-                onChange={(e) => setPointsPerKg(Number(e.target.value))}
-              />
-            </Field>
-
             <Field label="Điểm thưởng khi gán nhãn AI đúng" required hint="Dành cho nhân viên vận hành.">
               <input
                 className="input tabular-nums"

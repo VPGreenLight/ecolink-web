@@ -504,21 +504,22 @@ export default function AuthForm({
           </div>
         )}
 
-        {/* Bộ chọn nhanh 4 tài khoản mẫu đã seed trong PostgreSQL để giảng viên / hội đồng kiểm thử nhanh */}
+        {/* Bộ chọn nhanh tài khoản mẫu Demo đã seed trong PostgreSQL để giảng viên / hội đồng kiểm thử */}
         {mode === "login" && (
           <div className="mt-5 rounded-xl border border-line-soft bg-surface p-3">
             <p className="text-[11px] font-semibold tracking-wide text-muted uppercase">
-              Điền nhanh tài khoản mẫu trên hệ thống
+              Điền nhanh tài khoản Demo (Hòa Lạc · Hội đồng)
             </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
               {SEEDED_DEMO_ACCOUNTS.map((acc) => (
                 <button
                   key={acc.username}
                   type="button"
                   onClick={() => fillDemoAccount(acc.username, acc.password)}
-                  className="rounded-lg border border-line bg-white px-2.5 py-1 text-xs font-semibold text-body transition-colors hover:border-brand hover:text-brand-deep"
+                  className="flex items-center justify-between gap-1.5 rounded-lg border border-line bg-white px-2.5 py-1.5 text-left text-[11px] font-semibold text-body transition-colors hover:border-brand hover:text-brand-deep"
                 >
-                  {acc.label} ({acc.username})
+                  <span className="truncate">{acc.label}</span>
+                  <span className="shrink-0 font-mono text-[10px] text-muted">{acc.username}</span>
                 </button>
               ))}
             </div>

@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { Check, QrCode, RefreshCw, ShieldCheck, Sparkles, XCircle } from "lucide-react"
-import { FormRequiredLegend, PageHead, RequiredMark, Status, Table, Td } from "@/components/Portal"
+import { PageHead, Status, Table, Td } from "@/components/Portal"
 import SponsoredAdBanner from "@/components/SponsoredAdBanner"
 import VietQrCheckoutModal from "@/components/VietQrCheckoutModal"
-import { BANKS, validAccount } from "@/data/cashflow"
 import { fmtVnd } from "@/data/ops"
 import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
@@ -64,7 +63,7 @@ function statusMeta(order: PayInOrderDto): { label: string; tone: "todo" | "wait
   return { label: "Chờ chuyển khoản", tone: "wait" }
 }
 
-/** U-13 Thiết lập tài khoản nhận tiền + U-16 Gói dịch vụ Citizen & Thanh toán VietQR Động.
+/** U-16 Gói dịch vụ Citizen & Thanh toán VietQR Động (nền tảng không giữ tiền hộ bán phế liệu — BR-DSP-04).
  *
  *  Kết nối trực tiếp tới:
  *   - `GET /api/v1/service-packages?targetRole=User` (STT 120)
@@ -86,13 +85,6 @@ export default function Payout() {
   const [activeQrOrder, setActiveQrOrder] = useState<PayInOrderDto | null>(null)
   const [pkgFlash, setPkgFlash] = useState("")
   const [pkgErr, setPkgErr] = useState("")
-
-  // Phần U-13: Tài khoản ngân hàng nhận tiền bán phế liệu
-  const [bank, setBank] = useState<string>(BANKS[0])
-  const [no, setNo] = useState(() => initApiState("", "007012345678"))
-  const [holder, setHolder] = useState(() => initApiState("", "Nguyễn Đức"))
-  const [saved, setSaved] = useState(false)
-  const [err, setErr] = useState("")
 
   const loadSubscriptionWorkspace = useCallback(async () => {
     setLoadingPackages(true)
@@ -232,23 +224,6 @@ export default function Payout() {
     }
   }
 
-  const submitBankForm = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!validAccount(no)) {
-      setErr("Số tài khoản phải là 6 đến 20 chữ số.")
-      setSaved(false)
-      return
-    }
-    const cleanHolder = holder.trim()
-    if (cleanHolder.length < 3 || cleanHolder.length > 100) {
-      setErr("Tên chủ tài khoản phải từ 3 đến 100 ký tự và khớp với tên trên giấy tờ.")
-      setSaved(false)
-      return
-    }
-    setErr("")
-    setSaved(true)
-  }
-
   const primaryActiveSub = activeSubs[0]
   const citizenPackages = packages.filter(
     (pkg) => pkg.targetRole !== "Recycler" && pkg.packageCode.toUpperCase() !== "PRO",
@@ -258,9 +233,9 @@ export default function Payout() {
   return (
     <div className="flex flex-col gap-6">
       <PageHead
-        eyebrow="GÓI DỊCH VỤ & DÒNG TIỀN"
+        eyebrow="GÓI DỊCH VỤ & VIETQR · U-16"
         title="Gói dịch vụ & Tắt quảng cáo"
-        body="Nâng cấp gói Premium (59.000 đ/30 ngày) để tắt hoàn toàn banner quảng cáo và cài đặt Tài khoản nhận tiền bán phế liệu tự động."
+        body="Nâng cấp gói Premium (59.000 đ/30 ngày) qua mã VietQR động để tắt hoàn toàn banner quảng cáo và nhận x1.2 điểm điểm danh hằng ngày."
         action={
           <button
             type="button"
@@ -465,117 +440,78 @@ export default function Payout() {
         )}
       </section>
 
-      {/* Khu vực U-13: Tài khoản ngân hàng nhận tiền bán phế liệu */}
+      {/* Kiến trúc thanh toán phế liệu trực tiếp P2P (không giữ tiền hộ / không payout) */}
       <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-        <form onSubmit={submitBankForm} noValidate className="card flex flex-col gap-5 p-5 md:p-6">
+        <section className="card flex flex-col gap-4 p-5 md:p-6">
           <div className="border-b border-line-soft pb-3">
             <h2 className="text-base font-bold text-ink">
-              Tài khoản ngân hàng nhận tiền bán phế liệu
+              Quy chuẩn thanh toán tiền phế liệu trực tiếp (BR-DSP-04)
             </h2>
             <p className="mt-1 text-xs text-muted">
-              Tiền bán rác được EcoLink chuyển thẳng về tài khoản này sau khi bàn giao hoàn tất.
+              Tiền bán phế liệu được hai bên giao dịch trực tiếp tại điểm thu gom — EcoLink không giữ tiền hộ và không thu phí hoa hồng.
             </p>
           </div>
-
-          <FormRequiredLegend />
-          <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            <span>
-              Ngân hàng
-              <RequiredMark />
-            </span>
-            <select className="input" value={bank} onChange={(e) => setBank(e.target.value)}>
-              {BANKS.map((b) => (
-                <option key={b} value={b}>
-                  {b}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            <span>
-              Số tài khoản
-              <RequiredMark />
-            </span>
-            <input
-              className={`input tabular-nums ${err && !validAccount(no) ? "border-warn" : ""}`}
-              inputMode="numeric"
-              value={no}
-              onChange={(e) => setNo(e.target.value)}
-              placeholder="007012345678"
-            />
-            <span className="text-[12px] font-normal text-muted">
-              Nhập dấu cách hoặc dấu chấm cũng được, hệ thống tự bỏ.
-            </span>
-          </label>
-
-          <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            <span>
-              Chủ tài khoản
-              <RequiredMark />
-            </span>
-            <input
-              className={`input ${err && holder.trim().length < 3 ? "border-warn" : ""}`}
-              value={holder}
-              onChange={(e) => setHolder(e.target.value)}
-            />
-            <span className="text-[12px] font-normal text-muted">
-              Phải là chính bạn. EcoLink không chuyển tiền vào tài khoản của người khác.
-            </span>
-          </label>
-
-          {err && (
-            <p role="alert" className="text-[13px] font-medium text-warn">
-              {err}
-            </p>
-          )}
-
-          <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
-            <button type="submit" className="btn-primary h-11 px-6">
-              Lưu tài khoản
-            </button>
-            {saved && (
-              <p role="status" className="text-[13px] font-semibold text-brand">
-                Đã lưu. Các khoản chi tiếp theo sẽ về tài khoản này.
-              </p>
-            )}
-          </div>
-        </form>
-
-        <aside className="card flex flex-col gap-4 p-5 md:p-6">
-          <h2 className="text-base font-bold text-ink">Tiền về từ đâu</h2>
           <ol className="flex flex-col gap-4">
             {[
               [
-                "Người thu gom nhận rác",
-                "Sau khi bàn giao xong, cơ sở thu mua chuyển tiền qua VietQR về EcoLink.",
+                "Thanh toán trực tiếp 100% tại chỗ",
+                "Khi bàn giao phế liệu, Cơ sở thu mua thanh toán trực tiếp cho bạn bằng tiền mặt hoặc chuyển khoản cá nhân, không khấu trừ phí nền tảng.",
               ],
               [
-                "Hệ thống nhận tiền",
-                "Webhook VietQR báo nhận đủ. EcoLink trừ phí nền tảng rồi tính số tiền về của bạn.",
+                "Biên nhận số đính kèm ảnh cân",
+                "Cơ sở thu mua tải ảnh mặt đồng hồ cân lên biên nhận điện tử (R-06). Khi bạn xác nhận biên nhận (U-09), hệ thống chốt chứng từ đối chiếu và cộng Điểm Xanh vào ví.",
               ],
               [
-                "PayOS bắn tiền về tài khoản",
-                "Thường trong vài phút. Xem từng khoản ở Lịch sử dòng tiền.",
+                "Bảo vệ hai chiều trong 7 ngày",
+                "Nếu phát sinh sai lệch khối lượng hoặc thanh toán, bạn có thể bấm khiếu nại ngay trên biên nhận hoặc gửi phiếu Trọng tài 360° kèm bằng chứng (U-11).",
               ],
-            ].map(([t, b], i) => (
-              <li key={t} className="flex gap-3">
+            ].map(([titleText, desc], i) => (
+              <li key={titleText} className="flex gap-3">
                 <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-white">
                   {i + 1}
                 </span>
                 <div>
-                  <p className="text-sm font-semibold text-ink">{t}</p>
-                  <p className="mt-0.5 text-[13px] leading-5 text-muted">{b}</p>
+                  <p className="text-sm font-semibold text-ink">{titleText}</p>
+                  <p className="mt-0.5 text-[13px] leading-5 text-body">{desc}</p>
                 </div>
               </li>
             ))}
           </ol>
-          <Link
-            to="/user/transactions"
-            className="mt-1 text-[13px] font-semibold text-brand hover:text-brand-deep"
-          >
-            Xem lịch sử dòng tiền →
-          </Link>
+        </section>
+
+        <aside className="card flex flex-col justify-between gap-4 p-5 md:p-6">
+          <div>
+            <h2 className="text-base font-bold text-ink">Lối tắt biên nhận &amp; quyền lợi</h2>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              Theo dõi các biên nhận đã chốt, đánh giá uy tín cơ sở thu mua và sử dụng Điểm Xanh tích lũy từ mỗi lượt bàn giao.
+            </p>
+            <div className="mt-4 flex flex-col gap-2.5">
+              <Link
+                to="/user/receipt"
+                className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 text-[13px] font-semibold text-ink transition-colors hover:border-brand/40 hover:bg-surface-2"
+              >
+                <span>Xác nhận biên nhận &amp; Đánh giá sao (U-09 / U-10)</span>
+                <span className="text-brand">→</span>
+              </Link>
+              <Link
+                to="/user/transactions"
+                className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 text-[13px] font-semibold text-ink transition-colors hover:border-brand/40 hover:bg-surface-2"
+              >
+                <span>Lịch sử biên nhận bàn giao</span>
+                <span className="text-brand">→</span>
+              </Link>
+              <Link
+                to="/rewards"
+                className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 text-[13px] font-semibold text-ink transition-colors hover:border-brand/40 hover:bg-surface-2"
+              >
+                <span>Ví Điểm Xanh &amp; Đổi quà tặng (U-14)</span>
+                <span className="text-brand">→</span>
+              </Link>
+            </div>
+          </div>
+          <p className="rounded-lg bg-surface-2 px-3.5 py-2.5 text-xs text-muted">
+            Thanh toán VietQR ở mục trên chỉ áp dụng cho gói dịch vụ nội bộ (Premium) và không dùng để thu chi hộ tiền phế liệu.
+          </p>
         </aside>
       </div>
 

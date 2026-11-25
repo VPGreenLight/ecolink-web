@@ -2,20 +2,28 @@ import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { Check, Crown, Lock, QrCode, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, Star } from "lucide-react"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
-import { PageHead, Stat, Status } from "@/components/Portal"
+import { PageHead, Stat, Status, Table, Td } from "@/components/Portal"
 import SponsoredAdBanner from "@/components/SponsoredAdBanner"
 import VietQrCheckoutModal from "@/components/VietQrCheckoutModal"
-import { initApiLoading, initApiState } from "@/lib/hydration"
+import { initApiLoading, initApiState, isSsrSmokeTest } from "@/lib/hydration"
 import { MY_HANDOVERS, type HandoverStatus } from "@/data/handover"
-import { FLOWS } from "@/data/cashflow"
-import { STATS, fmtVnd } from "@/data/ops"
+import { fmtVnd } from "@/data/ops"
 import {
   fetchHandoverOrdersResult,
   fetchRecyclerStatus,
+  fetchRecyclerTransactions,
   toggleRecyclerOnlineStatus,
+  updateRecyclerProfile,
   updateRecyclerWarehousePin,
+  updateRecyclerWeeklySchedule,
   type RecyclerProfileDto,
+  type ScheduleDayDto,
+  type TransactionHistoryItemDto,
 } from "@/lib/recyclerWorkflowApi"
+import {
+  fetchRecyclerReviews,
+  type RecyclerReviewsSummaryDto,
+} from "@/lib/reviewComplaintApi"
 import {
   CANONICAL_FALLBACK_PACKAGES,
   createServicePaymentOrder,
@@ -38,6 +46,43 @@ type UpcomingRow = {
   status: HandoverStatus
   pickupLat?: number
   pickupLng?: number
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+const WEEKDAY_LABELS: Record<number, string> = {
+  1: "Thứ hai",
+  2: "Thứ ba",
+  3: "Thứ tư",
+  4: "Thứ năm",
+  5: "Thứ sáu",
+  6: "Thứ bảy",
+  0: "Chủ nhật",
+}
+
+const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0]
+
+function buildDefaultWeeklySchedule(incoming?: ScheduleDayDto[]): ScheduleDayDto[] {
+  const byDay = new Map<number, ScheduleDayDto>()
+  for (const d of incoming ?? []) {
+    byDay.set(d.dayOfWeek, d)
+  }
+  return WEEKDAY_ORDER.map((dayOfWeek) => {
+    const existing = byDay.get(dayOfWeek)
+    return existing
+      ? {
+          dayOfWeek,
+          isClosed: Boolean(existing.isClosed),
+          openTime: existing.openTime || "07:30",
+          closeTime: existing.closeTime || "18:30",
+        }
+      : {
+          dayOfWeek,
+          isClosed: dayOfWeek === 0,
+          openTime: "07:30",
+          closeTime: "18:30",
+        }
+  })
 }
 
 function getTierRank(
@@ -82,11 +127,11 @@ export default function RecyclerHome() {
         }
       : {
           recyclerId: "22222222-2222-2222-2222-222222222222",
-          facilityName: "Vựa phế liệu EcoGreen",
+          facilityName: "Vựa phế liệu EcoGreen Hòa Lạc",
           representativeName: "Trần Thu Gom",
-          businessAddress: "123 Đường Nguyễn Hữu Cảnh, P. 22, Bình Thạnh, TP.HCM",
-          latitude: 10.7938,
-          longitude: 106.7182,
+          businessAddress: "Số 18 Đại lộ Thăng Long, Khu CNC Hòa Lạc, Thạch Thất, Hà Nội",
+          latitude: 21.0138,
+          longitude: 105.5256,
           operatingHours: "07:30 - 18:30",
           contactPhone: "0988776655",
           verificationStatus: "Verified",
@@ -107,10 +152,10 @@ export default function RecyclerHome() {
   const [pkgErr, setPkgErr] = useState("")
 
   const [editingLocation, setEditingLocation] = useState(false)
-  const [draftLat, setDraftLat] = useState(21.0182)
-  const [draftLng, setDraftLng] = useState(105.5345)
+  const [draftLat, setDraftLat] = useState(21.0138)
+  const [draftLng, setDraftLng] = useState(105.5256)
   const [draftAddress, setDraftAddress] = useState(() =>
-    initApiState("", "123 Đường Nguyễn Hữu Cảnh, P. 22, Bình Thạnh, TP.HCM"),
+    initApiState("", "Số 18 Đại lộ Thăng Long, Khu CNC Hòa Lạc, Thạch Thất, Hà Nội"),
   )
   const [savingPin, setSavingPin] = useState(false)
   const [pinErr, setPinErr] = useState("")
@@ -119,10 +164,30 @@ export default function RecyclerHome() {
   const [handovers, setHandovers] = useState<UpcomingRow[]>(() =>
     initApiState([], MY_HANDOVERS.filter((h) => h.status !== "done")),
   )
+  const [txSummary, setTxSummary] = useState(() =>
+    initApiState(
+      { totalCount: 0, totalAmountCash: 0, totalWeightKg: 0 },
+      { totalCount: 18, totalAmountCash: 4250000, totalWeightKg: 312 },
+    ),
+  )
+  const [txItems, setTxItems] = useState<TransactionHistoryItemDto[]>([])
+  const [txSearch, setTxSearch] = useState("")
+  const [reviewsSummary, setReviewsSummary] = useState<RecyclerReviewsSummaryDto | null>(null)
+  const [reviewsErr, setReviewsErr] = useState("")
 
-  const payin = liveAuth
-    ? 0
-    : FLOWS.filter((f) => f.kind === "payin").reduce((s, f) => s + f.amount, 0)
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [draftFacilityName, setDraftFacilityName] = useState(() => profile.facilityName)
+  const [draftRepresentativeName, setDraftRepresentativeName] = useState(() => profile.representativeName ?? "")
+  const [draftContactPhone, setDraftContactPhone] = useState(() => profile.contactPhone)
+  const [draftOperatingHours, setDraftOperatingHours] = useState(() => profile.operatingHours)
+  const [draftDescription, setDraftDescription] = useState(() => profile.description ?? "")
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [profileErr, setProfileErr] = useState("")
+
+  const [editingSchedule, setEditingSchedule] = useState(false)
+  const [weeklySchedule, setWeeklySchedule] = useState<ScheduleDayDto[]>(() => buildDefaultWeeklySchedule())
+  const [savingSchedule, setSavingSchedule] = useState(false)
+  const [scheduleErr, setScheduleErr] = useState("")
 
   const refreshRecyclerPackages = useCallback(async () => {
     try {
@@ -148,16 +213,69 @@ export default function RecyclerHome() {
   }, [])
 
   useEffect(() => {
+    if (isSsrSmokeTest()) return
     let active = true
-    void fetchRecyclerStatus().then((res) => {
-      if (!active) return
-      setProfile(res.profile)
-      setOpen(res.isOnline)
-      setDraftLat(res.profile.latitude)
-      setDraftLng(res.profile.longitude)
-      setDraftAddress(res.profile.businessAddress)
-      setSyncedBackend(res.fromBackend)
-    })
+    void fetchRecyclerStatus()
+      .then((res) => {
+        if (!active) return
+        setProfile(res.profile)
+        setOpen(res.isOnline)
+        setDraftLat(res.profile.latitude)
+        setDraftLng(res.profile.longitude)
+        setDraftAddress(res.profile.businessAddress)
+        setDraftFacilityName(res.profile.facilityName)
+        setDraftRepresentativeName(res.profile.representativeName ?? "")
+        setDraftContactPhone(res.profile.contactPhone)
+        setDraftOperatingHours(res.profile.operatingHours)
+        setDraftDescription(res.profile.description ?? "")
+        setWeeklySchedule(buildDefaultWeeklySchedule(res.weeklySchedule))
+        setSyncedBackend(res.fromBackend)
+
+        if (UUID_REGEX.test(res.profile.recyclerId)) {
+          void fetchRecyclerReviews(res.profile.recyclerId, { pageNumber: 1, pageSize: 5 })
+            .then((rvRes) => {
+              if (active && rvRes.success && rvRes.data) {
+                setReviewsSummary(rvRes.data)
+              }
+            })
+            .catch((err) => {
+              if (active && liveAuth) {
+                setReviewsErr(
+                  err instanceof Error ? err.message : "Không thể tải danh sách đánh giá khách hàng.",
+                )
+              }
+            })
+        }
+      })
+      .catch((err) => {
+        if (!active) return
+        if (liveAuth) {
+          setActionErr((prev) =>
+            prev || (err instanceof Error ? err.message : "Không thể tải trạng thái cơ sở."),
+          )
+        }
+      })
+
+    void fetchRecyclerTransactions(undefined, undefined, 1, 20)
+      .then((res) => {
+        if (!active) return
+        if (res.fromBackend || !liveAuth) {
+          setTxSummary({
+            totalCount: res.data.totalCount,
+            totalAmountCash: res.data.totalAmountCash,
+            totalWeightKg: res.data.totalWeightKg,
+          })
+          setTxItems(res.data.items ?? [])
+        }
+      })
+      .catch((err) => {
+        if (!active) return
+        if (liveAuth) {
+          setActionErr((prev) =>
+            prev || (err instanceof Error ? err.message : "Không thể tải thống kê giao dịch cơ sở."),
+          )
+        }
+      })
 
     void refreshRecyclerPackages()
 
@@ -195,6 +313,14 @@ export default function RecyclerHome() {
           }
         }
       })
+      .catch((err) => {
+        if (!active) return
+        if (liveAuth) {
+          setActionErr((prev) =>
+            prev || (err instanceof Error ? err.message : "Không thể tải lịch thu gom đang mở."),
+          )
+        }
+      })
       .finally(() => {
         if (active) setLoadingHandovers(false)
       })
@@ -202,7 +328,7 @@ export default function RecyclerHome() {
     return () => {
       active = false
     }
-  }, [])
+  }, [liveAuth, refreshRecyclerPackages])
 
   const handleToggleAvailability = async () => {
     const nextOnline = !open
@@ -259,6 +385,114 @@ export default function RecyclerHome() {
       )
     } finally {
       setSavingPin(false)
+    }
+  }
+
+  const handleSaveProfileDetails = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (savingProfile) return
+    setProfileErr("")
+    setActionErr("")
+    setFlash("")
+
+    const cleanFacility = draftFacilityName.trim()
+    const cleanRep = draftRepresentativeName.trim()
+    const cleanPhone = draftContactPhone.trim()
+    const cleanHours = draftOperatingHours.trim()
+
+    if (cleanFacility.length < 2 || cleanFacility.length > 150) {
+      setProfileErr("Tên cơ sở thu mua phải từ 2 đến 150 ký tự.")
+      return
+    }
+    if (cleanRep.length > 100) {
+      setProfileErr("Tên người đại diện tối đa 100 ký tự.")
+      return
+    }
+    if (!cleanPhone || cleanPhone.length > 20 || !/^(?:\+84|0)\d{9,10}$/.test(cleanPhone.replace(/[\s.\-()]/g, ""))) {
+      setProfileErr("Số điện thoại liên hệ chưa đúng định dạng Việt Nam (tối đa 20 ký tự).")
+      return
+    }
+    if (cleanHours.length > 100) {
+      setProfileErr("Giờ hoạt động tóm tắt tối đa 100 ký tự.")
+      return
+    }
+
+    setSavingProfile(true)
+    try {
+      const res = await updateRecyclerProfile(profile, {
+        facilityName: cleanFacility,
+        representativeName: cleanRep || null,
+        contactPhone: cleanPhone,
+        operatingHours: cleanHours || profile.operatingHours,
+        description: draftDescription.trim() || null,
+      })
+      setProfile(res.profile)
+      setSyncedBackend(res.fromBackend)
+      setEditingProfile(false)
+      setFlash(res.message)
+    } catch (err) {
+      setProfileErr(
+        err instanceof Error ? err.message : "Không thể cập nhật thông tin hồ sơ cơ sở.",
+      )
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
+  const handleSaveWeeklySchedule = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (savingSchedule) return
+    setScheduleErr("")
+    setActionErr("")
+    setFlash("")
+
+    if (!isKybVerified) {
+      setScheduleErr("Hồ sơ cơ sở phải ở trạng thái Verified mới có thể cập nhật lịch hoạt động theo tuần.")
+      return
+    }
+
+    const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/
+    for (const d of weeklySchedule) {
+      if (d.isClosed) continue
+      const openTime = (d.openTime ?? "").trim()
+      const closeTime = (d.closeTime ?? "").trim()
+      if (!timeRe.test(openTime) || !timeRe.test(closeTime)) {
+        setScheduleErr(`${WEEKDAY_LABELS[d.dayOfWeek] ?? `Ngày ${d.dayOfWeek}`}: Giờ mở/đóng cửa phải theo định dạng HH:mm (ví dụ 07:30).`)
+        return
+      }
+      if (closeTime <= openTime) {
+        setScheduleErr(`${WEEKDAY_LABELS[d.dayOfWeek] ?? `Ngày ${d.dayOfWeek}`}: Giờ đóng cửa phải lớn hơn giờ mở cửa.`)
+        return
+      }
+    }
+
+    setSavingSchedule(true)
+    try {
+      const normalizedDays: ScheduleDayDto[] = weeklySchedule.map((d) => ({
+        dayOfWeek: d.dayOfWeek,
+        isClosed: d.isClosed,
+        openTime: d.isClosed ? null : (d.openTime ?? "07:30").trim(),
+        closeTime: d.isClosed ? null : (d.closeTime ?? "18:30").trim(),
+      }))
+      const res = await updateRecyclerWeeklySchedule(normalizedDays)
+      if (Array.isArray(res.availability.weeklySchedule)) {
+        setWeeklySchedule(buildDefaultWeeklySchedule(res.availability.weeklySchedule))
+      }
+      setProfile((p) => ({
+        ...p,
+        operatingHours: res.availability.operatingHours || p.operatingHours,
+        activeStatus: res.availability.activeStatus || p.activeStatus,
+      }))
+      setDraftOperatingHours(res.availability.operatingHours || profile.operatingHours)
+      setOpen(res.availability.isOnline)
+      setEditingSchedule(false)
+      setFlash(res.message)
+    } catch (err) {
+      setScheduleErr(
+        err instanceof Error ? err.message : "Không thể lưu lịch hoạt động theo tuần.",
+      )
+    } finally {
+      setSavingSchedule(false)
     }
   }
 
@@ -422,6 +656,33 @@ export default function RecyclerHome() {
 
       <SponsoredAdBanner upgradeTo="#recycler-packages" compact />
 
+      {!isKybVerified && (
+        <section className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="flex items-center gap-2 font-bold">
+              <ShieldAlert className="size-4 shrink-0 text-amber-700" />
+              Hồ sơ đối tác thu mua đang ở trạng thái:{" "}
+              <span>
+                {profile.verificationStatus === "Rejected" ? "Cần bổ sung (Rejected)" : "Chờ thẩm định (Pending)"}
+              </span>
+            </p>
+            {profile.verificationStatus === "Rejected" ? (
+              <p className="text-xs leading-5">
+                <b>Lý do từ chối:</b> {profile.rejectionReason || "Hồ sơ chưa đạt yêu cầu xác minh."}{" "}
+                Theo quy chuẩn <code>BR-MTH-02</code>, khi bạn cập nhật lại thông tin hoặc ghim kho bãi bên dưới, hồ sơ sẽ tự động chuyển về <b>Pending</b> để nhân viên xét duyệt lại.
+              </p>
+            ) : (
+              <p className="text-xs leading-5">
+                Nhân viên vận hành đang kiểm tra giấy phép pháp lý và tọa độ kho bãi của bạn. Khi được duyệt, cơ sở có thể bật trực tuyến trên bản đồ.
+              </p>
+            )}
+          </div>
+          <Link to="/join-recycler" className="btn-outline h-9 shrink-0 bg-white px-3.5 text-xs">
+            Xem / nộp lại hồ sơ KYB →
+          </Link>
+        </section>
+      )}
+
       <section className="card flex flex-wrap items-center justify-between gap-4 p-5">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -505,6 +766,26 @@ export default function RecyclerHome() {
             <button
               type="button"
               onClick={() => {
+                setEditingProfile((v) => !v)
+                setProfileErr("")
+              }}
+              className="btn-outline h-9 px-3.5 text-xs"
+            >
+              {editingProfile ? "Đóng mô tả cơ sở" : "Sửa mô tả & liên hệ"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingSchedule((v) => !v)
+                setScheduleErr("")
+              }}
+              className="btn-outline h-9 px-3.5 text-xs"
+            >
+              {editingSchedule ? "Đóng lịch tuần" : "Lịch hoạt động tuần (R-02)"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
                 setEditingLocation((v) => !v)
                 setPinErr("")
               }}
@@ -514,6 +795,177 @@ export default function RecyclerHome() {
             </button>
           </div>
         </div>
+
+        {profile.description && (
+          <p className="text-xs leading-5 text-body">{profile.description}</p>
+        )}
+
+        {editingProfile && (
+          <form
+            noValidate
+            onSubmit={(e) => void handleSaveProfileDetails(e)}
+            className="flex flex-col gap-3 border-t border-line-soft pt-4"
+          >
+            <h3 className="text-sm font-bold text-ink">Thông tin giới thiệu &amp; Liên hệ cơ sở</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+                Tên cơ sở thu mua
+                <input
+                  className="input"
+                  value={draftFacilityName}
+                  onChange={(e) => setDraftFacilityName(e.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+                Người đại diện
+                <input
+                  className="input"
+                  value={draftRepresentativeName}
+                  onChange={(e) => setDraftRepresentativeName(e.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+                Số điện thoại liên hệ
+                <input
+                  className="input tabular-nums"
+                  value={draftContactPhone}
+                  onChange={(e) => setDraftContactPhone(e.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+                Giờ mở cửa tóm tắt
+                <input
+                  className="input"
+                  placeholder="Ví dụ: 07:30 - 18:30 (T2 - T7)"
+                  value={draftOperatingHours}
+                  onChange={(e) => setDraftOperatingHours(e.target.value)}
+                />
+              </label>
+            </div>
+            <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+              Mô tả năng lực thu mua / hướng dẫn gửi hàng
+              <textarea
+                className="input min-h-[76px] py-2"
+                value={draftDescription}
+                onChange={(e) => setDraftDescription(e.target.value)}
+                placeholder="Giới thiệu dịch vụ thu gom tận nơi, cân điện tử tại chỗ..."
+              />
+            </label>
+            {profileErr && (
+              <p
+                role="alert"
+                className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn"
+              >
+                {profileErr}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="submit" disabled={savingProfile} className="btn-primary h-10 px-5 text-xs">
+                {savingProfile ? "Đang lưu hồ sơ..." : "Lưu thông tin cơ sở"}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {editingSchedule && (
+          <form
+            noValidate
+            onSubmit={(e) => void handleSaveWeeklySchedule(e)}
+            className="flex flex-col gap-3 border-t border-line-soft pt-4"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-bold text-ink">Lịch hoạt động cố định theo tuần (R-02)</h3>
+              {!isKybVerified && (
+                <span className="text-xs font-medium text-warn">
+                  Yêu cầu hồ sơ Verified trước khi cập nhật lịch tuần.
+                </span>
+              )}
+            </div>
+            <div className="grid gap-2">
+              {weeklySchedule.map((day) => (
+                <div
+                  key={day.dayOfWeek}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface-2 px-3.5 py-2.5 text-xs"
+                >
+                  <span className="w-24 font-semibold text-ink">
+                    {WEEKDAY_LABELS[day.dayOfWeek] ?? `Ngày ${day.dayOfWeek}`}
+                  </span>
+                  <label className="inline-flex items-center gap-2 text-body">
+                    <input
+                      type="checkbox"
+                      checked={!day.isClosed}
+                      onChange={(e) => {
+                        const openDay = e.target.checked
+                        setWeeklySchedule((prev) =>
+                          prev.map((x) =>
+                            x.dayOfWeek === day.dayOfWeek ? { ...x, isClosed: !openDay } : x,
+                          ),
+                        )
+                        setScheduleErr("")
+                      }}
+                    />
+                    <span>{day.isClosed ? "Nghỉ" : "Mở cửa"}</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      disabled={day.isClosed}
+                      value={day.openTime || "07:30"}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setWeeklySchedule((prev) =>
+                          prev.map((x) =>
+                            x.dayOfWeek === day.dayOfWeek ? { ...x, openTime: v } : x,
+                          ),
+                        )
+                        setScheduleErr("")
+                      }}
+                      className="input h-8 w-28 text-xs tabular-nums disabled:opacity-50"
+                      aria-label={`Giờ mở cửa ${WEEKDAY_LABELS[day.dayOfWeek]}`}
+                    />
+                    <span className="text-muted">đến</span>
+                    <input
+                      type="time"
+                      disabled={day.isClosed}
+                      value={day.closeTime || "18:30"}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setWeeklySchedule((prev) =>
+                          prev.map((x) =>
+                            x.dayOfWeek === day.dayOfWeek ? { ...x, closeTime: v } : x,
+                          ),
+                        )
+                        setScheduleErr("")
+                      }}
+                      className="input h-8 w-28 text-xs tabular-nums disabled:opacity-50"
+                      aria-label={`Giờ đóng cửa ${WEEKDAY_LABELS[day.dayOfWeek]}`}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {scheduleErr && (
+              <p
+                role="alert"
+                className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn"
+              >
+                {scheduleErr}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="submit"
+                disabled={savingSchedule || !isKybVerified}
+                className="btn-primary h-10 px-5 text-xs disabled:opacity-50"
+              >
+                {savingSchedule ? "Đang lưu lịch tuần..." : "Lưu lịch hoạt động tuần"}
+              </button>
+              <span className="text-xs text-muted">
+                Giờ mở/đóng cửa sẽ tự đồng bộ để kiểm tra hợp lệ khi người dân đặt lịch hẹn.
+              </span>
+            </div>
+          </form>
+        )}
 
         {editingLocation && (
           <form
@@ -875,15 +1327,19 @@ export default function RecyclerHome() {
           note="Chờ xác nhận hoặc đã nhận"
         />
         <Stat
-          label="Cơ sở thu mua"
-          value={STATS.recyclers.toLocaleString("vi-VN")}
-          note="Toàn hệ thống"
+          label="Khối lượng đã thu gom"
+          value={`${txSummary.totalWeightKg.toLocaleString("vi-VN")} kg`}
+          note="Biên nhận đã hoàn tất"
         />
-        <Stat label="Tiền đã thu gom" value={fmtVnd(payin)} note="Đã chuyển qua VietQR" />
         <Stat
-          label="Giao dịch 30 ngày"
-          value={STATS.handovers30d.toLocaleString("vi-VN")}
-          note="Toàn hệ thống"
+          label="Tổng giá trị đã chi trả"
+          value={fmtVnd(txSummary.totalAmountCash)}
+          note="Biên nhận thu mua hoàn tất"
+        />
+        <Stat
+          label="Đơn đã hoàn tất"
+          value={txSummary.totalCount.toLocaleString("vi-VN")}
+          note="Lịch sử giao dịch của cơ sở"
         />
       </div>
 
@@ -928,6 +1384,154 @@ export default function RecyclerHome() {
             ))}
           </ul>
         )}
+      </section>
+
+      <section className="card flex flex-col gap-4 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-ink">
+              Đánh giá từ khách hàng &amp; Tiến độ gói PRO
+            </h2>
+            <p className="mt-0.5 text-xs text-muted">
+              Điều kiện mở khóa gói Tích xanh PRO: Hồ sơ Verified, tối thiểu 50 đánh giá và điểm trung bình từ 4.0★ trở lên.
+            </p>
+          </div>
+          {reviewsSummary && (
+            <div className="flex items-center gap-2 rounded-xl border border-line bg-surface-2 px-3 py-1.5 text-xs">
+              <Star className="size-4 fill-amber-400 text-amber-500" />
+              <b className="text-sm tabular-nums text-ink">
+                {reviewsSummary.averageRating.toFixed(1)}
+              </b>
+              <span className="text-muted">({reviewsSummary.totalReviews} lượt)</span>
+            </div>
+          )}
+        </div>
+
+        {reviewsErr && (
+          <p
+            role="alert"
+            className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn"
+          >
+            {reviewsErr}
+          </p>
+        )}
+
+        {reviewsSummary ? (
+          <>
+            <div className="grid gap-3 rounded-xl border border-line-soft bg-surface-2/60 p-4 sm:grid-cols-2">
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold text-ink">
+                  <span>Số lượng đánh giá hợp lệ</span>
+                  <span className="tabular-nums">
+                    {Math.min(reviewsSummary.totalReviews, 50)} / 50 lượt
+                  </span>
+                </div>
+                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-3">
+                  <div
+                    className="h-full rounded-full bg-brand"
+                    style={{
+                      width: `${Math.min(100, Math.round((reviewsSummary.totalReviews / 50) * 100))}%`,
+                    }}
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold text-ink">
+                  <span>Điểm hài lòng trung bình</span>
+                  <span className="tabular-nums">
+                    {reviewsSummary.averageRating.toFixed(1)} / 5.0 ★ (cần ≥ 4.0)
+                  </span>
+                </div>
+                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-3">
+                  <div
+                    className="h-full rounded-full bg-amber-500"
+                    style={{
+                      width: `${Math.min(100, Math.round((reviewsSummary.averageRating / 5) * 100))}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {reviewsSummary.reviews.items.length === 0 ? (
+              <p className="text-xs text-muted">Chưa có đánh giá nào từ người dân.</p>
+            ) : (
+              <ul className="divide-y divide-line-soft">
+                {reviewsSummary.reviews.items.map((rv) => (
+                  <li key={rv.reviewId} className="flex flex-col gap-1 py-2.5 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold text-ink">{rv.reviewerDisplayName}</span>
+                      <span className="font-semibold tabular-nums text-amber-600">
+                        {rv.ratingStars} ★ · {new Date(rv.createdAt).toLocaleDateString("vi-VN")}
+                      </span>
+                    </div>
+                    <p className="text-body">{rv.comment || "Người dùng không để lại nhận xét thêm."}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : (
+          <p className="text-xs text-muted">
+            Số liệu đánh giá sao sẽ tự động hiển thị khi kết nối với hồ sơ Recycler trên hệ thống.
+          </p>
+        )}
+      </section>
+
+      <section className="card flex flex-col gap-4 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-ink">Giao dịch thu gom đã hoàn tất</h2>
+            <p className="mt-0.5 text-xs text-muted">
+              Tổng hợp các biên nhận đã được người dân xác nhận hoàn tất (GET /api/v1/recycler/transactions).
+            </p>
+          </div>
+          <input
+            type="search"
+            value={txSearch}
+            onChange={(e) => setTxSearch(e.target.value)}
+            placeholder="Lọc mã đơn, người dân, vật liệu..."
+            aria-label="Lọc giao dịch đã hoàn tất"
+            className="input h-9 w-64 text-xs"
+          />
+        </div>
+        {(() => {
+          const kw = txSearch.trim().toLowerCase()
+          const filteredTx = txItems.filter(
+            (it) =>
+              !kw ||
+              `${it.receiptCode} ${it.requestCode} ${it.counterpartName} ${it.categories.join(" ")}`
+                .toLowerCase()
+                .includes(kw),
+          )
+          if (filteredTx.length === 0) {
+            return (
+              <p className="text-sm text-muted">
+                Chưa có giao dịch thu gom hoàn tất nào khớp bộ lọc.
+              </p>
+            )
+          }
+          return (
+            <Table head={["Mã biên nhận", "Người dân", "Loại phế liệu", "Khối lượng", "Giá trị", "Thời điểm"]}>
+              {filteredTx.map((it) => (
+                <tr key={it.receiptId || it.requestId}>
+                  <Td className="font-mono text-xs font-semibold text-ink whitespace-nowrap">
+                    {it.receiptCode || it.requestCode}
+                  </Td>
+                  <Td>{it.counterpartName}</Td>
+                  <Td className="text-xs">{it.categories.join(", ") || "—"}</Td>
+                  <Td className="tabular-nums whitespace-nowrap">{it.totalWeightKg} kg</Td>
+                  <Td className="tabular-nums font-semibold text-brand-deep whitespace-nowrap">
+                    {fmtVnd(it.totalAmountCash)}
+                  </Td>
+                  <Td className="tabular-nums text-xs text-muted whitespace-nowrap">
+                    {new Date(it.completedAt).toLocaleString("vi-VN")}
+                  </Td>
+                </tr>
+              ))}
+            </Table>
+          )
+        })()}
       </section>
 
       <VietQrCheckoutModal

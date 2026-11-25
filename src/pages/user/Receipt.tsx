@@ -298,10 +298,6 @@ export default function Receipt() {
     if (!h || processing) return
     setConfirmErr("")
     setFlashMessage(null)
-    if (actual.some((a) => !Number.isFinite(a.kg) || a.kg <= 0)) {
-      setConfirmErr("Khối lượng thực tế mỗi loại rác phải lớn hơn 0 kg.")
-      return
-    }
     setProcessing(true)
     try {
       const res = await confirmHandoverReceipt(h.id)
@@ -312,7 +308,7 @@ export default function Receipt() {
       setH((prev) => (prev ? { ...prev, status: "done" } : prev))
       setFlashMessage(
         res.syncedWithBackend
-          ? `Đã xác nhận biên nhận #${res.receipt?.receiptCode || h.displayCode} thành công (đã cộng Điểm Xanh và hoàn tất giao dịch trên hệ thống).`
+          ? `Đã xác nhận biên nhận #${res.receipt?.receiptCode || h.displayCode} thành công và hoàn tất giao dịch trên hệ thống.`
           : "Đã xác nhận khối lượng bàn giao (chế độ dự phòng ngoại tuyến).",
       )
     } catch (err) {
@@ -484,7 +480,7 @@ export default function Receipt() {
       <PageHead
         eyebrow="BIÊN NHẬN"
         title="Xác nhận bàn giao rác"
-        body="Đối chiếu khối lượng người thu gom cân tại chỗ với những gì bạn bỏ ra. Biên nhận được lưu trữ trên hệ thống để hai bên đối chiếu giao dịch trực tiếp và cộng Điểm Xanh."
+        body="Đối chiếu khối lượng người thu gom cân tại chỗ với những gì bạn bỏ ra. Biên nhận được lưu trữ trên hệ thống để hai bên đối chiếu giao dịch trực tiếp minh bạch."
       />
 
       {candidates.length > 1 && (
@@ -553,7 +549,7 @@ export default function Receipt() {
             </p>
             {receiptInfo?.receiptCode && (
               <p className="mt-1 text-xs font-semibold text-brand-deep">
-                Mã biên nhận: #{receiptInfo.receiptCode} · Điểm Xanh dự kiến: +{receiptInfo.points} điểm
+                Mã biên nhận: #{receiptInfo.receiptCode}
               </p>
             )}
           </div>
@@ -565,24 +561,8 @@ export default function Receipt() {
             <tr key={`${a.wasteId}-${i}`}>
               <Td className="font-semibold text-ink">{a.wasteName || nameOf(a.wasteId)}</Td>
               <Td className="tabular-nums text-muted">{a.estimatedKg ?? h.lines[i]?.kg ?? 0} kg</Td>
-              <Td>
-                <input
-                  className="input h-9 w-28 tabular-nums"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  inputMode="decimal"
-                  aria-label={`Khối lượng thực tế ${a.wasteName || nameOf(a.wasteId)}`}
-                  value={a.kg}
-                  disabled={confirmed || disputed || processing}
-                  onChange={(e) =>
-                    setActual((rs) =>
-                      rs.map((r, n) =>
-                        n === i ? { ...r, kg: Number(e.target.value) } : r,
-                      ),
-                    )
-                  }
-                />
+              <Td className="tabular-nums font-semibold text-ink">
+                {a.kg.toLocaleString("vi-VN")} kg
               </Td>
               <Td className="tabular-nums font-semibold text-ink">
                 {VND(a.kg * rowPriceOf(a, i))}
@@ -631,9 +611,10 @@ export default function Receipt() {
 
         {differs && !confirmed && !disputed && (
           <p className="rounded-lg border border-line bg-surface-2 px-4 py-3 text-[13px] leading-5 text-body">
-            Khối lượng bạn xác nhận khác với ước tính ban đầu — không sao, đó là bình
-            thường vì người thu gom cân thực tế. Số tiền được tính trên khối lượng
-            bạn nhập ở trên.
+            Khối lượng trên biên nhận khác với ước tính ban đầu do cơ sở thu gom đã cân
+            thực tế kèm ảnh bằng chứng. Thành tiền được chốt theo đúng số cân trên biên
+            nhận này; nếu có sai lệch, vui lòng bấm{" "}
+            <strong className="text-ink">&ldquo;Sai rồi, tôi muốn khiếu nại&rdquo;</strong>.
           </p>
         )}
 
@@ -678,7 +659,7 @@ export default function Receipt() {
           )}
           {!confirmed && !disputed && (
             <p className="self-center text-[13px] text-muted">
-              Xác nhận để lưu biên nhận đối chiếu và ghi nhận Điểm Xanh cho giao dịch này.
+              Xác nhận để khóa biên nhận đối chiếu và hoàn tất giao dịch này.
             </p>
           )}
         </div>

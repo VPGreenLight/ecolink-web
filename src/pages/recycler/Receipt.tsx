@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { PageHead, RequiredMark, Table, TableSkeleton, Td } from "@/components/Portal"
+import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { INCOMING, type Handover } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
 import { ApiError } from "@/lib/api"
-import { initApiLoading, initApiState } from "@/lib/hydration"
+import { initApiLoading, initApiState, isSsrSmokeTest } from "@/lib/hydration"
 import {
   createHandoverReceipt,
   fetchHandoverOrdersResult,
@@ -12,8 +13,10 @@ import {
   fetchRecyclerReceipt,
   findCachedHandoverOrder,
   formatOrderDisplayCode,
+  previewHandoverReceipt,
   uploadReceiptProofPhoto,
   type CreateReceiptRequest,
+  type ReceiptDto,
   type SyncedHandoverOrder,
 } from "@/lib/recyclerWorkflowApi"
 import { hasLiveBackendAuth } from "@/lib/session"
@@ -82,6 +85,9 @@ export default function Receipt() {
   const [sent, setSent] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [previewData, setPreviewData] = useState<ReceiptDto | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const debouncedRows = useDebouncedValue(rows, 350)
 
   useEffect(() => {
     if (files.length === 0) {
@@ -253,10 +259,71 @@ export default function Receipt() {
   }
 
   const totalEstimatedKg = rows.reduce((s, r) => s + r.estimatedKg, 0)
+  const totalActualKg = rows.reduce(
+    (s, r) => s + (Number.isFinite(r.kg) && r.kg > 0 ? r.kg : 0),
+    0,
+  )
   const totalGross = rows.reduce(
     (s, r, i) => s + (Number.isFinite(r.kg) && r.kg > 0 ? r.kg : 0) * rowPriceOf(r, i),
     0,
   )
+
+  useEffect(() => {
+    if (isSsrSmokeTest() || !h || sent || !UUID_REGEX.test(h.id)) {
+      setPreviewData(null)
+      return
+    }
+    const valid =
+      debouncedRows.length > 0 &&
+      debouncedRows.every(
+        (r) =>
+          Number.isFinite(r.kg) &&
+          r.kg > 0 &&
+          Math.abs(r.kg * 100 - Math.round(r.kg * 100)) <= 1e-4,
+      )
+    if (!valid) {
+      setPreviewData(null)
+      return
+    }
+
+    let cancelled = false
+    setPreviewLoading(true)
+    const payload: CreateReceiptRequest = {
+      items: debouncedRows.map((r) => {
+        const hasValidItemId = Boolean(r.itemId && UUID_REGEX.test(r.itemId))
+        const hasValidCatGuid = Boolean(r.wasteCategoryId && UUID_REGEX.test(r.wasteCategoryId))
+        return {
+          ...(hasValidItemId ? { itemId: r.itemId } : {}),
+          ...(!hasValidItemId && hasValidCatGuid ? { wasteCategoryId: r.wasteCategoryId } : {}),
+          actualWeightKg: Number(r.kg.toFixed(2)),
+        }
+      }),
+      scaleProofPhotoUrls: existingProofUrls,
+    }
+    void previewHandoverReceipt(h.id, payload)
+      .then((res) => {
+        if (!cancelled) setPreviewData(res)
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewData(null)
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [debouncedRows, existingProofUrls, h, sent])
+
+  const localDeviationPercent =
+    totalEstimatedKg > 0
+      ? Number((((totalActualKg - totalEstimatedKg) / totalEstimatedKg) * 100).toFixed(1))
+      : 0
+  const effectiveDeviationPercent = previewData ? previewData.deviationPercent : localDeviationPercent
+  const effectiveDeviationWarning = previewData
+    ? previewData.hasDeviationWarning
+    : Math.abs(localDeviationPercent) > 20
+  const effectiveTotalCash = previewData ? previewData.totalAmountCash : totalGross
 
   const handleProofFileChange = (pickedList: FileList | null) => {
     const picked = Array.from(pickedList ?? [])
@@ -352,7 +419,7 @@ export default function Receipt() {
       <PageHead
         eyebrow="BIÊN NHẬN"
         title="Tạo biên nhận thu gom"
-        body="Nhập khối lượng thực tế bạn vừa cân và chụp ảnh làm bằng chứng. Hệ thống lưu trữ biên nhận để hai bên đối chiếu và ghi nhận Điểm Xanh sau khi người dùng xác nhận."
+        body="Nhập khối lượng thực tế bạn vừa cân và chụp ảnh làm bằng chứng. Hệ thống lưu trữ biên nhận để hai bên đối chiếu minh bạch sau khi người dùng xác nhận."
       />
 
       {eligibleOrders.length > 1 && (
@@ -504,13 +571,26 @@ export default function Receipt() {
 
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-surface-2 px-5 py-4">
           <p className="text-sm text-body">
-            Tổng tiền đối tác nhận{" "}
-            <b className="tabular-nums text-brand">{VND(totalGross)}</b>
+            Tổng tiền ước tính thanh toán{" "}
+            <b className="tabular-nums text-brand">{VND(effectiveTotalCash)}</b>
           </p>
           <span className="text-xs text-muted">
-            Hệ thống lưu trữ biên nhận để đối chiếu và cộng Điểm Xanh, không thu phí giao dịch.
+            {previewLoading
+              ? "Đang kiểm tra biên nhận từ máy chủ..."
+              : "Hệ thống lưu trữ biên nhận để hai bên đối chiếu minh bạch, không thu phí giao dịch."}
           </span>
         </div>
+
+        {effectiveDeviationWarning && (
+          <div
+            role="status"
+            className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[13px] font-medium text-amber-950"
+          >
+            <b>Cảnh báo lệch khối lượng ({effectiveDeviationPercent > 0 ? `+${effectiveDeviationPercent}` : effectiveDeviationPercent}%):</b>{" "}
+            {previewData?.deviationMessage ||
+              "Khối lượng thực cân chênh lệch quá 20% so với ước tính ban đầu. Vui lòng kiểm tra kỹ và chụp rõ ảnh đồng hồ cân (MSG-HND-04)."}
+          </div>
+        )}
 
         {errorMessage && (
           <p role="alert" className="rounded-xl border border-warn/40 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn">

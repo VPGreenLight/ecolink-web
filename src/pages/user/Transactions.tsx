@@ -10,12 +10,10 @@ import { initApiLoading, isSsrSmokeTest } from "@/lib/hydration"
 import { fetchUserTransactions, type TransactionHistoryDto } from "@/lib/recyclerWorkflowApi"
 import { hasLiveBackendAuth } from "@/lib/session"
 
-/** U-14 Xem lịch sử dòng tiền + SYS-01 giải ngân tự động.
+/** U-09 / U-14 Lịch sử biên nhận bàn giao phế liệu.
  *
- *  Gộp vì SYS-01 là cách những dòng tiền này được tạo ra: không có hàng
- *  "PayOS" nào trên đời mà có hàng này mà không giải thích được nó. Ba loại
- *  dòng dùng chung một bảng để thấy mỗi giao dịch có đủ 3 dòng không —
- *  thiếu dòng nghĩa là tiền bị kẹt, đó là việc người dùng cần thấy. */
+ *  Tiền mua phế liệu do cơ sở thu mua thanh toán trực tiếp tại chỗ (P2P);
+ *  hệ thống lưu trữ chứng từ biên nhận và khối lượng thực cân đối chiếu. */
 export default function Transactions() {
   const liveAuth = hasLiveBackendAuth()
   const [liveData, setLiveData] = useState<TransactionHistoryDto | null>(null)
@@ -47,44 +45,33 @@ export default function Transactions() {
   }, [])
 
   const showOfflineDemo = isSsrSmokeTest() && !loading && !fromBackend && !liveAuth
+  const receiptFlows = FLOWS.filter((f) => f.kind !== "fee")
   const payout = showOfflineDemo
-    ? FLOWS.filter((f) => f.kind === "payout").reduce((s, f) => s + f.amount, 0)
+    ? receiptFlows.filter((f) => f.kind === "payout").reduce((s, f) => s + f.amount, 0)
     : 0
-  const fee = showOfflineDemo
-    ? FLOWS.filter((f) => f.kind === "fee").reduce((s, f) => s + f.amount, 0)
-    : 0
-  const last = FLOWS[0]
+  const last = receiptFlows[0] ?? FLOWS[0]
 
   const totalPayout = liveData ? liveData.totalAmountCash : payout
   const totalWeight = liveData ? liveData.totalWeightKg : 0
-  const totalPoints = liveData ? liveData.totalPoints : 0
 
   return (
     <div className="flex flex-col gap-6">
       <PageHead
-        eyebrow="DÒNG TIỀN"
-        title="Lịch sử tiền vào tài khoản"
-        body="Lưu trữ biên nhận các lượt bàn giao đã xác nhận, tổng giá trị đối tác thanh toán và Điểm Xanh tích lũy của bạn."
+        eyebrow="BIÊN NHẬN & GIAO DỊCH"
+        title="Lịch sử biên nhận bàn giao"
+        body="Lưu trữ các biên nhận bàn giao phế liệu đã xác nhận hoàn tất và tổng giá trị đối tác thanh toán trực tiếp."
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat
-          label="Đã nhận"
+          label="Giá trị biên nhận"
           value={fmtVnd(totalPayout)}
-          note={
-            fromBackend
-              ? "Tổng tiền thu được từ các đơn hoàn tất"
-              : "Tổng tiền về tài khoản"
-          }
+          note="Tổng tiền đối tác thanh toán trực tiếp"
         />
         <Stat
-          label={liveData || liveAuth ? "Tổng rác bàn giao" : "Phí nền tảng"}
-          value={liveData || liveAuth ? `${totalWeight.toLocaleString("vi-VN")} kg` : fmtVnd(fee)}
-          note={
-            liveData || liveAuth
-              ? `Tích lũy ${totalPoints} điểm xanh`
-              : "Trích trên giao dịch thành công"
-          }
+          label="Tổng rác bàn giao"
+          value={`${totalWeight.toLocaleString("vi-VN")} kg`}
+          note="Khối lượng phế liệu đã xác nhận"
         />
         <Stat
           label="Giao dịch gần nhất"
@@ -103,7 +90,7 @@ export default function Transactions() {
             `${item.requestCode} ${item.counterpartName} ${item.receiptId}`.toLowerCase().includes(kw),
         )
         const pagedLive = paginateItems(liveItems, page, pageSize)
-        const offlineItems = FLOWS.filter(
+        const offlineItems = receiptFlows.filter(
           (f) => !kw || `${f.handoverId} ${f.party} ${f.note} ${KIND_LABEL[f.kind]}`.toLowerCase().includes(kw),
         )
         const pagedOffline = paginateItems(offlineItems, page, pageSize)
@@ -126,10 +113,10 @@ export default function Transactions() {
               <TableSkeleton rows={4} />
             ) : liveData && liveData.items.length > 0 ? (
               <>
-                <Table head={["Ngày", "Mã đơn", "Đối tác", "Khối lượng", "Số tiền nhận", "Điểm xanh", "Thao tác"]}>
+                <Table head={["Ngày", "Mã đơn", "Đối tác", "Khối lượng", "Số tiền nhận", "Thao tác"]}>
                   {pagedLive.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-6 text-center text-xs text-muted">
+                      <td colSpan={6} className="px-4 py-6 text-center text-xs text-muted">
                         Không có giao dịch nào khớp từ khóa tìm kiếm.
                       </td>
                     </tr>
@@ -149,20 +136,26 @@ export default function Transactions() {
                         <Td className="font-semibold tabular-nums text-brand">
                           {fmtVnd(item.totalAmountCash)}
                         </Td>
-                        <Td className="tabular-nums font-semibold text-mint-leaf">
-                          +{item.pointsAwarded} pts
-                        </Td>
                         <Td className="whitespace-nowrap">
                           <div className="flex flex-wrap gap-2 text-xs font-semibold">
-                            <Link to="/user/receipt" className="text-brand-deep hover:underline">
+                            <Link
+                              to={`/user/receipt?orderId=${encodeURIComponent(item.requestId)}`}
+                              className="text-brand-deep hover:underline"
+                            >
                               Biên nhận &amp; Đánh giá
                             </Link>
                             <span className="text-line">·</span>
-                            <Link to="/chat" className="text-brand hover:underline">
+                            <Link
+                              to={`/chat?orderId=${encodeURIComponent(item.requestId)}`}
+                              className="text-brand hover:underline"
+                            >
                               Chat
                             </Link>
                             <span className="text-line">·</span>
-                            <Link to="/feedback" className="text-warn hover:underline">
+                            <Link
+                              to={`/feedback?orderId=${encodeURIComponent(item.requestId)}`}
+                              className="text-warn hover:underline"
+                            >
                               Khiếu nại
                             </Link>
                           </div>
@@ -182,7 +175,7 @@ export default function Transactions() {
             ) : !isSsrSmokeTest() ? (
               <p className="card px-5 py-8 text-center text-sm text-muted">
                 Tài khoản chưa có giao dịch hoàn tất nào trên hệ thống. Khi bạn xác nhận biên nhận thu
-                gom, tiền thanh toán và Điểm Xanh sẽ tự động ghi nhận tại đây.
+                gom, thông tin biên nhận và giá trị thanh toán sẽ tự động ghi nhận tại đây.
               </p>
             ) : (
               <>
@@ -243,9 +236,10 @@ export default function Transactions() {
       })()}
 
       <p className="max-w-[70ch] text-sm leading-6 text-muted">
-        Nếu một giao dịch có dòng &quot;Thu vào từ đối tác&quot; mà thiếu dòng &quot;Bắn ra về
-        tài khoản&quot;, tiền đang bị giữ lại do chưa đối chiếu xong. Báo giúp chúng
-        tôi bằng mã giao dịch ở cột Mã.
+        Tiền mua phế liệu được cơ sở thu mua thanh toán trực tiếp 100% khi bàn giao
+        (nền tảng không giữ tiền hộ và không thu phí hoa hồng). Nếu phát hiện sai
+        lệch khối lượng hoặc thanh toán, bạn có thể bấm &ldquo;Khiếu nại&rdquo; trên
+        dòng giao dịch tương ứng trong vòng 7 ngày.
       </p>
     </div>
   )

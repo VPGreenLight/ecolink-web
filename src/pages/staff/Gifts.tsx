@@ -67,6 +67,30 @@ export default function Gifts() {
   const [formErr, setFormErr] = useState("")
   const [actionErr, setActionErr] = useState("")
 
+  // Modal sửa đầy đủ thông tin quà (PUT /api/v1/staff/gifts/{id})
+  const [editGift, setEditGift] = useState<GiftItemDto | null>(null)
+  const [editName, setEditName] = useState("")
+  const [editType, setEditType] = useState<"Physical" | "Voucher">("Physical")
+  const [editPoints, setEditPoints] = useState(200)
+  const [editDesc, setEditDesc] = useState("")
+  const [editImgUrl, setEditImgUrl] = useState("")
+  const [uploadingEditImg, setUploadingEditImg] = useState(false)
+  const [editErr, setEditErr] = useState("")
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  // Modal nhập kho / mã E-Voucher (POST /vouchers/import hoặc /restock)
+  const [restockGift, setRestockGift] = useState<GiftItemDto | null>(null)
+  const [restockQty, setRestockQty] = useState(10)
+  const [voucherCodesText, setVoucherCodesText] = useState("")
+  const [restockErr, setRestockErr] = useState("")
+  const [savingRestock, setSavingRestock] = useState(false)
+
+  // Modal xác nhận hủy đơn đổi quà & hoàn điểm
+  const [cancelRedTarget, setCancelRedTarget] = useState<RedemptionDto | null>(null)
+  const [cancelRedReason, setCancelRedReason] = useState("Nhân viên hủy đơn và hoàn điểm")
+  const [cancelRedErr, setCancelRedErr] = useState("")
+  const [savingCancelRed, setSavingCancelRed] = useState(false)
+
   const loadGifts = async () => {
     setLoading(true)
     try {
@@ -279,8 +303,8 @@ export default function Gifts() {
                           setFormErr(`Tệp "${file.name}" không phải ảnh JPG, PNG hoặc WEBP hợp lệ.`)
                           return
                         }
-                        if (file.size > 10 * 1024 * 1024) {
-                          setFormErr(`Ảnh "${file.name}" vượt quá dung lượng tối đa 10 MB.`)
+                        if (file.size > 5 * 1024 * 1024) {
+                          setFormErr(`Ảnh "${file.name}" vượt quá dung lượng tối đa 5 MB.`)
                           return
                         }
                         setUploadingImg(true)
@@ -475,23 +499,30 @@ export default function Gifts() {
                           </button>
                           <button
                             type="button"
-                            onClick={async () => {
-                              try {
-                                if (g.type === "Voucher") {
-                                  await importGiftVouchers(g.id, { quantity: 10 })
-                                  setFlash(`Đã nhập thêm 10 mã E-Voucher cho "${g.name}".`)
-                                } else {
-                                  await restockStaffGift(g.id, 10)
-                                  setFlash(`Đã nhập thêm 10 món vào kho "${g.name}".`)
-                                }
-                                await loadAll()
-                              } catch (err) {
-                                setActionErr(err instanceof Error ? err.message : "Nhập kho thất bại.")
-                              }
+                            onClick={() => {
+                              setEditGift(g)
+                              setEditName(g.name)
+                              setEditType(g.type === "Voucher" ? "Voucher" : "Physical")
+                              setEditPoints(g.pointsRequired)
+                              setEditDesc(g.description ?? "")
+                              setEditImgUrl(g.imageUrl ?? "")
+                              setEditErr("")
+                            }}
+                            className="text-ink hover:underline"
+                          >
+                            Sửa chi tiết
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRestockGift(g)
+                              setRestockQty(10)
+                              setVoucherCodesText("")
+                              setRestockErr("")
                             }}
                             className="text-brand hover:underline"
                           >
-                            +10 kho
+                            {g.type === "Voucher" ? "Nhập mã / kho" : "Nhập thêm kho"}
                           </button>
                           <button
                             type="button"
@@ -602,17 +633,10 @@ export default function Gifts() {
                           </button>
                           <button
                             type="button"
-                            onClick={async () => {
-                              try {
-                                await fulfillStaffRedemption(r.id, {
-                                  action: "Cancel",
-                                  reason: "Nhân viên hủy đơn và hoàn điểm",
-                                })
-                                setFlash(`Đã hủy và hoàn điểm đơn ${r.redemptionCode}.`)
-                                await loadAll()
-                              } catch (err) {
-                                setActionErr(err instanceof Error ? err.message : "Hủy thất bại.")
-                              }
+                            onClick={() => {
+                              setCancelRedTarget(r)
+                              setCancelRedReason("Nhân viên hủy đơn và hoàn điểm")
+                              setCancelRedErr("")
                             }}
                             className="text-warn hover:underline"
                           >
@@ -695,6 +719,363 @@ export default function Gifts() {
             </tr>
           ))}
         </Table>
+      )}
+
+      {editGift && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4"
+        >
+          <form
+            noValidate
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (savingEdit) return
+              setEditErr("")
+              const cleanName = editName.trim()
+              if (cleanName.length < 2 || cleanName.length > 150) {
+                setEditErr("Tên quà tặng phải từ 2 đến 150 ký tự.")
+                return
+              }
+              if (!Number.isInteger(editPoints) || editPoints <= 0) {
+                setEditErr("Điểm đổi phải là số nguyên dương lớn hơn 0.")
+                return
+              }
+              if (editDesc.trim().length > 5000) {
+                setEditErr("Mô tả quà tặng tối đa 5000 ký tự.")
+                return
+              }
+              setSavingEdit(true)
+              try {
+                await updateStaffGift(editGift.id, {
+                  name: cleanName,
+                  type: editType,
+                  description: editDesc.trim() || null,
+                  imageUrl: editImgUrl.trim() || null,
+                  pointsRequired: editPoints,
+                  stockQuantity: Math.max(0, editGift.stockQuantity),
+                })
+                setFlash(`Đã cập nhật thông tin chi tiết cho "${cleanName}".`)
+                setEditGift(null)
+                await loadAll()
+              } catch (err) {
+                setEditErr(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Cập nhật quà tặng thất bại.")
+              } finally {
+                setSavingEdit(false)
+              }
+            }}
+            className="card flex max-h-[90vh] w-full max-w-lg flex-col gap-4 overflow-y-auto bg-white p-6 shadow-xl"
+          >
+            <h2 className="text-lg font-bold text-ink">Chỉnh sửa quà tặng · {editGift.name}</h2>
+            <Field label="Tên quà tặng" required>
+              <input
+                className="input"
+                value={editName}
+                onChange={(e) => {
+                  setEditName(e.target.value)
+                  setEditErr("")
+                }}
+              />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Loại quà" required>
+                <select
+                  className="input"
+                  value={editType}
+                  onChange={(e) => setEditType(e.target.value as "Physical" | "Voucher")}
+                >
+                  <option value="Physical">Quà vật lý (Physical)</option>
+                  <option value="Voucher">Phiếu E-Voucher (Voucher)</option>
+                </select>
+              </Field>
+              <Field label="Điểm đổi" required>
+                <input
+                  className="input tabular-nums"
+                  type="number"
+                  min={1}
+                  value={editPoints}
+                  onChange={(e) => setEditPoints(Number(e.target.value))}
+                />
+              </Field>
+            </div>
+            <Field label="Mô tả chi tiết">
+              <textarea
+                rows={3}
+                className="input h-auto py-2"
+                value={editDesc}
+                onChange={(e) => setEditDesc(e.target.value)}
+              />
+            </Field>
+            <Field label="Ảnh quà tặng" hint="Hỗ trợ tải ảnh tối đa 5 MB hoặc dán URL trực tiếp.">
+              <div className="flex gap-2">
+                <input
+                  className="input flex-1"
+                  value={editImgUrl}
+                  onChange={(e) => setEditImgUrl(e.target.value)}
+                />
+                <label className="btn-outline h-10 shrink-0 cursor-pointer px-3 text-xs">
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                    className="sr-only"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      e.target.value = ""
+                      if (!file) return
+                      setEditErr("")
+                      const validType =
+                        /^image\/(jpeg|jpg|png|webp)$/i.test(file.type) ||
+                        /\.(jpe?g|png|webp)$/i.test(file.name)
+                      if (!validType) {
+                        setEditErr(`Tệp "${file.name}" không phải ảnh JPG, PNG hoặc WEBP hợp lệ.`)
+                        return
+                      }
+                      if (file.size > 5 * 1024 * 1024) {
+                        setEditErr(`Ảnh "${file.name}" vượt quá dung lượng tối đa 5 MB.`)
+                        return
+                      }
+                      setUploadingEditImg(true)
+                      try {
+                        const upRes = await uploadStaffGiftImage(file)
+                        if (upRes.data?.fileUrl) setEditImgUrl(upRes.data.fileUrl)
+                      } catch (err) {
+                        setEditErr(err instanceof Error ? err.message : "Tải ảnh thất bại.")
+                      } finally {
+                        setUploadingEditImg(false)
+                      }
+                    }}
+                  />
+                  {uploadingEditImg ? "Đang tải..." : "Tải ảnh"}
+                </label>
+              </div>
+            </Field>
+            {editErr && (
+              <p role="alert" className="text-[13px] font-semibold text-warn">
+                {editErr}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 border-t border-line-soft pt-3">
+              <button
+                type="button"
+                disabled={savingEdit}
+                onClick={() => setEditGift(null)}
+                className="btn-ghost h-10 px-4 text-xs"
+              >
+                Huỷ
+              </button>
+              <button
+                type="submit"
+                disabled={savingEdit || uploadingEditImg}
+                className="btn-primary h-10 px-5 text-xs"
+              >
+                {savingEdit ? "Đang lưu..." : "Lưu thay đổi"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {restockGift && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4"
+        >
+          <form
+            noValidate
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (savingRestock) return
+              setRestockErr("")
+              setSavingRestock(true)
+              try {
+                if (restockGift.type === "Voucher") {
+                  const rawCodes = voucherCodesText
+                    .split(/[\n,;]+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                  if (rawCodes.some((c) => c.length > 80)) {
+                    setRestockErr("Mỗi mã E-Voucher không được vượt quá 80 ký tự.")
+                    setSavingRestock(false)
+                    return
+                  }
+                  if (rawCodes.length === 0 && (!Number.isInteger(restockQty) || restockQty <= 0)) {
+                    setRestockErr("Vui lòng dán danh sách mã Voucher hoặc nhập số lượng > 0.")
+                    setSavingRestock(false)
+                    return
+                  }
+                  const res = await importGiftVouchers(
+                    restockGift.id,
+                    rawCodes.length > 0 ? { codes: rawCodes } : { quantity: restockQty },
+                  )
+                  setFlash(
+                    `Đã nhập thêm ${res.data?.importedCount ?? (rawCodes.length || restockQty)} mã E-Voucher cho "${restockGift.name}" (tồn mới: ${res.data?.newStockQuantity ?? "đã cập nhật"}).`,
+                  )
+                } else {
+                  if (!Number.isInteger(restockQty) || restockQty <= 0) {
+                    setRestockErr("Số lượng nhập kho phải lớn hơn 0.")
+                    setSavingRestock(false)
+                    return
+                  }
+                  await restockStaffGift(restockGift.id, restockQty)
+                  setFlash(`Đã nhập thêm ${restockQty} món vào kho "${restockGift.name}".`)
+                }
+                setRestockGift(null)
+                await loadAll()
+              } catch (err) {
+                setRestockErr(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Nhập kho thất bại.")
+              } finally {
+                setSavingRestock(false)
+              }
+            }}
+            className="card flex w-full max-w-md flex-col gap-4 bg-white p-6 shadow-xl"
+          >
+            <h2 className="text-lg font-bold text-ink">
+              {restockGift.type === "Voucher" ? "Nhập mã E-Voucher" : "Nhập bổ sung kho"} · {restockGift.name}
+            </h2>
+            {restockGift.type === "Voucher" ? (
+              <>
+                <Field
+                  label="Danh sách mã E-Voucher (tùy chọn, mỗi dòng hoặc dấu phẩy 1 mã)"
+                  hint="Để trống nếu muốn nhập tự động theo số lượng bên dưới."
+                >
+                  <textarea
+                    rows={4}
+                    className="input h-auto py-2 font-mono text-xs"
+                    placeholder={"ECO-VOUCHER-001\nECO-VOUCHER-002"}
+                    value={voucherCodesText}
+                    onChange={(e) => {
+                      setVoucherCodesText(e.target.value)
+                      setRestockErr("")
+                    }}
+                  />
+                </Field>
+                <Field label="Hoặc nhập số lượng mã sinh tự động">
+                  <input
+                    className="input tabular-nums"
+                    type="number"
+                    min={1}
+                    max={100000}
+                    value={restockQty}
+                    onChange={(e) => setRestockQty(Number(e.target.value))}
+                  />
+                </Field>
+              </>
+            ) : (
+              <Field label="Số lượng nhập thêm vào kho" required>
+                <input
+                  className="input tabular-nums"
+                  type="number"
+                  min={1}
+                  max={100000}
+                  value={restockQty}
+                  onChange={(e) => setRestockQty(Number(e.target.value))}
+                />
+              </Field>
+            )}
+            {restockErr && (
+              <p role="alert" className="text-[13px] font-semibold text-warn">
+                {restockErr}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 border-t border-line-soft pt-3">
+              <button
+                type="button"
+                disabled={savingRestock}
+                onClick={() => setRestockGift(null)}
+                className="btn-ghost h-10 px-4 text-xs"
+              >
+                Huỷ
+              </button>
+              <button
+                type="submit"
+                disabled={savingRestock}
+                className="btn-primary h-10 px-5 text-xs"
+              >
+                {savingRestock ? "Đang nhập..." : "Xác nhận nhập"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {cancelRedTarget && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4"
+        >
+          <form
+            noValidate
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (savingCancelRed) return
+              const cleanReason = cancelRedReason.trim()
+              if (cleanReason.length < 3 || cleanReason.length > 500) {
+                setCancelRedErr("Vui lòng nhập lý do hủy đơn đổi quà từ 3 đến 500 ký tự.")
+                return
+              }
+              setSavingCancelRed(true)
+              setCancelRedErr("")
+              try {
+                await fulfillStaffRedemption(cancelRedTarget.id, {
+                  action: "Cancel",
+                  reason: cleanReason,
+                })
+                setFlash(`Đã hủy và hoàn điểm cho đơn ${cancelRedTarget.redemptionCode}.`)
+                setCancelRedTarget(null)
+                await loadAll()
+              } catch (err) {
+                setCancelRedErr(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Hủy đơn đổi quà thất bại.")
+              } finally {
+                setSavingCancelRed(false)
+              }
+            }}
+            className="card flex w-full max-w-md flex-col gap-4 bg-white p-6 shadow-xl"
+          >
+            <h2 className="text-lg font-bold text-ink">
+              Xác nhận hủy đơn đổi quà {cancelRedTarget.redemptionCode}
+            </h2>
+            <p className="text-xs leading-5 text-body">
+              Hành động này sẽ hoàn lại <b>{cancelRedTarget.pointsSpent.toLocaleString("vi-VN")} điểm</b> cho{" "}
+              <b>{cancelRedTarget.userName || "thành viên"}</b> và cộng trả tồn kho.
+            </p>
+            <Field label="Lý do hủy đơn" required>
+              <textarea
+                rows={3}
+                className="input h-auto py-2"
+                value={cancelRedReason}
+                onChange={(e) => {
+                  setCancelRedReason(e.target.value)
+                  setCancelRedErr("")
+                }}
+              />
+            </Field>
+            {cancelRedErr && (
+              <p role="alert" className="text-[13px] font-semibold text-warn">
+                {cancelRedErr}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 border-t border-line-soft pt-3">
+              <button
+                type="button"
+                disabled={savingCancelRed}
+                onClick={() => setCancelRedTarget(null)}
+                className="btn-ghost h-10 px-4 text-xs"
+              >
+                Đóng
+              </button>
+              <button
+                type="submit"
+                disabled={savingCancelRed}
+                className="btn-primary h-10 bg-warn px-5 text-xs hover:bg-warn"
+              >
+                {savingCancelRed ? "Đang xử lý..." : "Xác nhận hủy & hoàn điểm"}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
     </div>
   )

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Field, FormRequiredLegend, PageHead, Status, Table, TableSkeleton, Td } from "@/components/admin/ui"
-import { WASTE_GROUPS, WASTES, VND } from "@/data/waste"
+import { WASTES } from "@/data/waste"
 import { fmtInt } from "@/data/ops"
 import { ApiError } from "@/lib/api"
 import { initApiLoading, initApiState } from "@/lib/hydration"
@@ -17,13 +17,10 @@ type CategoryRow = {
   id: string
   code: string
   name: string
-  group: string
   standardBinColor: string
   description: string
-  price: number
   recyclable: boolean
   rule: string
-  prep: string
   status: "Active" | "Inactive" | string
   isBackend: boolean
   dirty?: boolean
@@ -37,13 +34,10 @@ function mapDtoToRow(c: WasteCategoryItemDto): CategoryRow {
     id: c.id,
     code: c.code,
     name: c.name,
-    group: staticMatch?.group ?? "Khác",
     standardBinColor: c.standardBinColor,
     description: c.description ?? staticMatch?.rule ?? "",
-    price: staticMatch?.price ?? (c.isRecyclable ? 4000 : 0),
     recyclable: c.isRecyclable,
     rule: c.description ?? staticMatch?.rule ?? "Theo quy chuẩn phân loại EcoLink",
-    prep: staticMatch?.prep ?? "Làm sạch và phân loại riêng.",
     status: c.status,
     isBackend: true,
     dirty: false,
@@ -54,13 +48,10 @@ const FALLBACK_ROWS: CategoryRow[] = WASTES.map((w) => ({
   id: w.id,
   code: w.id,
   name: w.name,
-  group: w.group,
   standardBinColor: "Cam",
   description: w.rule,
-  price: w.price,
   recyclable: w.recyclable,
   rule: w.rule,
-  prep: w.prep,
   status: "Active",
   isBackend: false,
   dirty: false,
@@ -84,8 +75,14 @@ export default function Categories() {
         if (!active || list.length === 0) return
         setRows(list.map(mapDtoToRow))
       })
-      .catch(() => {
-        // Fallback nếu backend chưa chạy
+      .catch((err) => {
+        if (active && hasLiveBackendAuth()) {
+          setTableErr(
+            err instanceof ApiError
+              ? err.message
+              : "Không tải được danh mục rác từ máy chủ.",
+          )
+        }
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -178,15 +175,20 @@ export default function Categories() {
       <PageHead
         eyebrow="CẤU HÌNH"
         title="Danh mục rác hệ thống"
-        body="Giá và luật xử lý ở đây là nguồn cho trang tra cứu, hướng dẫn phân loại và bảng giá của cơ sở thu mua. Sửa một chỗ là cả ba nơi cùng đổi."
+        body="Quản lý danh mục rác chuẩn toàn hệ thống (mã định danh, tên hiển thị, màu thùng chuẩn, phân loại tái chế và mô tả hướng dẫn). Mọi danh mục đang Active được đồng bộ trực tiếp sang Tra cứu, Đặt lịch thu gom, Bảng giá cơ sở và Gán nhãn AI."
       />
 
       {loading ? (
         <TableSkeleton rows={5} />
       ) : (
-      <Table head={["Tên loại rác", "Màu thùng / Nhóm", "Giá tham khảo", "Thu gom & Trạng thái", "Mô tả / Luật xử lý"]}>
+      <Table head={["Mã danh mục", "Tên loại rác", "Màu thùng chuẩn", "Phân loại & Trạng thái", "Mô tả / Luật xử lý"]}>
         {rows.map((w) => (
           <tr key={w.id} className={w.status === "Inactive" ? "opacity-60" : undefined}>
+            <Td className="whitespace-nowrap">
+              <code className="rounded bg-surface-2 px-2 py-1 font-mono text-xs font-semibold text-ink">
+                {w.code}
+              </code>
+            </Td>
             <Td className="font-semibold text-ink">
               <input
                 className="input h-9 font-semibold text-ink"
@@ -194,48 +196,15 @@ export default function Categories() {
                 onChange={(e) => set(w.id, { name: e.target.value })}
                 aria-label={`Tên loại rác ${w.code}`}
               />
-              <span className="mt-1 block text-[12px] font-normal text-muted">{w.code}</span>
             </Td>
             <Td>
-              <div className="flex flex-col gap-1.5">
-                <input
-                  className="input h-8 w-32 text-[13px]"
-                  value={w.standardBinColor}
-                  onChange={(e) => set(w.id, { standardBinColor: e.target.value })}
-                  aria-label={`Màu thùng của ${w.name}`}
-                  placeholder="Màu thùng"
-                />
-                <select
-                  className="input h-8 w-32 text-[12px]"
-                  value={w.group}
-                  onChange={(e) => set(w.id, { group: e.target.value })}
-                  aria-label={`Nhóm của ${w.name}`}
-                >
-                  {WASTE_GROUPS.filter((g) => g !== WASTE_GROUPS[0]).map((g) => (
-                    <option key={g} value={g}>
-                      {g}
-                    </option>
-                  ))}
-                  {!WASTE_GROUPS.includes(w.group as (typeof WASTE_GROUPS)[number]) && (
-                    <option value={w.group}>{w.group}</option>
-                  )}
-                </select>
-              </div>
-            </Td>
-            <Td>
-              <div className="flex items-center gap-2">
-                <input
-                  className="input h-9 w-24 tabular-nums"
-                  type="number"
-                  min={0}
-                  step={100}
-                  value={w.price}
-                  disabled={!w.recyclable}
-                  onChange={(e) => set(w.id, { price: Number(e.target.value) })}
-                  aria-label={`Giá của ${w.name}`}
-                />
-                <span className="whitespace-nowrap text-[13px] text-muted">đ/kg</span>
-              </div>
+              <input
+                className="input h-9 w-36 text-[13px]"
+                value={w.standardBinColor}
+                onChange={(e) => set(w.id, { standardBinColor: e.target.value })}
+                aria-label={`Màu thùng của ${w.name}`}
+                placeholder="Màu thùng"
+              />
             </Td>
             <Td>
               <div className="flex flex-col gap-1.5">
@@ -247,7 +216,7 @@ export default function Categories() {
                     onChange={(e) => set(w.id, { recyclable: e.target.checked })}
                   />
                   <span className="text-[13px] text-body">
-                    {w.recyclable ? "Tái chế" : "Rác thường"}
+                    {w.recyclable ? "Có thu mua tái chế" : "Rác hướng dẫn xử lý"}
                   </span>
                 </label>
                 <button
@@ -286,9 +255,8 @@ export default function Categories() {
           {saving ? "Đang lưu..." : "Lưu thay đổi"}
         </button>
         <p className="text-[13px] text-muted">
-          Tổng {fmtInt(rows.filter((w) => w.recyclable && w.status === "Active").length)} loại thu gom được đang bật,{" "}
-          {fmtInt(rows.filter((w) => !w.recyclable || w.status !== "Active").length)} loại khác. Giá
-          cao nhất {VND(Math.max(0, ...rows.map((w) => w.price)))}/kg.
+          Tổng {fmtInt(rows.filter((w) => w.recyclable && w.status === "Active").length)} danh mục thu mua tái chế đang bật,{" "}
+          {fmtInt(rows.filter((w) => !w.recyclable || w.status !== "Active").length)} danh mục khác.
         </p>
         {flash && (
           <p role="status" className="text-[13px] font-semibold text-brand">
@@ -332,13 +300,10 @@ export default function Categories() {
                   id: `local-${Date.now().toString(36)}`,
                   code: payload.code,
                   name: payload.name,
-                  group: "Khác",
                   standardBinColor: payload.standardBinColor,
                   description: payload.description ?? "",
-                  price: 2000,
                   recyclable: payload.isRecyclable,
                   rule: payload.description ?? "",
-                  prep: "Làm sạch và phân loại riêng.",
                   status: "Active",
                   isBackend: false,
                 },

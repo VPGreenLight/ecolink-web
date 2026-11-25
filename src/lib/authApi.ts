@@ -48,6 +48,7 @@ export interface BackendUserInfoDto {
   currentGreenPoints: number
   treeLevel: number
   totalRecycledKg: number
+  permissions?: string[]
 }
 
 export interface BackendAuthResponseDto {
@@ -96,20 +97,44 @@ export const SEEDED_DEMO_ACCOUNTS: readonly SeededDemoAccount[] = [
     displayName: "Nguyễn Văn Dân",
   },
   {
-    label: "Cơ sở thu mua",
+    label: "Công dân VIP",
+    username: "citizen_vip",
+    email: "citizen_vip@ecolink.vn",
+    password: "citizen123",
+    role: "user",
+    displayName: "Trần Minh Anh (VIP)",
+  },
+  {
+    label: "Vựa EcoGreen",
     username: "recycler",
     email: "recycler@ecolink.vn",
     password: "recycler123",
     role: "recycler",
-    displayName: "Trần Thu Gom (Vựa phế liệu EcoGreen)",
+    displayName: "Trần Thu Gom (Vựa phế liệu EcoGreen Hòa Lạc)",
   },
   {
-    label: "Nhân viên",
+    label: "Vựa đủ chuẩn PRO (52★)",
+    username: "recycler_pro",
+    email: "recycler_pro@ecolink.vn",
+    password: "recycler123",
+    role: "recycler",
+    displayName: "Lê Minh Hoàng (Tái chế Xanh Hòa Lạc Pro)",
+  },
+  {
+    label: "Nhân viên (7 quyền)",
     username: "staff",
     email: "staff@ecolink.vn",
     password: "staff123",
     role: "staff",
     displayName: "Lê Thu Hà",
+  },
+  {
+    label: "Nhân viên (2 quyền)",
+    username: "staff_support",
+    email: "staff_support@ecolink.vn",
+    password: "staff123",
+    role: "staff",
+    displayName: "Phạm Quốc Bảo",
   },
   {
     label: "Quản trị viên",
@@ -125,13 +150,16 @@ export const SEEDED_DEMO_ACCOUNTS: readonly SeededDemoAccount[] = [
 const OFFLINE_LEGACY_ALIASES: Record<string, { role: Role; name: string; email: string }> = {
   user: { role: "user", name: "Nguyễn Đức", email: "citizen@ecolink.vn" },
   citizen: { role: "user", name: "Nguyễn Văn Dân", email: "citizen@ecolink.vn" },
-  recycler: { role: "recycler", name: "Trần Thu Gom (Vựa phế liệu EcoGreen)", email: "recycler@ecolink.vn" },
+  citizen_vip: { role: "user", name: "Trần Minh Anh (VIP)", email: "citizen_vip@ecolink.vn" },
+  recycler: { role: "recycler", name: "Trần Thu Gom (Vựa phế liệu EcoGreen Hòa Lạc)", email: "recycler@ecolink.vn" },
+  recycler_pro: { role: "recycler", name: "Lê Minh Hoàng (Tái chế Xanh Hòa Lạc Pro)", email: "recycler_pro@ecolink.vn" },
   collector: {
     role: "recycler",
-    name: "Trần Thu Gom (Vựa phế liệu EcoGreen)",
+    name: "Trần Thu Gom (Vựa phế liệu EcoGreen Hòa Lạc)",
     email: "recycler@ecolink.vn",
   },
   staff: { role: "staff", name: "Lê Thu Hà", email: "staff@ecolink.vn" },
+  staff_support: { role: "staff", name: "Phạm Quốc Bảo", email: "staff_support@ecolink.vn" },
   admin: { role: "admin", name: "Quản trị viên EcoLink", email: "admin@ecolink.vn" },
 }
 
@@ -183,6 +211,7 @@ function persistBackendAuth(dto: BackendAuthResponseDto, fallbackEmail?: string)
     currentGreenPoints: user?.currentGreenPoints ?? 0,
     treeLevel: user?.treeLevel ?? 1,
     totalRecycledKg: user?.totalRecycledKg ?? 0,
+    ...(Array.isArray(user?.permissions) ? { permissions: user.permissions } : {}),
     fromBackend: true,
   }
 
@@ -665,6 +694,7 @@ export async function fetchCurrentUserProfile(): Promise<BackendUserInfoDto | nu
         currentGreenPoints: res.data.currentGreenPoints,
         treeLevel: res.data.treeLevel,
         totalRecycledKg: res.data.totalRecycledKg,
+        ...(Array.isArray(res.data.permissions) ? { permissions: res.data.permissions } : {}),
         fromBackend: true,
       })
       return res.data
@@ -697,6 +727,7 @@ export async function updateCurrentUserProfile(input: {
       name: res.data?.fullName || cleanName,
       phoneNumber: res.data?.phoneNumber ?? cleanPhone ?? null,
       avatarUrl: res.data?.avatarUrl ?? input.avatarUrl,
+      ...(Array.isArray(res.data?.permissions) ? { permissions: res.data.permissions } : {}),
       fromBackend: true,
     })
 

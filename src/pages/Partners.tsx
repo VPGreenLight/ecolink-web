@@ -27,6 +27,7 @@ export default function Partners() {
   const [livePage, setLivePage] = useState(1)
   const livePageSize = FIXED_PAGE_SIZE
   const [liveRecyclers, setLiveRecyclers] = useState<CollectionPartnerDto[]>([])
+  const [liveConnected, setLiveConnected] = useState(false)
   const [loadingLive, setLoadingLive] = useState(() => initApiLoading(true))
   const [reviewSummaries, setReviewSummaries] = useState<Record<string, RecyclerReviewsSummaryDto>>({})
   const [openReviewId, setOpenReviewId] = useState<string | null>(null)
@@ -49,18 +50,28 @@ export default function Partners() {
   }
 
   useEffect(() => {
+    if (isSsrSmokeTest()) return
     const controller = new AbortController()
+    const matchedPreset =
+      region !== REGIONS[0]
+        ? LOCATION_PRESETS.find((p) =>
+            p.label.toLowerCase().includes(region.toLowerCase().replace(/^tp\.\s*/i, "")),
+          ) ?? LOCATION_PRESETS[0]
+        : LOCATION_PRESETS[0]
+
+    setLoadingLive(true)
     searchNearbyRecyclers(
       {
-        lat: LOCATION_PRESETS[0].lat,
-        lng: LOCATION_PRESETS[0].lng,
-        radiusKm: 25,
+        lat: matchedPreset.lat,
+        lng: matchedPreset.lng,
+        radiusKm: 50,
       },
       controller.signal,
     )
       .then((res) => {
-        if (!controller.signal.aborted && res.data.items.length > 0) {
-          setLiveRecyclers(res.data.items)
+        if (!controller.signal.aborted) {
+          setLiveRecyclers(res.data.items ?? [])
+          setLiveConnected(true)
         }
       })
       .catch(() => {
@@ -70,7 +81,27 @@ export default function Partners() {
         if (!controller.signal.aborted) setLoadingLive(false)
       })
     return () => controller.abort()
-  }, [])
+  }, [region])
+
+  const filteredLiveRecyclers = useMemo(() => {
+    const q = debouncedQuery.trim().toLowerCase()
+    const matKeyword = material === MATERIAL_TYPES[0] ? "" : material.replace(/ &.*/, "").toLowerCase()
+    return liveRecyclers.filter((r) => {
+      const matchQuery =
+        !q ||
+        r.facilityName.toLowerCase().includes(q) ||
+        r.address.toLowerCase().includes(q) ||
+        r.materials.some((m) => m.categoryName.toLowerCase().includes(q))
+      const matchMat =
+        !matKeyword ||
+        r.materials.some(
+          (m) =>
+            m.categoryName.toLowerCase().includes(matKeyword) ||
+            m.categoryCode.toLowerCase().includes(matKeyword),
+        )
+      return matchQuery && matchMat
+    })
+  }, [liveRecyclers, debouncedQuery, material])
 
   const filtered = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase()
@@ -89,10 +120,11 @@ export default function Partners() {
   }, [debouncedQuery, material, region])
 
   const pagedPartners = paginateItems(filtered, page, pageSize)
-  const pagedLiveRecyclers = paginateItems(liveRecyclers, livePage, livePageSize)
+  const pagedLiveRecyclers = paginateItems(filteredLiveRecyclers, livePage, livePageSize)
 
   useEffect(() => {
     setPage(1)
+    setLivePage(1)
   }, [debouncedQuery, material, region])
 
   const reset = () => {
@@ -100,7 +132,10 @@ export default function Partners() {
     setMaterial(MATERIAL_TYPES[0])
     setRegion(REGIONS[0])
     setPage(1)
+    setLivePage(1)
   }
+
+  const showOfflineCatalog = isSsrSmokeTest() || (!loadingLive && !liveConnected)
 
   return (
     <div>
@@ -122,15 +157,47 @@ export default function Partners() {
       </section>
 
       <div className="page flex flex-col gap-6 py-10">
+        {/* Filter bar — luôn hiển thị cho cả dữ liệu Backend trực tiếp lẫn chế độ SSR/offline */}
+        <div className="flex flex-col gap-3 rounded-xl border border-sage/30 bg-white p-5 shadow-[0_2px_6px_rgba(0,0,0,0.02)] lg:flex-row lg:items-center">
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Tìm theo tên cơ sở, địa chỉ hoặc vật liệu..."
+            aria-label="Tìm đối tác"
+            className="h-11 min-w-0 flex-1 rounded-lg border border-sage-line bg-surface-2 py-3 pr-4 pl-4 text-sm text-ink placeholder:text-muted focus:outline-none"
+          />
+
+          <Select
+            label="Loại phế liệu"
+            value={material}
+            options={MATERIAL_TYPES}
+            onChange={setMaterial}
+            className="lg:w-60"
+          />
+          <Select
+            label="Khu vực"
+            value={region}
+            options={REGIONS}
+            onChange={setRegion}
+            className="lg:w-56"
+          />
+
+          <button type="button" onClick={reset} className="btn-ghost h-11 shrink-0">
+            <ResetIcon />
+            Đặt lại
+          </button>
+        </div>
+
         {loadingLive && liveRecyclers.length === 0 ? (
           <CardListSkeleton count={3} />
-        ) : liveRecyclers.length > 0 ? (
+        ) : !isSsrSmokeTest() && liveConnected ? (
           <section className="flex flex-col gap-4 rounded-2xl border border-brand/25 bg-surface p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <span className="eyebrow">TRỰC TUYẾN TRÊN BẢN ĐỒ</span>
                 <h2 className="mt-1 text-xl font-bold text-ink">
-                  Cơ sở thu mua đã xác minh đang mở cửa ({liveRecyclers.length})
+                  Cơ sở thu mua đã xác minh ({filteredLiveRecyclers.length})
                 </h2>
               </div>
               <Link to="/map" className="btn-outline h-10 px-4 text-xs">
@@ -139,7 +206,21 @@ export default function Partners() {
               </Link>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            {filteredLiveRecyclers.length === 0 ? (
+              <p className="card p-8 text-center text-sm text-muted">
+                Không tìm thấy cơ sở thu mua nào khớp bộ lọc. Thử chọn khu vực khác hoặc{" "}
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="font-semibold text-brand-deep underline underline-offset-2"
+                >
+                  đặt lại bộ lọc
+                </button>
+                .
+              </p>
+            ) : (
+              <>
+                <div className="grid gap-4 md:grid-cols-2">
               {pagedLiveRecyclers.map((r) => (
                 <div
                   key={r.id}
@@ -213,50 +294,24 @@ export default function Partners() {
                   )}
                 </div>
               ))}
-            </div>
-            <PaginationBar
-              page={livePage}
-              pageSize={livePageSize}
-              totalCount={liveRecyclers.length}
-              onPageChange={setLivePage}
-              itemLabel="cơ sở trực tuyến"
-            />
+              </div>
+              </>
+            )}
+            {filteredLiveRecyclers.length > 0 && (
+              <PaginationBar
+                page={livePage}
+                pageSize={livePageSize}
+                totalCount={filteredLiveRecyclers.length}
+                onPageChange={setLivePage}
+                itemLabel="cơ sở trực tuyến"
+              />
+            )}
           </section>
         ) : null}
 
-        {/* Filter bar (chỉ hiện danh mục nhà máy tĩnh khi chạy SSR test hoặc API chưa có dữ liệu) */}
-        {(isSsrSmokeTest() || (!loadingLive && liveRecyclers.length === 0)) && (
+        {/* Danh mục đối tác chuẩn hóa (SSR smoke check & fallback khi mất mạng) */}
+        {showOfflineCatalog && (
         <>
-        <div className="flex flex-col gap-3 rounded-xl border border-sage/30 bg-white p-5 shadow-[0_2px_6px_rgba(0,0,0,0.02)] lg:flex-row lg:items-center">
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Tìm theo tên nhà máy, chứng chỉ..."
-            aria-label="Tìm đối tác"
-            className="h-11 min-w-0 flex-1 rounded-lg border border-sage-line bg-surface-2 py-3 pr-4 pl-4 text-sm text-ink placeholder:text-muted focus:outline-none"
-          />
-
-          <Select
-            label="Loại phế liệu"
-            value={material}
-            options={MATERIAL_TYPES}
-            onChange={setMaterial}
-            className="lg:w-60"
-          />
-          <Select
-            label="Khu vực"
-            value={region}
-            options={REGIONS}
-            onChange={setRegion}
-            className="lg:w-56"
-          />
-
-          <button type="button" onClick={reset} className="btn-ghost h-11 shrink-0">
-            <ResetIcon />
-            Đặt lại
-          </button>
-        </div>
 
         {/* Result count */}
         <header className="flex items-center justify-between pt-4 pb-2">

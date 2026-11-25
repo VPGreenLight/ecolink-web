@@ -88,8 +88,8 @@ export default function BlogEditor() {
       setErrMsg(`Tệp "${file.name}" không phải ảnh JPG, PNG hoặc WEBP hợp lệ.`)
       return
     }
-    if (file.size > 10 * 1024 * 1024) {
-      setErrMsg(`Ảnh bìa "${file.name}" vượt quá dung lượng tối đa 10 MB.`)
+    if (file.size > 5 * 1024 * 1024) {
+      setErrMsg(`Ảnh bìa "${file.name}" vượt quá dung lượng tối đa 5 MB.`)
       return
     }
     setUploading(true)
@@ -114,8 +114,8 @@ export default function BlogEditor() {
     const cleanContent = content.trim()
     const cleanCover = coverImageUrl.trim()
 
-    if (cleanTitle.length < 5 || cleanTitle.length > 200) {
-      setErrMsg("Tiêu đề bài viết phải từ 5 đến 200 ký tự.")
+    if (cleanTitle.length < 10 || cleanTitle.length > 150) {
+      setErrMsg("Tiêu đề bài viết phải từ 10 đến 150 ký tự.")
       return
     }
     if (cleanSummary.length > 500) {

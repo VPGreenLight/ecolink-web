@@ -2,10 +2,9 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import PlatformPoliciesTab from "@/components/admin/PlatformPoliciesTab"
 import { Empty, Field, FormRequiredLegend, PageHead, Status, TableSkeleton } from "@/components/admin/ui"
-import { GAMIFICATION } from "@/data/ops"
 import { WASTES } from "@/data/waste"
 import { ApiError } from "@/lib/api"
-import { initApiLoading, initApiState } from "@/lib/hydration"
+import { initApiLoading, initApiState, isSsrSmokeTest } from "@/lib/hydration"
 import { hasLiveBackendAuth } from "@/lib/session"
 import {
   fetchDetailedSortingRules,
@@ -129,6 +128,7 @@ export default function Policy() {
   const [busyId, setBusyId] = useState<string | null>(null)
 
   useEffect(() => {
+    if (isSsrSmokeTest()) return
     let active = true
     Promise.all([
       fetchDetailedSortingRules(true),
@@ -153,8 +153,14 @@ export default function Policy() {
           setRules(merged.sort((a, b) => a.categoryCode.localeCompare(b.categoryCode)))
         }
       })
-      .catch(() => {
-        // Fallback giữ nguyên UI khi chưa kết nối Admin hoặc offline
+      .catch((err) => {
+        if (active && hasLiveBackendAuth()) {
+          setErrMsg(
+            err instanceof Error
+              ? err.message
+              : "Không thể tải danh sách quy tắc phân loại từ máy chủ.",
+          )
+        }
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -552,22 +558,15 @@ export default function Policy() {
           <section className="card flex flex-col gap-3 p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-base font-bold text-ink">
-                Điểm thưởng theo khối lượng
+                Quy trình kích hoạt quy tắc phân loại AI
               </h2>
               <Link
                 to="/admin/gamification"
                 className="text-xs font-semibold text-brand underline underline-offset-4"
               >
-                Cấu hình điểm chi tiết →
+                Cấu hình gamification →
               </Link>
             </div>
-            <p className="text-sm leading-6 text-body">
-              Người dùng nhận{" "}
-              <b className="tabular-nums text-ink">{GAMIFICATION.pointsPerKg}</b> điểm
-              xanh cho mỗi kg bàn giao đúng loại đã thẩm định. Đây là con số dùng
-              chung với bảng xếp hạng và đổi thưởng — đổi ở đây thì cả hai nơi đổi
-              theo.
-            </p>
             <Status tone="wait">
               Khi lưu chính sách mới, Rule sẽ ở trạng thái DRAFT; bấm &ldquo;Công bố &amp; Đồng bộ AI&rdquo; để
               kích hoạt chính thức sang AI Service (BR-SRT-03).

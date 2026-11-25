@@ -24,7 +24,7 @@ export const PORTAL_NAV: Record<Role, PortalSection[]> = {
         { to: "/user/handover", label: "Yêu cầu bàn giao" },
         { to: "/user/receipt", label: "Biên nhận & Đánh giá" },
         { to: "/user/payout", label: "Gói dịch vụ & Tắt quảng cáo" },
-        { to: "/user/transactions", label: "Lịch sử dòng tiền" },
+        { to: "/user/transactions", label: "Lịch sử biên nhận" },
       ],
     },
     {
@@ -88,7 +88,10 @@ export const PORTAL_NAV: Record<Role, PortalSection[]> = {
     },
     {
       title: "Khác",
-      items: ACCOUNT,
+      items: [
+        { to: "/staff/account", label: "Hồ sơ và thông báo" },
+        { to: "/staff/account/password", label: "Đổi mật khẩu" },
+      ],
     },
   ],
   admin: [

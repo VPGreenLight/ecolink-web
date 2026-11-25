@@ -29,7 +29,7 @@ import {
 import { fetchMyAiFeedback, type MyAiFeedbackReportDto } from "@/lib/aiCurationApi"
 import { isSsrSmokeTest } from "@/lib/hydration"
 import { openAuthPopup } from "@/lib/popupAuth"
-import { getAccessToken, useSession } from "@/lib/session"
+import { getAccessToken, hasLiveBackendAuth, useSession } from "@/lib/session"
 import { isDiscoverableCategory } from "@/lib/recyclerDiscoveryApi"
 
 /** Trang này giữ bố cục gọn 2 cột (6/6) vừa màn hình 1440x900 và kết nối trực tiếp
@@ -154,7 +154,7 @@ function buildBoxItem(
     badge: meta.badge,
     description:
       guide?.handlingAction ||
-      "Phân loại đúng quy định giúp tăng giá trị thu mua và tích Điểm Xanh.",
+      "Phân loại đúng quy định giúp tăng giá trị thu mua và bảo vệ môi trường.",
     binColor: guide?.standardBinColor || meta.defaultBinColor,
     hazardWarning: guide?.hazardWarning,
     steps: parsedSteps.length > 0 ? parsedSteps : meta.defaultSteps,
@@ -281,7 +281,7 @@ function mapApiToViewModel(
     badge: meta.badge,
     description:
       sortingGuide?.handlingAction ||
-      "Phân loại đúng quy định giúp tăng giá trị thu mua và tích Điểm Xanh.",
+      "Phân loại đúng quy định giúp tăng giá trị thu mua và bảo vệ môi trường.",
     binColor: sortingGuide?.standardBinColor || meta.defaultBinColor,
     hazardWarning: sortingGuide?.hazardWarning,
     steps: steps.length > 0 ? steps : meta.defaultSteps,
@@ -410,9 +410,9 @@ export default function Scanner() {
   const abortRef = useRef<AbortController | null>(null)
 
   const refreshMyFeedbacks = () => {
-    const token = getAccessToken()
-    setHasSession(Boolean(token))
-    if (!token) return
+    const loggedIn = Boolean(getAccessToken()) || hasLiveBackendAuth()
+    setHasSession(loggedIn)
+    if (!loggedIn) return
     fetchMyAiFeedback({ pageSize: 5 })
       .then((res) => {
         if (res.success && Array.isArray(res.data?.items)) {
@@ -551,6 +551,7 @@ export default function Scanner() {
       setScanResult(vm)
       setSelectedObjectIndex(0)
       setPhase("done")
+      refreshMyFeedbacks()
     } catch (err) {
       if (controller.signal.aborted || (err as { name?: string })?.name === "AbortError") {
         return
@@ -697,104 +698,104 @@ export default function Scanner() {
                   <b className="text-warn">Lưu ý an toàn:</b> {activeResult.hazardWarning}
                 </p>
               )}
+            </div>
+          )}
 
-              {hasSession && (
-                <div className="border-t border-line-soft pt-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = !showMyHistory
-                      setShowMyHistory(next)
-                      if (next) refreshMyFeedbacks()
-                    }}
-                    className="flex w-full items-center justify-between text-xs font-semibold text-brand-deep hover:underline"
-                  >
-                    <span>
-                      Lịch sử quét &amp; báo sai AI của tôi ({myScanHistory.length} quét ·{" "}
-                      {myFeedbacks.length} báo sai)
-                    </span>
-                    <span>{showMyHistory ? "Ẩn" : "Xem"}</span>
-                  </button>
+          {hasSession && (
+            <div className="rounded-2xl border border-line bg-surface px-4 py-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !showMyHistory
+                  setShowMyHistory(next)
+                  if (next) refreshMyFeedbacks()
+                }}
+                className="flex w-full items-center justify-between text-xs font-semibold text-brand-deep hover:underline"
+              >
+                <span>
+                  Lịch sử quét &amp; báo sai AI của tôi ({myScanHistory.length} quét ·{" "}
+                  {myFeedbacks.length} báo sai)
+                </span>
+                <span>{showMyHistory ? "Ẩn" : "Xem"}</span>
+              </button>
 
-                  {showMyHistory && (
-                    <div className="mt-2.5 flex flex-col gap-3">
-                      <div>
-                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                          Lần quét AI gần đây
-                        </p>
-                        {myScanHistory.length === 0 ? (
-                          <p className="text-xs text-muted">
-                            Chưa có lượt quét ảnh AI nào được lưu.
-                          </p>
-                        ) : (
-                          <div className="flex flex-col gap-1.5">
-                            {myScanHistory.map((item) => {
-                              const meta = getCategoryMeta(item.predictedLabel)
-                              return (
-                                <div
-                                  key={item.scanId}
-                                  className="flex items-center justify-between gap-2 rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-xs"
-                                >
-                                  <div className="min-w-0">
-                                    <p className="truncate font-semibold text-ink">
-                                      {meta.shortName} ({Math.round(item.confidenceScore * 100)}%)
-                                    </p>
-                                    <p className="text-[11px] text-muted">
-                                      {item.sortingGuide?.standardBinColor
-                                        ? `Thùng ${item.sortingGuide.standardBinColor}`
-                                        : item.pipelineUsed}{" "}
-                                      · {new Date(item.scannedAt).toLocaleString("vi-VN")}
-                                    </p>
-                                  </div>
-                                  <span className="shrink-0 rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-semibold text-brand-deep">
-                                    {item.predictedLabel}
-                                  </span>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                          Báo cáo phân loại sai của tôi
-                        </p>
-                        {myFeedbacks.length === 0 ? (
-                          <p className="text-xs text-muted">
-                            Bạn chưa gửi báo cáo phân loại sai nào.
-                          </p>
-                        ) : (
-                          <div className="flex flex-col gap-1.5">
-                            {myFeedbacks.map((fb) => (
-                              <div
-                                key={fb.id}
-                                className="rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-xs"
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="font-semibold text-ink">
-                                    AI: {fb.predictedLabel} → Đề xuất: {fb.userReportedLabel}
-                                  </span>
-                                  <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-brand-deep">
-                                    {fb.status === "Reviewed"
-                                      ? `Đã duyệt (${fb.adminVerifiedLabel ?? fb.userReportedLabel})`
-                                      : fb.status === "Rejected"
-                                        ? "Từ chối"
-                                        : "Chờ duyệt"}
-                                  </span>
-                                </div>
-                                {fb.reviewNote && (
-                                  <p className="mt-1 text-[11px] text-muted">
-                                    Phản hồi Staff: {fb.reviewNote}
-                                  </p>
-                                )}
+              {showMyHistory && (
+                <div className="mt-2.5 flex flex-col gap-3">
+                  <div>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                      Lần quét AI gần đây
+                    </p>
+                    {myScanHistory.length === 0 ? (
+                      <p className="text-xs text-muted">
+                        Chưa có lượt quét ảnh AI nào được lưu.
+                      </p>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        {myScanHistory.map((item) => {
+                          const meta = getCategoryMeta(item.predictedLabel)
+                          return (
+                            <div
+                              key={item.scanId}
+                              className="flex items-center justify-between gap-2 rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-xs"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate font-semibold text-ink">
+                                  {meta.shortName} ({Math.round(item.confidenceScore * 100)}%)
+                                </p>
+                                <p className="text-[11px] text-muted">
+                                  {item.sortingGuide?.standardBinColor
+                                    ? `Thùng ${item.sortingGuide.standardBinColor}`
+                                    : item.pipelineUsed}{" "}
+                                  · {new Date(item.scannedAt).toLocaleString("vi-VN")}
+                                </p>
                               </div>
-                            ))}
-                          </div>
-                        )}
+                              <span className="shrink-0 rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-semibold text-brand-deep">
+                                {item.predictedLabel}
+                              </span>
+                            </div>
+                          )
+                        })}
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                      Báo cáo phân loại sai của tôi
+                    </p>
+                    {myFeedbacks.length === 0 ? (
+                      <p className="text-xs text-muted">
+                        Bạn chưa gửi báo cáo phân loại sai nào.
+                      </p>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        {myFeedbacks.map((fb) => (
+                          <div
+                            key={fb.id}
+                            className="rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-xs"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold text-ink">
+                                AI: {fb.predictedLabel} → Đề xuất: {fb.userReportedLabel}
+                              </span>
+                              <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-brand-deep">
+                                {fb.status === "Reviewed"
+                                  ? `Đã duyệt (${fb.adminVerifiedLabel ?? fb.userReportedLabel})`
+                                  : fb.status === "Rejected"
+                                    ? "Từ chối"
+                                    : "Chờ duyệt"}
+                              </span>
+                            </div>
+                            {fb.reviewNote && (
+                              <p className="mt-1 text-[11px] text-muted">
+                                Phản hồi Staff: {fb.reviewNote}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -809,6 +810,7 @@ export default function Scanner() {
             error={scanError}
             onScan={() => void runScan()}
             onPreviewOffline={previewOfflineDemo}
+            onFeedbackSubmitted={refreshMyFeedbacks}
             onSelectPrimary={
               activeResult && activeResult.objects.length > 1 && selectedObjectIndex !== 0
                 ? () => setSelectedObjectIndex(0)
@@ -1198,6 +1200,7 @@ function AiPanel({
   onScan,
   onPreviewOffline,
   onSelectPrimary,
+  onFeedbackSubmitted,
 }: {
   phase: Phase
   canScan: boolean
@@ -1206,6 +1209,7 @@ function AiPanel({
   onScan: () => void
   onPreviewOffline: () => void
   onSelectPrimary?: () => void
+  onFeedbackSubmitted?: () => void
 }) {
   const faceMeta =
     phase === "done" && result?.isOod
@@ -1300,9 +1304,13 @@ function AiPanel({
 
         {phase === "done" && result && (
           result.isOod ? (
-            <OodResult result={result} onSelectPrimary={onSelectPrimary} />
+            <OodResult
+              result={result}
+              onSelectPrimary={onSelectPrimary}
+              onFeedbackSubmitted={onFeedbackSubmitted}
+            />
           ) : (
-            <ScanResult result={result} />
+            <ScanResult result={result} onFeedbackSubmitted={onFeedbackSubmitted} />
           )
         )}
       </div>
@@ -1410,7 +1418,13 @@ function getConfidenceDisplay(rawConfidence: number, threshold = 0.6) {
   }
 }
 
-function ScanResult({ result }: { result: ViewModelResult }) {
+function ScanResult({
+  result,
+  onFeedbackSubmitted,
+}: {
+  result: ViewModelResult
+  onFeedbackSubmitted?: () => void
+}) {
   const mapUrl =
     result.recyclable && isDiscoverableCategory(result.categoryCode)
       ? `/map?category=${encodeURIComponent(result.categoryCode)}`
@@ -1564,6 +1578,7 @@ function ScanResult({ result }: { result: ViewModelResult }) {
           imageUrl={result.imageUrl}
           predictedLabel={result.categoryCode}
           confidenceScore={result.rawConfidence}
+          onSubmitted={onFeedbackSubmitted}
         />
       </div>
     </div>
@@ -1574,9 +1589,11 @@ function ScanResult({ result }: { result: ViewModelResult }) {
 function OodResult({
   result,
   onSelectPrimary,
+  onFeedbackSubmitted,
 }: {
   result: ViewModelResult
   onSelectPrimary?: () => void
+  onFeedbackSubmitted?: () => void
 }) {
   const conf = getConfidenceDisplay(result.rawConfidence, result.confidenceThreshold)
   const isLowConfidence =
@@ -1644,6 +1661,7 @@ function OodResult({
         predictedLabel={result.categoryCode}
         confidenceScore={result.rawConfidence}
         defaultOpen
+        onSubmitted={onFeedbackSubmitted}
       />
     </div>
   )
@@ -1656,12 +1674,14 @@ function InlineFeedbackReport({
   predictedLabel,
   confidenceScore,
   defaultOpen = false,
+  onSubmitted,
 }: {
   scanId?: string | null
   imageUrl?: string | null
   predictedLabel: string
   confidenceScore: number
   defaultOpen?: boolean
+  onSubmitted?: () => void
 }) {
   const session = useSession()
   const isGuest = !session && !isSsrSmokeTest()
@@ -1720,6 +1740,7 @@ function InlineFeedbackReport({
         note: note.trim() || undefined,
       })
       setDoneMsg(res.message)
+      onSubmitted?.()
     } catch (err) {
       setErrMsg(
         err instanceof Error

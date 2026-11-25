@@ -85,8 +85,8 @@ export default function EcoFacts() {
       setErrMsg("Tiêu đề Eco Fact phải từ 3 đến 150 ký tự.")
       return
     }
-    if (cleanBody.length < 10 || cleanBody.length > 1000) {
-      setErrMsg("Nội dung Eco Fact phải từ 10 đến 1000 ký tự.")
+    if (cleanBody.length < 10 || cleanBody.length > 300) {
+      setErrMsg("Nội dung Eco Fact phải từ 10 đến 300 ký tự.")
       return
     }
     if (!Number.isInteger(unlockLevel) || unlockLevel < 1 || unlockLevel > 10) {
@@ -163,7 +163,7 @@ export default function EcoFacts() {
           />
         </Field>
 
-        <Field label="Nội dung" required hint="Từ 10 đến 1000 ký tự. Ghi rõ số liệu và tác động môi trường.">
+        <Field label="Nội dung" required hint="Từ 10 đến 300 ký tự. Ghi rõ số liệu và tác động môi trường.">
           <textarea
             className="input h-auto resize-y py-3 leading-6"
             rows={3}
@@ -253,7 +253,7 @@ export default function EcoFacts() {
               aria-label="Lọc theo cấp cây"
             >
               <option value="">Tất cả cấp cây</option>
-              {[1, 2, 3, 4, 5, 6].map((lv) => (
+              {Array.from({ length: 10 }, (_, idx) => idx + 1).map((lv) => (
                 <option key={lv} value={String(lv)}>
                   Cấp {lv}
                 </option>

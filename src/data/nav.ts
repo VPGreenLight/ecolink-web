@@ -23,9 +23,9 @@ export const FOOTER_COLUMNS = [
   {
     title: "HỆ SINH THÁI",
     links: [
-      "Nhận diện tự động qua Camera",
-      "Sàn giao dịch phế liệu GPS",
-      "Cổng liên kết nhà máy tái chế",
+      { label: "Nhận diện tự động qua Camera", to: "/scanner" },
+      { label: "Sàn giao dịch phế liệu GPS", to: "/map" },
+      { label: "Cổng liên kết nhà máy tái chế", to: "/partners" },
       "Chứng chỉ tín chỉ tuần hoàn EPR",
     ],
   },

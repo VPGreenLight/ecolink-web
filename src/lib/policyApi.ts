@@ -71,7 +71,7 @@ export const DEFAULT_PLATFORM_POLICIES: PlatformPolicySectionDto[] = [
     category: "TERMS",
     title: "2. Quy chuẩn cân đo và biên nhận giao dịch",
     content:
-      "Mọi giao dịch thu mua phế liệu qua nền tảng phải được cân đo minh bạch tại thời điểm bàn giao. Biên nhận điện tử được lập tức thì trên ứng dụng, ghi nhận khối lượng, đơn giá và số tiền/điểm xanh chuyển vào tài khoản.",
+      "Mọi giao dịch thu mua phế liệu qua nền tảng phải được cân đo minh bạch tại thời điểm bàn giao. Biên nhận điện tử được lập tức thì trên ứng dụng, ghi nhận khối lượng, đơn giá và số tiền thanh toán trực tiếp.",
     displayOrder: 2,
     status: "ACTIVE",
     createdAt: "2026-10-20T00:00:00Z",
@@ -83,7 +83,7 @@ export const DEFAULT_PLATFORM_POLICIES: PlatformPolicySectionDto[] = [
     category: "TERMS",
     title: "3. Cơ chế tích lũy điểm xanh và đổi quà",
     content:
-      "Điểm xanh được cộng dồn theo khối lượng rác tái chế đã bàn giao thành công. Điểm tiêu dùng có thể dùng để đổi quà tặng hoặc voucher đối tác. Điểm xếp hạng được bảo lưu trọn đời để thăng hạng cây ảo và mở khóa các huy hiệu cộng đồng.",
+      "Điểm xanh được tích lũy thông qua hoạt động điểm danh hằng ngày, chăm sóc & thu hoạch Cây ảo và thưởng chu kỳ Bảng xếp hạng. Điểm tiêu dùng có thể dùng để đổi quà tặng hoặc voucher đối tác. Điểm xếp hạng được bảo lưu trọn đời để thăng hạng cây ảo và mở khóa các huy hiệu cộng đồng.",
     displayOrder: 3,
     status: "ACTIVE",
     createdAt: "2026-10-20T00:00:00Z",

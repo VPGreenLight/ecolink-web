@@ -8,6 +8,7 @@ import {
   fetchWasteCategories,
   getCategoryMeta,
   parsePreparationSteps,
+  type WasteSortingGuideDto,
 } from "@/lib/wasteScanApi"
 import { isDiscoverableCategory } from "@/lib/recyclerDiscoveryApi"
 import { hasLiveBackendAuth } from "@/lib/session"
@@ -49,31 +50,64 @@ export default function Waste() {
 
   useEffect(() => {
     const controller = new AbortController()
-    Promise.all([fetchSortingRules(controller.signal), fetchWasteCategories()])
+    Promise.all([
+      fetchSortingRules(controller.signal).catch(() => [] as WasteSortingGuideDto[]),
+      fetchWasteCategories({ includeNonRecyclable: true }),
+    ])
       .then(([rules, categories]) => {
+        if (controller.signal.aborted) return
         const byCode = new Map(
           rules.map((r) => [r.categoryCode.toLowerCase(), r] as const),
         )
-        const activeTradableSet = new Set(
-          categories.map((c) => c.code.toLowerCase()),
+        const activeCategories = categories.filter((c) => (c.status ?? "Active") === "Active")
+        const activeByCode = new Map(
+          activeCategories.map((c) => [c.code.toLowerCase(), c] as const),
         )
-        setItems(
-          WASTES.map((w): ExtendedWasteItem | null => {
-            const code = WASTE_TO_API_CATEGORY[w.id]
-            const rule = code ? byCode.get(code) : undefined
-            if (!code || !rule) return null
-            const steps = parsePreparationSteps(rule.preparationSteps)
+
+        const mappedStatic = WASTES.map((w): ExtendedWasteItem | null => {
+          const code = WASTE_TO_API_CATEGORY[w.id]
+          if (!code) return null
+          const cat = activeByCode.get(code)
+          const rule = byCode.get(code)
+          if (!cat && !rule) return null
+          const steps = rule ? parsePreparationSteps(rule.preparationSteps) : []
+          return {
+            ...w,
+            categoryCode: code,
+            recyclable: cat ? Boolean(cat.isRecyclable) : w.recyclable,
+            binColor: rule?.standardBinColor || cat?.standardBinColor,
+            rule: rule?.handlingAction || cat?.description || w.rule,
+            prep: steps.length > 0 ? steps.join(" • ") : w.prep,
+            group: getCategoryMeta(code).group,
+          }
+        }).filter((item): item is ExtendedWasteItem => item !== null)
+
+        const coveredCodes = new Set(Object.values(WASTE_TO_API_CATEGORY))
+        const dynamicExtras: ExtendedWasteItem[] = activeCategories
+          .filter((cat) => !coveredCodes.has(cat.code.toLowerCase()))
+          .map((cat) => {
+            const rule = byCode.get(cat.code.toLowerCase())
+            const steps = rule ? parsePreparationSteps(rule.preparationSteps) : []
             return {
-              ...w,
-              categoryCode: code,
-              recyclable: w.recyclable && activeTradableSet.has(code),
-              binColor: rule.standardBinColor,
-              rule: rule.handlingAction || w.rule,
-              prep: steps.length > 0 ? steps.join(" • ") : w.prep,
-              group: getCategoryMeta(code).group,
+              id: cat.code,
+              name: cat.name,
+              group: "Khác" as WasteItem["group"],
+              price: 0,
+              recyclable: Boolean(cat.isRecyclable),
+              categoryCode: cat.code,
+              binColor: rule?.standardBinColor || cat.standardBinColor,
+              rule:
+                rule?.handlingAction ||
+                cat.description ||
+                "Phân loại riêng theo quy chuẩn EcoLink.",
+              prep:
+                steps.length > 0
+                  ? steps.join(" • ")
+                  : "Làm sạch cơ bản và để khô ráo trước khi bàn giao.",
             }
-          }).filter((item): item is ExtendedWasteItem => item !== null),
-        )
+          })
+
+        setItems([...mappedStatic, ...dynamicExtras])
       })
       .catch(() => {
         if (!controller.signal.aborted && !hasLiveBackendAuth()) {
@@ -85,6 +119,13 @@ export default function Waste() {
       })
     return () => controller.abort()
   }, [])
+
+  const groupOptions = useMemo(() => {
+    const hasExtraGroup = items.some(
+      (w) => !WASTE_GROUPS.includes(w.group as (typeof WASTE_GROUPS)[number]),
+    )
+    return hasExtraGroup ? [...WASTE_GROUPS, "Khác"] : [...WASTE_GROUPS]
+  }, [items])
 
   const list = useMemo(() => {
     const k = q.trim().toLowerCase()
@@ -127,7 +168,7 @@ export default function Waste() {
               value={group}
               onChange={(e) => setGroup(e.target.value)}
             >
-              {WASTE_GROUPS.map((g) => (
+              {groupOptions.map((g) => (
                 <option key={g} value={g}>
                   {g}
                 </option>
@@ -178,16 +219,27 @@ export default function Waste() {
 
               <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
                 <p className="text-sm font-bold tabular-nums text-brand">
-                  {w.recyclable ? `${VND(w.price)} / kg` : "Không thu gom trong hệ thống"}
+                  {w.recyclable
+                    ? w.price > 0
+                      ? `${VND(w.price)} / kg`
+                      : "Theo bảng giá cơ sở thu mua"
+                    : "Không thu gom trong hệ thống"}
                 </p>
-                {w.recyclable && isDiscoverableCategory(w.categoryCode) && (
+                {w.recyclable && isDiscoverableCategory(w.categoryCode) ? (
                   <Link
                     to={`/map?category=${encodeURIComponent(w.categoryCode)}`}
                     className="text-xs font-semibold text-brand-deep hover:underline"
                   >
                     Tìm nơi thu mua →
                   </Link>
-                )}
+                ) : w.recyclable ? (
+                  <Link
+                    to={`/user/handover?waste=${encodeURIComponent(w.categoryCode ?? w.id)}`}
+                    className="text-xs font-semibold text-brand-deep hover:underline"
+                  >
+                    Đặt lịch thu gom →
+                  </Link>
+                ) : null}
               </div>
             </li>
           ))}

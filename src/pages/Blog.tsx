@@ -18,6 +18,7 @@ const VALUE_TONE = {
 export default function Blog() {
   const [liveMode] = useState(() => !isSsrSmokeTest())
   const [posts, setPosts] = useState<BlogPostSummaryDto[] | null>(null)
+  const [totalPublished, setTotalPublished] = useState(0)
   const [loading, setLoading] = useState(() => initApiLoading(true))
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 300)
@@ -42,6 +43,7 @@ export default function Blog() {
       .then((res) => {
         if (!active) return
         setPosts(res.data?.items ?? [])
+        setTotalPublished(res.data?.totalCount ?? res.data?.items?.length ?? 0)
       })
       .catch(() => {
         if (!active) return
@@ -258,7 +260,32 @@ export default function Blog() {
       {/* High-End Bento Metrics Grid */}
       <section className="mb-16">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {METRICS.map((m) => (
+          {(useBackend
+            ? [
+                {
+                  label: "Bài viết đã xuất bản",
+                  value: String(totalPublished || (posts?.length ?? 0)),
+                  tone: "good" as const,
+                  note: "Đồng bộ trực tiếp từ hệ thống kiểm duyệt Blog EcoLink.",
+                },
+                {
+                  label: "Chủ đề nổi bật",
+                  value: String(availableTags.length),
+                  tone: "good" as const,
+                  note:
+                    availableTags.length > 0
+                      ? availableTags.slice(0, 4).join(", ")
+                      : "Phân loại rác, tái chế và tiêu dùng xanh.",
+                },
+                {
+                  label: "Quy trình kiểm duyệt",
+                  value: "2 cấp",
+                  tone: "warn" as const,
+                  note: "Nhân viên biên tập và Quản trị viên xác thực nội dung trước khi đăng.",
+                },
+              ]
+            : METRICS
+          ).map((m) => (
             <div
               key={m.label}
               className="flex flex-col justify-between rounded-2xl border border-line-soft bg-surface-2/40 p-5 sm:p-6 transition-all hover:bg-surface-2/70"

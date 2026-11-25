@@ -7,20 +7,30 @@ import {
   formatAuthError,
   updateCurrentUserProfile,
 } from "@/lib/authApi"
-import { AI_CASES, APPLICATIONS, COMPLAINTS, PERMS, POSTS, STAFF } from "@/data/ops"
+import { AI_CASES, APPLICATIONS, COMPLAINTS, POSTS, STAFF } from "@/data/ops"
 import { initApiState, isSsrSmokeTest } from "@/lib/hydration"
 import { fetchStaffAiFeedbackQueue } from "@/lib/aiCurationApi"
 import { fetchStaffApplications } from "@/lib/recyclerWorkflowApi"
 import { fetchStaffComplaints } from "@/lib/reviewComplaintApi"
-import { fetchAdminPendingBlogs } from "@/lib/blogApi"
-import { getAdminStaffList } from "@/lib/governanceApi"
+import { fetchAdminPendingBlogs, fetchStaffBlogs } from "@/lib/blogApi"
+import { getAdminStaffList, getPermissionCatalog } from "@/lib/governanceApi"
+
+const STAFF_PERM_LABELS: Record<string, string> = {
+  REVIEW_AI: "Duyệt ảnh AI phân loại",
+  CURATE_DATASET: "Kiểm duyệt tập dữ liệu AI",
+  VERIFY_RECYCLER: "Thẩm định đối tác thu mua",
+  HANDLE_COMPLAINT: "Xử lý khiếu nại & đánh giá",
+  MANAGE_ACCOUNTS: "Quản lý tài khoản cộng đồng",
+  MANAGE_BLOG: "Duyệt & quản lý Blog",
+  MANAGE_INVENTORY: "Quản lý kho quà & Eco Fact",
+}
 
 /** Hồ sơ và thông báo cho STAFF và ADMIN — đồng bộ trực tiếp với
  *  `GET /api/v1/auth/me` và `PUT /api/v1/auth/profile`. */
 export default function AccountProfile() {
   const session = useSession()
   const role = session?.role === "admin" ? "admin" : "staff"
-  const me = STAFF.find((s) => s.name === session?.name)
+  const [permLabels, setPermLabels] = useState<Record<string, string>>(STAFF_PERM_LABELS)
 
   const [name, setName] = useState(session?.name ?? "")
   const [phone, setPhone] = useState(() =>
@@ -31,6 +41,7 @@ export default function AccountProfile() {
   const [err, setErr] = useState("")
 
   useEffect(() => {
+    if (isSsrSmokeTest()) return
     let active = true
     void fetchCurrentUserProfile().then((profile) => {
       if (!active || !profile) return
@@ -39,10 +50,22 @@ export default function AccountProfile() {
         setPhone(profile.phoneNumber)
       }
     })
+    if (role === "admin" && getAccessToken()) {
+      void getPermissionCatalog()
+        .then((res) => {
+          if (!active || !res.success || !Array.isArray(res.data)) return
+          const map: Record<string, string> = { ...STAFF_PERM_LABELS }
+          for (const item of res.data) {
+            if (item.code && item.label) map[item.code] = item.label
+          }
+          setPermLabels(map)
+        })
+        .catch(() => {})
+    }
     return () => {
       active = false
     }
-  }, [])
+  }, [role])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -124,7 +147,7 @@ export default function AccountProfile() {
           <Field label="Email công việc">
             <input
               className="input"
-              value={session?.email ?? me?.email ?? "quantri@ecolink.vn"}
+              value={session?.email ?? "quantri@ecolink.vn"}
               readOnly
               disabled
             />
@@ -160,11 +183,11 @@ export default function AccountProfile() {
             <h2 className="text-[15px] font-bold text-ink">Thông tin được cấp</h2>
             <dl className="mt-3 flex flex-col gap-2 text-[13px]">
               {[
-                ["Mã nhân viên", me?.id ?? (session?.username ? session.username.toUpperCase() : "QT-01")],
+                ["Mã tài khoản", session?.username ? session.username.toUpperCase() : role === "admin" ? "QT-01" : "NV-01"],
+                ["Email", session?.email || "—"],
                 ["Vai trò", ROLE_LABEL[role]],
-                ["Bộ phận", me ? "Vận hành nền tảng" : "Ban quản trị"],
-                ["Ngày bắt đầu", "12/03/2025"],
-                ["Trạng thái", me?.status === "locked" || session?.status === "Suspended" ? "Đang khoá" : "Đang hoạt động"],
+                ["Bộ phận", role === "admin" ? "Ban quản trị" : "Vận hành nền tảng"],
+                ["Trạng thái", session?.status === "Suspended" || session?.status === "Locked" ? "Đang khoá" : "Đang hoạt động"],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-3 border-b border-line-soft pb-2">
                   <dt className="text-muted">{k}</dt>
@@ -179,12 +202,14 @@ export default function AccountProfile() {
             <div className="mt-2 flex flex-wrap gap-1.5">
               {role === "admin" ? (
                 <Status tone="ok">Toàn quyền hệ thống</Status>
-              ) : (
-                (me?.perms ?? ["ai", "kyb", "dispute", "blog"]).map((id) => (
-                  <Status key={id} tone="wait">
-                    {PERMS.find((p) => p.id === id)?.label ?? id}
+              ) : (session?.permissions?.length ?? 0) > 0 ? (
+                session!.permissions!.map((code) => (
+                  <Status key={code} tone="wait">
+                    {permLabels[code] ?? code}
                   </Status>
                 ))
+              ) : (
+                <Status tone="off">Chưa được cấp quyền chi tiết</Status>
               )}
             </div>
             <p className="mt-3 text-[12px] leading-5 text-muted">
@@ -193,14 +218,18 @@ export default function AccountProfile() {
             </p>
           </section>
 
-          <Queue role={role} />
+          <Queue role={role} permissions={session?.permissions} />
         </div>
       </div>
     </>
   )
 }
 
-function Queue({ role }: { role: "staff" | "admin" }) {
+function Queue({ role, permissions }: { role: "staff" | "admin"; permissions?: string[] }) {
+  const hasPermFilter = role === "staff" && Array.isArray(permissions)
+  const perms = new Set(permissions ?? [])
+  const can = (p: string) => role === "admin" || !hasPermFilter || perms.has(p)
+
   const [counts, setCounts] = useState(() =>
     initApiState(
       { ai: 0, apps: 0, complaints: 0, posts: 0, lockedStaff: 0 },
@@ -218,29 +247,34 @@ function Queue({ role }: { role: "staff" | "admin" }) {
     if (isSsrSmokeTest() || !getAccessToken()) return
     let active = true
     if (role === "staff") {
+      const canAi = !hasPermFilter || perms.has("REVIEW_AI")
+      const canApp = !hasPermFilter || perms.has("VERIFY_RECYCLER")
+      const canCmp = !hasPermFilter || perms.has("HANDLE_COMPLAINT")
+      const canBlog = !hasPermFilter || perms.has("MANAGE_BLOG")
+
       void Promise.allSettled([
-        fetchStaffAiFeedbackQueue({ pageSize: 1 }),
-        fetchStaffApplications(),
-        fetchStaffComplaints({ pageSize: 1, includeReportedReviews: false }),
-        fetchAdminPendingBlogs({ pageSize: 1 }),
+        canAi ? fetchStaffAiFeedbackQueue({ pageSize: 1 }) : Promise.resolve(null),
+        canApp ? fetchStaffApplications() : Promise.resolve(null),
+        canCmp ? fetchStaffComplaints({ pageSize: 1, includeReportedReviews: false }) : Promise.resolve(null),
+        canBlog ? fetchStaffBlogs({ status: "Pending_Approval", pageSize: 1 }) : Promise.resolve(null),
       ]).then(([aiRes, appRes, cmpRes, blogRes]) => {
         if (!active) return
         setCounts((prev) => ({
           ...prev,
           ai:
-            aiRes.status === "fulfilled" && aiRes.value.data
+            aiRes.status === "fulfilled" && aiRes.value?.data
               ? aiRes.value.data.pendingCount
               : prev.ai,
           apps:
-            appRes.status === "fulfilled"
+            appRes.status === "fulfilled" && appRes.value
               ? appRes.value.items.filter((a) => a.status === "pending").length
               : prev.apps,
           complaints:
-            cmpRes.status === "fulfilled" && cmpRes.value.data
+            cmpRes.status === "fulfilled" && cmpRes.value?.data
               ? cmpRes.value.data.openCount + cmpRes.value.data.investigatingCount
               : prev.complaints,
           posts:
-            blogRes.status === "fulfilled" && blogRes.value.data
+            blogRes.status === "fulfilled" && blogRes.value?.data
               ? blogRes.value.data.totalCount
               : prev.posts,
         }))
@@ -267,32 +301,39 @@ function Queue({ role }: { role: "staff" | "admin" }) {
     return () => {
       active = false
     }
-  }, [role])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, permissions])
+
+  const allStaffRows: { perm: string; to: string; label: string; count: number }[] = [
+    {
+      perm: "REVIEW_AI",
+      to: "/staff/ai-review",
+      label: "Ảnh AI chờ gán nhãn",
+      count: counts.ai,
+    },
+    {
+      perm: "VERIFY_RECYCLER",
+      to: "/staff/applications",
+      label: "Hồ sơ đối tác chờ thẩm định",
+      count: counts.apps,
+    },
+    {
+      perm: "HANDLE_COMPLAINT",
+      to: "/staff/complaints",
+      label: "Khiếu nại mới",
+      count: counts.complaints,
+    },
+    {
+      perm: "MANAGE_BLOG",
+      to: "/staff/blog",
+      label: "Bài Blog chờ duyệt",
+      count: counts.posts,
+    },
+  ]
 
   const rows: { to: string; label: string; count: number }[] =
     role === "staff"
-      ? [
-          {
-            to: "/staff/ai-review",
-            label: "Ảnh AI chờ gán nhãn",
-            count: counts.ai,
-          },
-          {
-            to: "/staff/applications",
-            label: "Hồ sơ đối tác chờ thẩm định",
-            count: counts.apps,
-          },
-          {
-            to: "/staff/complaints",
-            label: "Khiếu nại mới",
-            count: counts.complaints,
-          },
-          {
-            to: "/staff/blog",
-            label: "Bài Blog chờ duyệt",
-            count: counts.posts,
-          },
-        ]
+      ? (hasPermFilter ? allStaffRows.filter((r) => can(r.perm)) : allStaffRows)
       : [
           {
             to: "/admin/blog",

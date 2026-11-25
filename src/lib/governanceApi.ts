@@ -85,6 +85,7 @@ export interface PagedGovernanceResult<T> {
   pageNumber: number
   pageSize: number
   totalCount: number
+  totalRecords?: number
   totalPages: number
 }
 
@@ -532,7 +533,7 @@ export async function getAdminKpiSummary(
       platformFeeRevenueVnd: 0,
       vietQrServiceRevenueVnd: d.vietQrServiceRevenueVnd,
       co2SavedKg: Math.round(d.totalRecycledWeightKg * 1.5),
-      aiAccuracyPercent: d.aiBenchmark?.overallAccuracyPercent ?? 94.6,
+      aiAccuracyPercent: d.aiBenchmark?.overallAccuracyPercent ?? 0,
       pending: {
         aiMisclassifiedCases: d.operationalBacklog?.pendingAiFeedbackCount ?? 0,
         recyclerApplications: d.operationalBacklog?.pendingRecyclerKybCount ?? 0,
@@ -943,7 +944,20 @@ export async function getAdminStaffAttendance(query: {
     pageNumber: query.pageNumber ?? 1,
     pageSize: query.pageSize ?? 20,
   })
-  return apiRequest<PagedGovernanceResult<AdminStaffAttendanceRowDto>>(
+  const res = await apiRequest<PagedGovernanceResult<AdminStaffAttendanceRowDto>>(
     `/api/v1/admin/staff/attendance${qs}`,
   )
+  if (res.data) {
+    const raw = res.data as PagedGovernanceResult<AdminStaffAttendanceRowDto> & { totalRecords?: number }
+    const total = raw.totalCount ?? raw.totalRecords ?? raw.items?.length ?? 0
+    return {
+      ...res,
+      data: {
+        ...raw,
+        totalCount: total,
+        totalRecords: total,
+      },
+    }
+  }
+  return res
 }

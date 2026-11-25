@@ -6,13 +6,14 @@ import { FormRequiredLegend, PageHead, RequiredMark, Status, Table, TableSkeleto
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { ApiError } from "@/lib/api"
 import { initApiLoading, initApiState, isSsrSmokeTest } from "@/lib/hydration"
-import { fetchWasteCategories } from "@/lib/wasteScanApi"
+import { fetchWasteCategories, type WasteCategoryItemDto } from "@/lib/wasteScanApi"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
   MY_HANDOVERS,
   STATUS_LABEL,
   TIME_SLOTS,
   TONE,
+  buildScheduledAtIso,
   calc,
   formatIsoDateToVi,
   getAppointmentDateBounds,
@@ -25,19 +26,29 @@ import {
 import { VND, WASTES } from "@/data/waste"
 import {
   LOCATION_PRESETS,
+  getRecyclerPublicDetail,
   searchNearbyRecyclers,
   type CollectionPartnerDto,
 } from "@/lib/recyclerDiscoveryApi"
 import {
   createHandoverOrder,
   fetchHandoverOrdersResult,
+  fetchUserHandoverDetail,
   formatOrderDisplayCode,
+  updateHandoverOrder,
   updateHandoverOrderStatus,
-  updateHandoverOrderTimeSlot,
 } from "@/lib/recyclerWorkflowApi"
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+type EditHandoverRow = {
+  wasteCategoryId: string
+  wasteId: string
+  kg: number
+  itemNote?: string
+}
+
 const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
-const nameOf = (id: string) => WASTES.find((w) => w.id === id)?.name ?? id
 
 const WASTE_TO_CAT: Record<string, string> = {
   pet: "plastic",
@@ -88,7 +99,18 @@ export default function Handover() {
   )
   const [loading, setLoading] = useState<boolean>(() => initApiLoading(true))
   const [editId, setEditId] = useState<string | null>(null)
+  const [editLoading, setEditLoading] = useState(false)
+  const [editSaving, setEditSaving] = useState(false)
+  const [editErr, setEditErr] = useState("")
+  const [editRows, setEditRows] = useState<EditHandoverRow[]>([])
   const [editDateIso, setEditDateIso] = useState<string>(() => getDefaultAppointmentDateAndSlot().dateIso)
+  const [editSlot, setEditSlot] = useState<string>(() => TIME_SLOTS[0])
+  const [editAddress, setEditAddress] = useState("")
+  const [editLat, setEditLat] = useState<number>(LOCATION_PRESETS[0].lat)
+  const [editLng, setEditLng] = useState<number>(LOCATION_PRESETS[0].lng)
+  const [editNote, setEditNote] = useState("")
+  const [editPhotoUrls, setEditPhotoUrls] = useState<string[]>([])
+  const [editAllowedCodes, setEditAllowedCodes] = useState<Set<string> | null>(null)
   const [cancelOrder, setCancelOrder] = useState<HandoverView | null>(null)
   const [cancelReason, setCancelReason] = useState("")
   const [cancelErr, setCancelErr] = useState("")
@@ -101,6 +123,28 @@ export default function Handover() {
   const [page, setPage] = useState(1)
   const pageSize = FIXED_PAGE_SIZE
   const appointmentBounds = getAppointmentDateBounds()
+  const [dynamicCategories, setDynamicCategories] = useState<WasteCategoryItemDto[]>([])
+
+  useEffect(() => {
+    if (isSsrSmokeTest()) return
+    let active = true
+    fetchWasteCategories()
+      .then((cats) => {
+        if (!active || !Array.isArray(cats)) return
+        setDynamicCategories(
+          cats.filter((c) => c.isRecyclable && (c.status ?? "Active") === "Active"),
+        )
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const resolveWasteName = (wasteId: string) =>
+    WASTES.find((w) => w.id === wasteId)?.name ??
+    dynamicCategories.find((c) => c.code.toLowerCase() === wasteId.toLowerCase())?.name ??
+    wasteId
 
   useEffect(() => {
     let active = true
@@ -143,32 +187,196 @@ export default function Handover() {
     }
   }, [])
 
-  const reslot = async (h: HandoverView, nextDateIso: string, slot: string) => {
-    setActionErr("")
-    setFlash("")
-    const errMsg = validateAppointmentSelection(nextDateIso, slot)
-    if (errMsg) {
-      setActionErr(errMsg)
+  const resolveCatIdForWaste = (wasteIdOrCode: string) => {
+    const mappedCode = (WASTE_TO_CAT[wasteIdOrCode] ?? wasteIdOrCode).toLowerCase()
+    return (
+      dynamicCategories.find((c) => c.code.toLowerCase() === mappedCode)?.id ??
+      dynamicCategories[0]?.id ??
+      wasteIdOrCode
+    )
+  }
+
+  const openEditOrder = async (h: HandoverView) => {
+    if (editId === h.id) {
+      setEditId(null)
+      setEditErr("")
       return
     }
-    const nextDateVi = formatIsoDateToVi(nextDateIso)
+    const parsedDate = parseViOrIsoDateToIsoInput(h.date)
+    const defaultAppt = getDefaultAppointmentDateAndSlot()
+    const initialDate =
+      parsedDate &&
+      parsedDate >= appointmentBounds.minDate &&
+      parsedDate <= appointmentBounds.maxDate
+        ? parsedDate
+        : defaultAppt.dateIso
+
+    setEditId(h.id)
+    setEditErr("")
+    setEditDateIso(initialDate)
+    setEditSlot(TIME_SLOTS.includes(h.slot as (typeof TIME_SLOTS)[number]) ? h.slot : defaultAppt.slot)
+    setEditAddress(h.address)
+    setEditLat(typeof h.pickupLat === "number" ? h.pickupLat : LOCATION_PRESETS[0].lat)
+    setEditLng(typeof h.pickupLng === "number" ? h.pickupLng : LOCATION_PRESETS[0].lng)
+    setEditNote("")
+    setEditPhotoUrls(["https://r2.ecolink.vn/handover/default-waste.jpg"])
+    setEditAllowedCodes(null)
+    setEditRows(
+      h.lines.map((l) => ({
+        wasteCategoryId: resolveCatIdForWaste(l.wasteId),
+        wasteId: l.wasteId,
+        kg: l.kg,
+      })),
+    )
+
+    if (!UUID_REGEX.test(h.id)) return
+    setEditLoading(true)
     try {
-      const res = await updateHandoverOrderTimeSlot(h.id, slot, nextDateIso)
+      const detail = await fetchUserHandoverDetail(h.id)
+      if (!detail) return
+      if (detail.items && detail.items.length > 0) {
+        setEditRows(
+          detail.items.map((it) => ({
+            wasteCategoryId: it.wasteCategoryId,
+            wasteId: it.wasteCategoryCode || it.wasteCategoryId,
+            kg: it.estimatedWeightKg,
+            itemNote: it.itemNote ?? undefined,
+          })),
+        )
+      }
+      if (detail.pickupAddress) setEditAddress(detail.pickupAddress)
+      if (typeof detail.userNote === "string") setEditNote(detail.userNote)
+      if (Array.isArray(detail.photoUrls) && detail.photoUrls.length > 0) {
+        setEditPhotoUrls(detail.photoUrls)
+      }
+      if (detail.recycler?.id && UUID_REGEX.test(detail.recycler.id)) {
+        void getRecyclerPublicDetail(detail.recycler.id)
+          .then((pub) => {
+            const codes = pub?.materials?.map((m) => m.categoryCode.toLowerCase()) ?? []
+            if (codes.length > 0) setEditAllowedCodes(new Set(codes))
+          })
+          .catch(() => {})
+      }
+    } catch {
+      // Giữ dữ liệu hiện có trên thẻ đơn nếu không nạp được chi tiết
+    } finally {
+      setEditLoading(false)
+    }
+  }
+
+  const saveEditOrder = async (h: HandoverView, e: React.FormEvent) => {
+    e.preventDefault()
+    if (editSaving) return
+    setEditErr("")
+    setActionErr("")
+    setFlash("")
+
+    if (editRows.length === 0) {
+      setEditErr("Yêu cầu bàn giao phải có ít nhất 1 loại phế liệu.")
+      return
+    }
+    const seenCats = new Set<string>()
+    for (const row of editRows) {
+      if (!row.wasteCategoryId) {
+        setEditErr("Vui lòng chọn loại phế liệu hợp lệ cho tất cả các dòng.")
+        return
+      }
+      if (seenCats.has(row.wasteCategoryId)) {
+        setEditErr("Mỗi loại phế liệu chỉ xuất hiện một dòng trong cùng yêu cầu.")
+        return
+      }
+      seenCats.add(row.wasteCategoryId)
+      if (
+        !Number.isFinite(row.kg) ||
+        row.kg <= 0 ||
+        Math.abs(row.kg * 100 - Math.round(row.kg * 100)) > 1e-4
+      ) {
+        setEditErr("Khối lượng ước tính phải lớn hơn 0 kg (tối đa 2 chữ số thập phân).")
+        return
+      }
+      if (row.itemNote && row.itemNote.trim().length > 200) {
+        setEditErr("Ghi chú từng loại vật liệu tối đa 200 ký tự.")
+        return
+      }
+    }
+
+    const cleanAddress = editAddress.trim()
+    if (cleanAddress.length < 5 || cleanAddress.length > 500) {
+      setEditErr("Địa chỉ điểm hẹn phải từ 5 đến 500 ký tự.")
+      return
+    }
+    if (editNote.trim().length > 200) {
+      setEditErr("Ghi chú cho người thu gom không được vượt quá 200 ký tự.")
+      return
+    }
+
+    const slotErr = validateAppointmentSelection(editDateIso, editSlot)
+    if (slotErr) {
+      setEditErr(slotErr)
+      return
+    }
+    const proposedIso = buildScheduledAtIso(editDateIso, editSlot)
+    if (new Date(proposedIso).getTime() < Date.now() + 2 * 3_600_000) {
+      setEditErr("Thời gian hẹn mới phải cách thời điểm hiện tại ít nhất 2 giờ (BR-HND-02).")
+      return
+    }
+
+    setEditSaving(true)
+    const nextDateVi = formatIsoDateToVi(editDateIso)
+    try {
+      const res = await updateHandoverOrder(h.id, {
+        items: editRows.map((r) => ({
+          wasteCategoryId: r.wasteCategoryId,
+          wasteId: r.wasteId,
+          estimatedWeightKg: r.kg,
+          itemNote: r.itemNote,
+        })),
+        photoUrls: editPhotoUrls,
+        proposedTimeSlotIso: proposedIso,
+        dateVi: nextDateVi,
+        slot: editSlot,
+        pickupAddress: cleanAddress,
+        latitude: editLat,
+        longitude: editLng,
+        userNote: editNote.trim() || null,
+      })
+
+      const nextLines =
+        res.order?.items?.map((it) => ({
+          wasteId: it.wasteCategoryCode || it.wasteCategoryId,
+          kg: it.estimatedWeightKg,
+        })) ??
+        editRows.map((r) => ({ wasteId: r.wasteId, kg: r.kg }))
+
       setList((ls) =>
-        ls.map((item) => (item.id === h.id ? { ...item, date: nextDateVi, slot } : item)),
+        ls.map((item) =>
+          item.id === h.id
+            ? {
+                ...item,
+                date: nextDateVi,
+                slot: editSlot,
+                address: cleanAddress,
+                pickupLat: editLat,
+                pickupLng: editLng,
+                lines: nextLines,
+              }
+            : item,
+        ),
       )
       setEditId(null)
       setFlash(
-        `${h.displayCode}: đã đổi lịch hẹn sang ${nextDateVi} · ${slot}${res.syncedWithBackend ? " (đã cập nhật CSDL)" : ""}. Người thu gom sẽ thấy lịch mới.`,
+        `${h.displayCode}: ${res.message}${res.syncedWithBackend ? " (đã đồng bộ CSDL)" : ""}.`,
       )
     } catch (err) {
-      setActionErr(
+      setEditErr(
         err instanceof ApiError
           ? err.message
           : err instanceof Error
             ? err.message
-            : "Không thể cập nhật lịch hẹn.",
+            : "Không thể cập nhật yêu cầu bàn giao.",
       )
+    } finally {
+      setEditSaving(false)
     }
   }
 
@@ -320,6 +528,7 @@ export default function Handover() {
           initialPartnerId={prefilledPartnerId}
           initialPartner={prefilledPartner}
           initialWasteId={prefilledWaste}
+          dynamicCategories={dynamicCategories}
           onDone={(draft) => {
             setList((ls) => [newRow(draft), ...ls.filter((x) => x.id !== draft.id)])
             setOpen(false)
@@ -337,7 +546,7 @@ export default function Handover() {
         const filteredList = list.filter((h) => {
           if (statusFilter !== "all" && h.status !== statusFilter) return false
           if (!kw) return true
-          const wastes = h.lines.map((l) => nameOf(l.wasteId)).join(" ")
+          const wastes = h.lines.map((l) => resolveWasteName(l.wasteId)).join(" ")
           return `${h.displayCode} ${h.recycler} ${h.address} ${wastes}`.toLowerCase().includes(kw)
         })
         const pagedList = paginateItems(filteredList, page, pageSize)
@@ -409,25 +618,10 @@ export default function Handover() {
                     <>
                       <button
                         type="button"
-                        onClick={() => {
-                          if (editId === h.id) {
-                            setEditId(null)
-                          } else {
-                            const parsedDate = parseViOrIsoDateToIsoInput(h.date)
-                            const defaultDate = getDefaultAppointmentDateAndSlot().dateIso
-                            const initialDate =
-                              parsedDate &&
-                              parsedDate >= appointmentBounds.minDate &&
-                              parsedDate <= appointmentBounds.maxDate
-                                ? parsedDate
-                                : defaultDate
-                            setEditDateIso(initialDate)
-                            setEditId(h.id)
-                          }
-                        }}
+                        onClick={() => void openEditOrder(h)}
                         className="btn-outline h-9 px-3 text-[13px]"
                       >
-                        {editId === h.id ? "Đóng" : "Đổi lịch hẹn"}
+                        {editId === h.id ? "Đóng chỉnh sửa" : "Chỉnh sửa yêu cầu"}
                       </button>
                       <button
                         type="button"
@@ -494,7 +688,7 @@ export default function Handover() {
                 <Table head={["Loại rác", "Khối lượng ước tính", "Thành tiền ước tính"]}>
                   {(h.actual ?? h.lines).map((l) => (
                     <tr key={l.wasteId}>
-                      <Td className="font-semibold text-ink">{nameOf(l.wasteId)}</Td>
+                      <Td className="font-semibold text-ink">{resolveWasteName(l.wasteId)}</Td>
                       <Td className="tabular-nums">{l.kg.toLocaleString("vi-VN")} kg</Td>
                       <Td className="tabular-nums">
                         {VND(l.kg * rowPrice(l.wasteId))}
@@ -526,52 +720,246 @@ export default function Handover() {
                 </div>
 
                 {editId === h.id && (
-                  <div className="mt-3 rounded-lg border border-brand/30 bg-brand/6 p-4 flex flex-col gap-3">
-                    <div className="flex flex-wrap items-end gap-4">
-                      <label className="flex flex-col gap-1 text-[13px] font-semibold text-ink">
-                        Chọn ngày hẹn thu gom
+                  <form
+                    noValidate
+                    onSubmit={(e) => void saveEditOrder(h, e)}
+                    className="mt-4 flex flex-col gap-4 rounded-xl border border-brand/30 bg-brand/6 p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-bold text-ink">
+                        Chỉnh sửa chi tiết yêu cầu (U-07)
+                      </p>
+                      {editLoading && (
+                        <span className="text-xs text-muted">Đang tải chi tiết đơn...</span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-ink">
+                          Danh sách vật liệu &amp; khối lượng ước tính
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const pool =
+                              editAllowedCodes && dynamicCategories.length > 0
+                                ? dynamicCategories.filter((c) =>
+                                    editAllowedCodes.has(c.code.toLowerCase()),
+                                  )
+                                : dynamicCategories
+                            const chosenIds = new Set(editRows.map((r) => r.wasteCategoryId))
+                            const unused = (pool.length > 0 ? pool : dynamicCategories).find(
+                              (c) => !chosenIds.has(c.id),
+                            )
+                            if (!unused) {
+                              setEditErr("Đã chọn hết các loại phế liệu khả dụng cho cơ sở này.")
+                              return
+                            }
+                            setEditRows((rs) => [
+                              ...rs,
+                              { wasteCategoryId: unused.id, wasteId: unused.code, kg: 2 },
+                            ])
+                            setEditErr("")
+                          }}
+                          className="text-xs font-semibold text-brand-deep hover:underline"
+                        >
+                          + Thêm loại rác
+                        </button>
+                      </div>
+                      {editRows.map((row, idx) => {
+                        const categoryPool =
+                          editAllowedCodes && dynamicCategories.length > 0
+                            ? dynamicCategories.filter(
+                                (c) =>
+                                  editAllowedCodes.has(c.code.toLowerCase()) ||
+                                  c.id === row.wasteCategoryId,
+                              )
+                            : dynamicCategories
+                        return (
+                          <div
+                            key={`${row.wasteCategoryId}-${idx}`}
+                            className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-white p-2.5"
+                          >
+                            {categoryPool.length > 0 ? (
+                              <select
+                                aria-label="Loại phế liệu"
+                                className="input h-9 min-w-[160px] flex-1 text-xs"
+                                value={row.wasteCategoryId}
+                                onChange={(e) => {
+                                  const nextCatId = e.target.value
+                                  const cat = categoryPool.find((c) => c.id === nextCatId)
+                                  setEditRows((rs) =>
+                                    rs.map((r, n) =>
+                                      n === idx
+                                        ? {
+                                            ...r,
+                                            wasteCategoryId: nextCatId,
+                                            wasteId: cat?.code ?? r.wasteId,
+                                          }
+                                        : r,
+                                    ),
+                                  )
+                                  setEditErr("")
+                                }}
+                              >
+                                {categoryPool.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.name}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                className="input h-9 flex-1 text-xs"
+                                value={resolveWasteName(row.wasteId)}
+                                readOnly
+                              />
+                            )}
+                            <label className="flex items-center gap-1.5 text-xs font-medium text-ink">
+                              <span>Kg:</span>
+                              <input
+                                type="number"
+                                min="0.1"
+                                step="0.1"
+                                className="input h-9 w-24 text-right text-xs tabular-nums"
+                                value={Number.isFinite(row.kg) ? row.kg : ""}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value)
+                                  setEditRows((rs) =>
+                                    rs.map((r, n) => (n === idx ? { ...r, kg: val } : r)),
+                                  )
+                                  setEditErr("")
+                                }}
+                              />
+                            </label>
+                            {editRows.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditRows((rs) => rs.filter((_, n) => n !== idx))
+                                }
+                                className="btn-ghost h-9 px-2.5 text-xs text-warn"
+                              >
+                                Xóa
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+                        Ngày hẹn thu gom
                         <input
                           type="date"
-                          className="input h-10 bg-white text-sm"
+                          className="input h-10 bg-white text-xs"
                           min={appointmentBounds.minDate}
                           max={appointmentBounds.maxDate}
                           value={editDateIso}
-                          onChange={(e) => setEditDateIso(e.target.value)}
+                          onChange={(e) => {
+                            setEditDateIso(e.target.value)
+                            setEditErr("")
+                          }}
                         />
                       </label>
-                      <p className="text-xs text-muted pb-2">
-                        Hỗ trợ từ hôm nay ({formatIsoDateToVi(appointmentBounds.minDate)}) đến +30 ngày tới
-                      </p>
+                      <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+                        Ghi chú cho người thu gom
+                        <input
+                          className="input h-10 bg-white text-xs"
+                          value={editNote}
+                          onChange={(e) => {
+                            setEditNote(e.target.value)
+                            setEditErr("")
+                          }}
+                          placeholder="Ví dụ: Gọi trước 15 phút khi đến cổng..."
+                        />
+                      </label>
                     </div>
+
                     <div>
-                      <p className="text-[13px] font-semibold text-ink">
-                        Chọn khung giờ thu gom
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
+                      <p className="text-xs font-semibold text-ink">Khung giờ thu gom</p>
+                      <div className="mt-1.5 flex flex-wrap gap-2">
                         {TIME_SLOTS.map((s) => {
                           const past = isTimeSlotInPastForDate(editDateIso, s)
-                          const isSameSchedule =
-                            s === h.slot && formatIsoDateToVi(editDateIso) === h.date
+                          const selected = s === editSlot
                           return (
                             <button
                               key={s}
                               type="button"
-                              disabled={past || isSameSchedule}
-                              onClick={() => void reslot(h, editDateIso, s)}
-                              className={`rounded-full border px-3.5 py-2 text-[13px] font-medium transition-colors ${
-                                past || isSameSchedule
+                              disabled={past}
+                              onClick={() => {
+                                setEditSlot(s)
+                                setEditErr("")
+                              }}
+                              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                                past
                                   ? "border-line bg-surface-2 text-muted cursor-not-allowed opacity-60"
-                                  : "border-brand bg-white text-brand hover:bg-brand/10"
+                                  : selected
+                                    ? "border-brand bg-brand text-white"
+                                    : "border-brand/40 bg-white text-brand hover:bg-brand/10"
                               }`}
                             >
                               {s}
-                              {past ? " (đã qua)" : isSameSchedule ? " (hiện tại)" : ""}
+                              {past ? " (đã qua)" : ""}
                             </button>
                           )
                         })}
                       </div>
                     </div>
-                  </div>
+
+                    <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+                      Địa chỉ điểm hẹn lấy hàng
+                      <input
+                        className="input h-10 bg-white text-xs"
+                        value={editAddress}
+                        onChange={(e) => {
+                          setEditAddress(e.target.value)
+                          setEditErr("")
+                        }}
+                      />
+                    </label>
+                    <LocationPinPickerMap
+                      lat={editLat}
+                      lng={editLng}
+                      pinTitle="Điểm hẹn cập nhật"
+                      onChange={(nextLat, nextLng, hint) => {
+                        setEditLat(nextLat)
+                        setEditLng(nextLng)
+                        if (hint) setEditAddress(hint)
+                      }}
+                    />
+
+                    {editErr && (
+                      <p
+                        role="alert"
+                        className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn"
+                      >
+                        {editErr}
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="submit"
+                        disabled={editSaving}
+                        className="btn-primary h-10 px-5 text-xs"
+                      >
+                        {editSaving ? "Đang lưu cập nhật..." : "Lưu cập nhật yêu cầu"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditId(null)
+                          setEditErr("")
+                        }}
+                        className="btn-ghost h-10 px-4 text-xs"
+                      >
+                        Hủy chỉnh sửa
+                      </button>
+                    </div>
+                  </form>
                 )}
 
                 {h.reason && (
@@ -636,19 +1024,42 @@ function CreateForm({
   initialPartnerId,
   initialPartner,
   initialWasteId,
+  dynamicCategories,
   onDone,
 }: {
   initialPartnerId?: string
   initialPartner?: string
   initialWasteId?: string
+  dynamicCategories: WasteCategoryItemDto[]
   onDone: (d: Draft) => void
 }) {
-  const [activeCatCodes, setActiveCatCodes] = useState<Set<string> | null>(null)
-  const availableWastes = activeCatCodes
-    ? WASTES.filter(
-        (w) => w.recyclable && activeCatCodes.has((WASTE_TO_CAT[w.id] ?? w.id).toLowerCase()),
-      )
-    : WASTES.filter((w) => w.recyclable)
+  const staticRecyclables = WASTES.filter((w) => w.recyclable)
+  const coveredCatCodes = new Set(
+    staticRecyclables.map((w) => (WASTE_TO_CAT[w.id] ?? w.id).toLowerCase()),
+  )
+  const activeCatCodes =
+    dynamicCategories.length > 0
+      ? new Set(dynamicCategories.map((c) => c.code.toLowerCase()))
+      : null
+
+  const dynamicExtraWastes = dynamicCategories
+    .filter((c) => !coveredCatCodes.has(c.code.toLowerCase()))
+    .map((c) => ({
+      id: c.code,
+      name: c.name,
+      price: 4000,
+      recyclable: true,
+    }))
+
+  const availableWastes: { id: string; name: string; price: number; recyclable: boolean }[] =
+    activeCatCodes
+      ? [
+          ...staticRecyclables.filter((w) =>
+            activeCatCodes.has((WASTE_TO_CAT[w.id] ?? w.id).toLowerCase()),
+          ),
+          ...dynamicExtraWastes,
+        ]
+      : staticRecyclables
 
   const validInitialWaste = availableWastes.some((w) => w.id === initialWasteId)
     ? (initialWasteId as string)
@@ -657,31 +1068,16 @@ function CreateForm({
   const [rows, setRows] = useState([{ wasteId: validInitialWaste, kg: 5 }])
 
   useEffect(() => {
-    if (isSsrSmokeTest()) return
-    let active = true
-    fetchWasteCategories()
-      .then((cats) => {
-        if (!active) return
-        const codeSet = new Set(cats.map((c) => c.code.toLowerCase()))
-        setActiveCatCodes(codeSet)
-        const nextAvailable = WASTES.filter(
-          (w) => w.recyclable && codeSet.has((WASTE_TO_CAT[w.id] ?? w.id).toLowerCase()),
-        )
-        const firstId = nextAvailable[0]?.id
-        if (firstId) {
-          const validIds = new Set(nextAvailable.map((w) => w.id))
-          setRows((prev) =>
-            prev.map((row) =>
-              validIds.has(row.wasteId) ? row : { ...row, wasteId: firstId },
-            ),
-          )
-        }
-      })
-      .catch(() => {})
-    return () => {
-      active = false
-    }
-  }, [])
+    if (availableWastes.length === 0) return
+    const validIds = new Set(availableWastes.map((w) => w.id))
+    const fallbackId = availableWastes[0].id
+    setRows((prev) =>
+      prev.every((row) => validIds.has(row.wasteId))
+        ? prev
+        : prev.map((row) => (validIds.has(row.wasteId) ? row : { ...row, wasteId: fallbackId })),
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dynamicCategories])
   const [appointmentDate, setAppointmentDate] = useState<string>(
     () => getDefaultAppointmentDateAndSlot().dateIso,
   )
@@ -739,7 +1135,8 @@ function CreateForm({
     const mat = selectedPartnerObj?.materials?.find(
       (m) => m.categoryCode.toLowerCase() === catCode.toLowerCase() && m.pricePerKg > 0,
     )
-    return mat?.pricePerKg ?? priceOf(wasteId)
+    const fallbackPrice = availableWastes.find((w) => w.id === wasteId)?.price ?? priceOf(wasteId)
+    return mat?.pricePerKg ?? (fallbackPrice > 0 ? fallbackPrice : 4000)
   }
 
   const set = (i: number, patch: Partial<{ wasteId: string; kg: number }>) =>

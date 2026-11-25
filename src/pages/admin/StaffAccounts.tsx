@@ -1,16 +1,18 @@
 import { useEffect, useState } from "react"
-import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
+import PaginationBar, { extractPagedMeta, FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import SearchFilterBar from "@/components/SearchFilterBar"
-import { Field, FormRequiredLegend, PageHead, Status, Table, TableSkeleton, Td } from "@/components/admin/ui"
+import { Empty, Field, FormRequiredLegend, PageHead, Status, Table, TableSkeleton, Td } from "@/components/admin/ui"
 import { STAFF, type Staff } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
-import { initApiLoading, initApiState } from "@/lib/hydration"
+import { initApiLoading, initApiState, isSsrSmokeTest } from "@/lib/hydration"
 import {
   createAdminStaff,
+  getAdminStaffAttendance,
   getAdminStaffList,
   lockOrUnlockStaff,
   toUiPerm,
   updateAdminStaff,
+  type AdminStaffAttendanceRowDto,
   type StaffMemberDto,
 } from "@/lib/governanceApi"
 import { hasLiveBackendAuth, useSession } from "@/lib/session"
@@ -49,11 +51,33 @@ const FALLBACK_STAFF: StaffRow[] = STAFF.map((s) => ({
  *  - BR-ADM-03: Khoá / Mở khoá bắt buộc nhập lý do >= 10 ký tự và thu hồi Refresh Token tức thời.
  *  - Chặn tự khoá chính tài khoản đang đăng nhập.
  */
+function getMonthDateRange(year: number, month: number): { fromDate: string; toDate: string } {
+  const mm = String(month).padStart(2, "0")
+  const lastDay = new Date(year, month, 0).getDate()
+  return {
+    fromDate: `${year}-${mm}-01`,
+    toDate: `${year}-${mm}-${String(lastDay).padStart(2, "0")}`,
+  }
+}
+
 export default function StaffAccounts() {
   const session = useSession()
+  const [activeTab, setActiveTab] = useState<"accounts" | "attendance">("accounts")
   const [list, setList] = useState<StaffRow[]>(() => initApiState([], FALLBACK_STAFF))
   const [loading, setLoading] = useState(() => initApiLoading(true))
   const [isLive, setIsLive] = useState(false)
+
+  // Tab chấm công nhân viên (A-03 / S-11)
+  const [attMonth, setAttMonth] = useState(() => new Date().getMonth() + 1)
+  const [attYear, setAttYear] = useState(() => new Date().getFullYear())
+  const [attStaffId, setAttStaffId] = useState("")
+  const [attSearch, setAttSearch] = useState("")
+  const debouncedAttSearch = useDebouncedValue(attSearch, 250)
+  const [attPage, setAttPage] = useState(1)
+  const [attRows, setAttRows] = useState<AdminStaffAttendanceRowDto[]>([])
+  const [attTotal, setAttTotal] = useState(0)
+  const [attLoading, setAttLoading] = useState(false)
+  const [attErr, setAttErr] = useState("")
 
   // Form tạo mới
   const [name, setName] = useState("")
@@ -113,6 +137,40 @@ export default function StaffAccounts() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (isSsrSmokeTest() || activeTab !== "attendance") return
+    let cancelled = false
+    setAttLoading(true)
+    setAttErr("")
+    const { fromDate, toDate } = getMonthDateRange(attYear, attMonth)
+    const hasSearch = debouncedAttSearch.trim().length > 0
+    void getAdminStaffAttendance({
+      fromDate,
+      toDate,
+      staffId: attStaffId || undefined,
+      pageNumber: hasSearch ? 1 : attPage,
+      pageSize: hasSearch ? 100 : FIXED_PAGE_SIZE,
+    })
+      .then((res) => {
+        if (cancelled || !res.data) return
+        setAttRows(res.data.items ?? [])
+        setAttTotal(extractPagedMeta(res.data).totalCount)
+      })
+      .catch((err) => {
+        if (!cancelled && hasLiveBackendAuth()) {
+          setAttErr(
+            err instanceof Error ? err.message : "Không tải được nhật ký chấm công nhân viên.",
+          )
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAttLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab, attMonth, attYear, attStaffId, attPage, debouncedAttSearch])
 
   const add = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -334,8 +392,193 @@ export default function StaffAccounts() {
       <PageHead
         eyebrow="QUẢN TRỊ · A-03"
         title="Tài khoản nhân viên"
-        body="Khởi tạo, cập nhật phòng ban/chức vụ và khoá tài khoản nhân viên vận hành. Tài khoản mới luôn bắt đầu với 0 quyền hạn (Least-Privilege) cho tới khi bạn cấp ở trang Phân quyền."
+        body="Khởi tạo, cập nhật phòng ban/chức vụ, khoá tài khoản và theo dõi nhật ký chấm công ca trực của nhân viên vận hành."
       />
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-line pb-3">
+        <button
+          type="button"
+          onClick={() => setActiveTab("accounts")}
+          className={`rounded-lg px-4 py-2 text-[13px] font-semibold transition-colors ${
+            activeTab === "accounts"
+              ? "bg-brand text-white"
+              : "bg-surface-2 text-body hover:text-ink"
+          }`}
+        >
+          Danh sách nhân sự ({list.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("attendance")}
+          className={`rounded-lg px-4 py-2 text-[13px] font-semibold transition-colors ${
+            activeTab === "attendance"
+              ? "bg-brand text-white"
+              : "bg-surface-2 text-body hover:text-ink"
+          }`}
+        >
+          Nhật ký chấm công &amp; Bàn giao ca
+        </button>
+      </div>
+
+      {activeTab === "attendance" ? (
+        <section className="flex flex-col gap-4">
+          <div className="card flex flex-wrap items-end gap-3 p-4">
+            <Field label="Tháng">
+              <select
+                className="input h-10 w-28 text-xs"
+                value={attMonth}
+                onChange={(e) => {
+                  setAttMonth(Number(e.target.value))
+                  setAttPage(1)
+                }}
+              >
+                {Array.from({ length: 12 }, (_, idx) => idx + 1).map((m) => (
+                  <option key={m} value={m}>
+                    Tháng {m}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Năm">
+              <select
+                className="input h-10 w-28 text-xs"
+                value={attYear}
+                onChange={(e) => {
+                  setAttYear(Number(e.target.value))
+                  setAttPage(1)
+                }}
+              >
+                {[attYear - 1, attYear, attYear + 1].map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Nhân viên">
+              <select
+                className="input h-10 w-56 text-xs"
+                value={attStaffId}
+                onChange={(e) => {
+                  setAttStaffId(e.target.value)
+                  setAttPage(1)
+                }}
+              >
+                <option value="">Tất cả nhân viên</option>
+                {list
+                  .filter((s) => Boolean(s.backendUserId))
+                  .map((s) => (
+                    <option key={s.backendUserId} value={s.backendUserId}>
+                      {s.id} · {s.name}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            <Field label="Tìm từ khóa">
+              <input
+                type="search"
+                className="input h-10 w-56 text-xs"
+                value={attSearch}
+                onChange={(e) => {
+                  setAttSearch(e.target.value)
+                  setAttPage(1)
+                }}
+                placeholder="Tên NV, phòng ban, ghi chú..."
+              />
+            </Field>
+          </div>
+
+          {attErr && (
+            <p
+              role="alert"
+              className="rounded-xl border border-warn/30 bg-warn/5 px-4 py-3 text-[13px] font-semibold text-warn"
+            >
+              {attErr}
+            </p>
+          )}
+
+          {attLoading ? (
+            <TableSkeleton rows={5} />
+          ) : (() => {
+            const kw = debouncedAttSearch.trim().toLowerCase()
+            const filteredAtt = attRows.filter(
+              (r) =>
+                !kw ||
+                `${r.staffCode} ${r.staffName} ${r.department ?? ""} ${r.shiftNote ?? ""}`
+                  .toLowerCase()
+                  .includes(kw),
+            )
+            const displayRows = kw ? paginateItems(filteredAtt, attPage, FIXED_PAGE_SIZE) : filteredAtt
+            const displayTotal = kw ? filteredAtt.length : attTotal
+
+            if (displayRows.length === 0) {
+              return (
+                <Empty>
+                  Chưa có bản ghi chấm công ca trực nào trong tháng {attMonth}/{attYear}.
+                </Empty>
+              )
+            }
+            return (
+              <>
+                <Table
+                  head={[
+                    "Ngày trực",
+                    "Nhân viên",
+                    "Vào / Ra ca",
+                    "Thời lượng",
+                    "Chuỗi · Điểm ca",
+                    "Ghi chú bàn giao ca",
+                  ]}
+                >
+                  {displayRows.map((r) => (
+                    <tr key={r.attendanceId}>
+                      <Td className="tabular-nums font-semibold text-ink whitespace-nowrap">
+                        {r.workDate}
+                      </Td>
+                      <Td>
+                        <span className="font-semibold text-ink">{r.staffName}</span>
+                        <span className="block text-xs text-muted">
+                          {r.staffCode} · {r.department || "Vận hành"}
+                        </span>
+                      </Td>
+                      <Td className="tabular-nums text-xs whitespace-nowrap">
+                        {new Date(r.checkInAt).toLocaleTimeString("vi-VN", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}{" "}
+                        →{" "}
+                        {r.checkOutAt
+                          ? new Date(r.checkOutAt).toLocaleTimeString("vi-VN", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "Đang trực"}
+                      </Td>
+                      <Td className="tabular-nums whitespace-nowrap">
+                        {r.workedMinutes != null ? `${r.workedMinutes} phút` : "—"}
+                      </Td>
+                      <Td className="tabular-nums whitespace-nowrap">
+                        <span className="font-semibold text-brand-deep">
+                          {r.streakDay} ngày · +{r.workPointsEarned}
+                        </span>
+                      </Td>
+                      <Td className="text-xs text-body">{r.shiftNote || "—"}</Td>
+                    </tr>
+                  ))}
+                </Table>
+                <PaginationBar
+                  page={attPage}
+                  pageSize={FIXED_PAGE_SIZE}
+                  totalCount={displayTotal}
+                  onPageChange={setAttPage}
+                  itemLabel="bản ghi chấm công"
+                />
+              </>
+            )
+          })()}
+        </section>
+      ) : (
+        <>
 
       <form onSubmit={add} noValidate className="card flex flex-col gap-5 p-5 md:p-6">
         <FormRequiredLegend />
@@ -501,6 +744,8 @@ export default function StaffAccounts() {
       <p className="max-w-[70ch] text-sm leading-6 text-muted">
         Nhân viên bị khoá sẽ ngay lập tức bị thu hồi phiên đăng nhập (Refresh Token + bộ chặn trạng thái JWT). Hồ sơ nhân viên không xoá cứng để giữ nguyên dấu vết kiểm duyệt AI, biên bản khiếu nại và nhật ký kiểm toán.
       </p>
+        </>
+      )}
 
       {editTarget && (
         <div

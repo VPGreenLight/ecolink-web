@@ -71,25 +71,40 @@ export async function fetchMyNotifications(params?: {
   })
 }
 
+export const NOTIFICATIONS_UPDATED_EVENT = "ecolink:notifications-updated"
+
+function emitNotificationsUpdated(detail?: { unreadCount?: number; delta?: number }) {
+  if (typeof window === "undefined") return
+  window.dispatchEvent(new CustomEvent(NOTIFICATIONS_UPDATED_EVENT, { detail }))
+}
+
 /** [STT 170] Đánh dấu một thông báo là đã đọc (PATCH /api/v1/notifications/{notificationId}/read). */
 export async function markNotificationRead(
   notificationId: string,
 ): Promise<ApiResponse<MarkNotificationReadResultDto>> {
-  return apiRequest<MarkNotificationReadResultDto>(
+  const res = await apiRequest<MarkNotificationReadResultDto>(
     `/api/v1/notifications/${notificationId}/read`,
     {
       method: "PATCH",
     },
   )
+  if (res.success) {
+    emitNotificationsUpdated({ delta: -1 })
+  }
+  return res
 }
 
 /** [STT 171] Đánh dấu toàn bộ thông báo chưa đọc của tài khoản là đã xem (PUT /api/v1/notifications/read-all). */
 export async function markAllNotificationsRead(): Promise<
   ApiResponse<MarkAllNotificationsReadResultDto>
 > {
-  return apiRequest<MarkAllNotificationsReadResultDto>("/api/v1/notifications/read-all", {
+  const res = await apiRequest<MarkAllNotificationsReadResultDto>("/api/v1/notifications/read-all", {
     method: "PUT",
   })
+  if (res.success) {
+    emitNotificationsUpdated({ unreadCount: 0 })
+  }
+  return res
 }
 
 async function resolveSignalRToken(): Promise<string> {

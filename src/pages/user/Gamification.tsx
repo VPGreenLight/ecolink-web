@@ -10,13 +10,16 @@ import {
   fetchAvailableGifts,
   fetchMyUnlockedEcoFacts,
   fetchMyVirtualTree,
+  fetchPointLedger,
   fetchPointWallet,
   upgradeVirtualTree,
   type EcoFactItemDto,
   type GiftItemDto,
+  type PointTransactionDto,
   type VirtualTreeDto,
   type WalletDto,
 } from "@/lib/gamificationApi"
+import { isSsrSmokeTest } from "@/lib/hydration"
 import { hasLiveBackendAuth } from "@/lib/session"
 
 const BRANCHES = [
@@ -54,27 +57,37 @@ export default function Gamification() {
   const debouncedGiftSearch = useDebouncedValue(giftSearch, 250)
   const [giftPage, setGiftPage] = useState(1)
   const giftPageSize = FIXED_PAGE_SIZE
+  const [ledger, setLedger] = useState<PointTransactionDto[]>([])
+  const [ledgerTotal, setLedgerTotal] = useState(0)
+  const [ledgerPage, setLedgerPage] = useState(1)
 
   const loadAll = async () => {
     try {
-      const [wRes, tRes, fRes, gRes] = await Promise.all([
+      const [wRes, tRes, fRes, gRes, lRes] = await Promise.all([
         fetchPointWallet(),
         fetchMyVirtualTree(),
         fetchMyUnlockedEcoFacts(true),
         fetchAvailableGifts({ sort: "points_asc" }),
+        fetchPointLedger({ page: ledgerPage, pageSize: FIXED_PAGE_SIZE }),
       ])
       if (wRes.data) setWallet(wRes.data)
       if (tRes.data) setTree(tRes.data)
       if (fRes.data) setFacts(fRes.data)
       if (gRes.data) setGifts(gRes.data)
+      if (lRes.data) {
+        setLedger(lRes.data.items ?? [])
+        setLedgerTotal(lRes.data.totalCount ?? lRes.data.items?.length ?? 0)
+      }
     } catch {
       // Giữ trạng thái hiện tại
     }
   }
 
   useEffect(() => {
+    if (isSsrSmokeTest()) return
     if (liveMode) void loadAll()
-  }, [liveMode])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveMode, ledgerPage])
 
   const handleUpgrade = async () => {
     if (upgrading) return
@@ -195,7 +208,12 @@ export default function Gamification() {
             >
               <path d="M100 230V120" stroke="var(--color-brand-deep)" strokeWidth="7" strokeLinecap="round" />
               {SVG_COORDS.map((pos, i) => {
-                const unlockedCount = liveMode ? facts.length : 2
+                const actualUnlockedFacts = facts.filter(
+                  (f) =>
+                    f.isUnlocked === true ||
+                    (f.isUnlocked === undefined && tree ? f.unlockTreeLevel <= tree.level : false),
+                ).length
+                const unlockedCount = liveMode ? (tree?.unlockedFactCount ?? actualUnlockedFacts) : 2
                 const open = i < unlockedCount
                 return (
                   <g key={i}>
@@ -251,7 +269,16 @@ export default function Gamification() {
 
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-bold text-ink">
-                  Thư viện Eco Fact ({tree?.unlockedFactCount ?? facts.filter((f) => f.isUnlocked !== false).length}/{tree?.totalFactCount ?? facts.length} đã mở)
+                  Thư viện Eco Fact (
+                  {tree?.unlockedFactCount ??
+                    facts.filter(
+                      (f) =>
+                        f.isUnlocked === true ||
+                        (f.isUnlocked === undefined && tree
+                          ? f.unlockTreeLevel <= tree.level
+                          : false),
+                    ).length}
+                  /{tree?.totalFactCount ?? facts.length} đã mở)
                 </h3>
                 <input
                   type="search"
@@ -284,7 +311,10 @@ export default function Gamification() {
                   <>
                     <ul className="flex flex-col gap-2">
                       {pagedFacts.map((f) => {
-                        const unlocked = f.isUnlocked !== false
+                        const unlocked =
+                          f.isUnlocked === true ||
+                          (f.isUnlocked === undefined &&
+                            (tree ? f.unlockTreeLevel <= tree.level : false))
                         return (
                           <li
                             key={f.id}
@@ -476,6 +506,55 @@ export default function Gamification() {
           )}
         </div>
       </section>
+
+      {liveMode && (
+        <section className="card flex flex-col gap-3 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-bold text-ink">Lịch sử biến động Điểm Xanh</h2>
+              <p className="mt-0.5 text-xs text-muted">
+                Theo dõi chi tiết các lần cộng điểm bàn giao, điểm danh, nâng cấp cây ảo và đổi quà.
+              </p>
+            </div>
+            <Link to="/rewards" className="text-xs font-semibold text-brand hover:underline">
+              Mở trang Đổi thưởng →
+            </Link>
+          </div>
+          {ledger.length === 0 ? (
+            <p className="text-sm text-muted">Chưa có giao dịch điểm xanh nào được ghi nhận.</p>
+          ) : (
+            <>
+              <Table head={["Thời gian", "Hoạt động", "Mô tả", "Biến động"]}>
+                {ledger.map((item) => (
+                  <tr key={item.id}>
+                    <Td className="tabular-nums text-xs text-muted whitespace-nowrap">
+                      {new Date(item.createdAt).toLocaleString("vi-VN")}
+                    </Td>
+                    <Td className="text-xs font-semibold text-ink whitespace-nowrap">
+                      {item.actionType}
+                    </Td>
+                    <Td className="text-xs text-body">{item.description || "—"}</Td>
+                    <Td
+                      className={`tabular-nums font-bold whitespace-nowrap ${
+                        item.points >= 0 ? "text-brand-deep" : "text-warn"
+                      }`}
+                    >
+                      {item.points >= 0 ? `+${fmt(item.points)}` : fmt(item.points)}
+                    </Td>
+                  </tr>
+                ))}
+              </Table>
+              <PaginationBar
+                page={ledgerPage}
+                pageSize={FIXED_PAGE_SIZE}
+                totalCount={ledgerTotal}
+                onPageChange={setLedgerPage}
+                itemLabel="giao dịch điểm"
+              />
+            </>
+          )}
+        </section>
+      )}
     </div>
   )
 }

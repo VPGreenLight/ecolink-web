@@ -95,12 +95,20 @@ export interface RecyclerProfileDto {
   activePriceCount: number
 }
 
+export interface ScheduleDayDto {
+  dayOfWeek: number
+  isClosed: boolean
+  openTime?: string | null
+  closeTime?: string | null
+}
+
 export interface AvailabilityDto {
   isOnline: boolean
   activeStatus: string
   verificationStatus: string
   busyReason?: string | null
   operatingHours: string
+  weeklySchedule?: ScheduleDayDto[]
   activePriceCount: number
 }
 
@@ -116,6 +124,8 @@ export interface WasteCategoryDto {
   description?: string | null
   standardBinColor?: string | null
   iconUrl?: string | null
+  isRecyclable?: boolean
+  status?: string
 }
 
 export interface RecyclerPriceDto {
@@ -752,6 +762,7 @@ export async function submitRecyclerOnboarding(
 export async function fetchRecyclerStatus(): Promise<{
   profile: RecyclerProfileDto
   isOnline: boolean
+  weeklySchedule: ScheduleDayDto[]
   fromBackend: boolean
 }> {
   try {
@@ -776,9 +787,13 @@ export async function fetchRecyclerStatus(): Promise<{
     return {
       profile: profileRes.data,
       isOnline: availRes.data.isOnline,
+      weeklySchedule: Array.isArray(availRes.data.weeklySchedule) ? availRes.data.weeklySchedule : [],
       fromBackend: true,
     }
-  } catch {
+  } catch (err) {
+    if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+      throw err
+    }
     const state = readSyncState()
     return {
       profile: {
@@ -797,6 +812,7 @@ export async function fetchRecyclerStatus(): Promise<{
         activePriceCount: 4,
       },
       isOnline: state.demoRecyclerOnline,
+      weeklySchedule: [],
       fromBackend: false,
     }
   }
@@ -908,6 +924,104 @@ export async function updateRecyclerWarehousePin(
   }
 }
 
+export async function updateRecyclerProfile(
+  currentProfile: RecyclerProfileDto,
+  patch: Partial<
+    Pick<
+      RecyclerProfileDto,
+      | "facilityName"
+      | "representativeName"
+      | "businessAddress"
+      | "latitude"
+      | "longitude"
+      | "contactPhone"
+      | "operatingHours"
+      | "description"
+      | "businessPhotoUrl"
+    >
+  >,
+): Promise<{ profile: RecyclerProfileDto; message: string; fromBackend: boolean }> {
+  const merged: RecyclerProfileDto = {
+    ...currentProfile,
+    ...patch,
+  }
+  try {
+    const res = await authorizedRequest<RecyclerProfileDto>(
+      "recycler",
+      "/api/v1/recycler/profile",
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          facilityName: merged.facilityName.trim(),
+          representativeName: merged.representativeName?.trim() || null,
+          businessAddress: merged.businessAddress.trim(),
+          latitude: merged.latitude,
+          longitude: merged.longitude,
+          contactPhone: merged.contactPhone.trim(),
+          operatingHours: merged.operatingHours?.trim() || null,
+          description: merged.description?.trim() || null,
+          businessPhotoUrl: merged.businessPhotoUrl?.trim() || null,
+        }),
+      },
+    )
+    return {
+      profile: res.data,
+      message: res.message || "Đã cập nhật hồ sơ cơ sở thu mua thành công.",
+      fromBackend: true,
+    }
+  } catch (err) {
+    if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+      throw err
+    }
+    return {
+      profile: merged,
+      message: "Đã cập nhật thông tin cơ sở ở chế độ demo ngoại tuyến.",
+      fromBackend: false,
+    }
+  }
+}
+
+export async function updateRecyclerWeeklySchedule(
+  days: ScheduleDayDto[],
+): Promise<{ availability: AvailabilityDto; message: string; fromBackend: boolean }> {
+  try {
+    const res = await authorizedRequest<AvailabilityDto>(
+      "recycler",
+      "/api/v1/recycler/availability/schedule",
+      {
+        method: "PUT",
+        body: JSON.stringify({ days }),
+      },
+    )
+    return {
+      availability: res.data,
+      message: res.message || "Đã cập nhật lịch hoạt động theo tuần.",
+      fromBackend: true,
+    }
+  } catch (err) {
+    if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+      throw err
+    }
+    const openDays = days.filter((d) => !d.isClosed && d.openTime && d.closeTime)
+    const summary =
+      openDays.length > 0
+        ? `${openDays[0].openTime} - ${openDays[0].closeTime}`
+        : "Tạm đóng cả tuần"
+    return {
+      availability: {
+        isOnline: openDays.length > 0,
+        activeStatus: openDays.length > 0 ? "Online" : "Offline",
+        verificationStatus: "Verified",
+        operatingHours: summary,
+        weeklySchedule: days,
+        activePriceCount: 4,
+      },
+      message: "Đã lưu lịch hoạt động tuần (chế độ ngoại tuyến).",
+      fromBackend: false,
+    }
+  }
+}
+
 /* ------------------------------------------------------------------ Link 3a: Thẩm định hồ sơ Staff (S-04) */
 
 const FALLBACK_COORDS_BY_ID: Record<string, { lat: number; lng: number }> = {
@@ -985,7 +1099,10 @@ export async function fetchStaffApplications(): Promise<{
     )
     const mapped = res.data.items.map(mapDtoToStaffView)
     return { items: mapped, fromBackend: true }
-  } catch {
+  } catch (err) {
+    if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+      throw err
+    }
     const state = readSyncState()
     const base = getInitialStaffApplications()
     const merged = [...state.customApplications, ...base]
@@ -1130,7 +1247,7 @@ function mapBackendOrderStatus(rawStatus?: string | null, hasReason?: boolean): 
 
 function mapApiOrderToSynced(o: TradeOrderApiDto): SyncedHandoverOrder {
   const fallbackWasteId = o.categoryCode
-    ? (CATEGORY_TO_WASTE_ID[o.categoryCode.toLowerCase()] ?? "pet")
+    ? (CATEGORY_TO_WASTE_ID[o.categoryCode.toLowerCase()] ?? o.categoryCode.toLowerCase())
     : "pet"
 
   const mappedLines =
@@ -1203,7 +1320,7 @@ export async function createHandoverOrder(input: CreateHandoverInput): Promise<{
   const categoryCode = isInquiryDraft
     ? undefined
     : primary
-      ? (WASTE_ID_TO_CATEGORY[primary.wasteId] ?? "plastic")
+      ? (WASTE_ID_TO_CATEGORY[primary.wasteId] ?? primary.wasteId)
       : "plastic"
   const partnerGuid =
     input.partnerId && /^[0-9a-fA-F-]{36}$/.test(input.partnerId)
@@ -1361,45 +1478,27 @@ export async function updateHandoverOrderStatus(
   let mappedOrder: SyncedHandoverOrder | undefined
 
   if (isUuid) {
-    // Khi Recycler bấm Nhận đơn: ưu tiên gọi endpoint chuẩn BR-NEG-05 (/accept) để khóa điều khoản & phát SignalR
-    if (role === "recycler" && nextStatus === "Accepted") {
-      try {
-        await authorizedRequest<unknown>("recycler", `/api/v1/trade/orders/${orderId}/accept`, {
-          method: "POST",
-        })
-        syncedWithBackend = true
-      } catch (err) {
-        if (!(err instanceof ApiError && err.status === 404)) {
-          if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
-            throw err
-          }
-        }
+    try {
+      const res = await authorizedRequest<TradeOrderApiDto>(
+        role,
+        `/api/v1/trade/orders/${orderId}/status`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: nextStatus,
+            reason: reason?.trim() || undefined,
+          }),
+        },
+      )
+      if (res.data) {
+        mappedOrder = mapApiOrderToSynced(res.data)
       }
-    }
-
-    if (!syncedWithBackend) {
-      try {
-        const res = await authorizedRequest<TradeOrderApiDto>(
-          role,
-          `/api/v1/trade/orders/${orderId}/status`,
-          {
-            method: "PATCH",
-            body: JSON.stringify({
-              status: nextStatus,
-              reason: reason?.trim() || undefined,
-            }),
-          },
-        )
-        if (res.data) {
-          mappedOrder = mapApiOrderToSynced(res.data)
-        }
-        syncedWithBackend = true
-      } catch (err) {
-        if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
-          throw err
-        }
-        syncedWithBackend = false
+      syncedWithBackend = true
+    } catch (err) {
+      if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+        throw err
       }
+      syncedWithBackend = false
     }
   }
 
@@ -1471,6 +1570,94 @@ export async function updateHandoverOrderTimeSlot(
   }
 
   return { syncedWithBackend }
+}
+
+export interface UpdateHandoverOrderInput {
+  items: { wasteCategoryId: string; wasteId?: string; estimatedWeightKg: number; itemNote?: string }[]
+  photoUrls: string[]
+  proposedTimeSlotIso: string
+  dateVi?: string
+  slot?: string
+  pickupAddress: string
+  latitude?: number | null
+  longitude?: number | null
+  userNote?: string | null
+}
+
+export async function updateHandoverOrder(
+  orderId: string,
+  input: UpdateHandoverOrderInput,
+): Promise<{ order: HandoverRequestDetailApiDto | null; message: string; syncedWithBackend: boolean }> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId)
+  if (!isUuid && hasLiveBackendAuth()) {
+    throw new Error("Đơn bàn giao này không phải bản ghi Backend hợp lệ để cập nhật.")
+  }
+
+  const safePhotos =
+    input.photoUrls.filter((u) => /^https?:\/\//i.test(u.trim())).slice(0, 5)
+  const photoUrls =
+    safePhotos.length > 0 ? safePhotos : ["https://r2.ecolink.vn/handover/default-waste.jpg"]
+
+  let syncedWithBackend = false
+  let updatedDto: HandoverRequestDetailApiDto | null = null
+  let message = "Đã cập nhật yêu cầu bàn giao."
+
+  if (isUuid) {
+    try {
+      const res = await authorizedRequest<HandoverRequestDetailApiDto>(
+        "user",
+        `/api/v1/handover-requests/${orderId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            items: input.items.map((it) => ({
+              wasteCategoryId: it.wasteCategoryId,
+              estimatedWeightKg: Number(it.estimatedWeightKg.toFixed(2)),
+              itemNote: it.itemNote?.trim() || null,
+            })),
+            photoUrls,
+            proposedTimeSlot: input.proposedTimeSlotIso,
+            pickupAddress: input.pickupAddress.trim(),
+            latitude: input.latitude ?? null,
+            longitude: input.longitude ?? null,
+            userNote: input.userNote?.trim() || null,
+          }),
+        },
+      )
+      updatedDto = res.data ?? null
+      message = res.message || message
+      syncedWithBackend = true
+    } catch (err) {
+      if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+        throw err
+      }
+    }
+  }
+
+  const state = readSyncState()
+  if (state.handoverOrders.some((x) => x.id === orderId)) {
+    writeSyncState({
+      ...state,
+      handoverOrders: state.handoverOrders.map((x) =>
+        x.id === orderId
+          ? {
+              ...x,
+              date: input.dateVi ?? x.date,
+              slot: input.slot ?? x.slot,
+              address: input.pickupAddress.trim(),
+              pickupLat: input.latitude ?? x.pickupLat,
+              pickupLng: input.longitude ?? x.pickupLng,
+              lines: input.items.map((it) => ({
+                wasteId: it.wasteId ?? x.lines[0]?.wasteId ?? "plastic",
+                kg: it.estimatedWeightKg,
+              })),
+            }
+          : x,
+      ),
+    })
+  }
+
+  return { order: updatedDto, message, syncedWithBackend }
 }
 
 export function findCachedHandoverOrder(orderId: string): SyncedHandoverOrder | null {
@@ -1564,25 +1751,24 @@ export async function fetchWasteCategories(): Promise<{
   fromBackend: boolean
 }> {
   try {
-    const res = await authorizedRequest<WasteCategoryDto[]>(
-      "recycler",
-      "/api/v1/waste-categories",
-      { method: "GET" },
-    )
+    const res = await apiRequest<WasteCategoryDto[]>("/api/v1/waste-categories", {
+      method: "GET",
+    })
     if (Array.isArray(res.data)) {
       return { items: res.data, fromBackend: true }
     }
-  } catch {
-    // Dự phòng khi máy chủ backend chưa bật
+  } catch (err) {
+    if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+      throw err
+    }
   }
 
   const fallback: WasteCategoryDto[] = [
-    { id: "11111111-1111-1111-1111-111111111101", code: "plastic", name: "Nhựa tái chế (Plastic)", standardBinColor: "cam" },
-    { id: "11111111-1111-1111-1111-111111111102", code: "paper", name: "Giấy báo & Tài liệu (Paper)", standardBinColor: "xanh lam" },
-    { id: "11111111-1111-1111-1111-111111111103", code: "cardboard", name: "Bìa carton (Cardboard)", standardBinColor: "nâu" },
-    { id: "11111111-1111-1111-1111-111111111104", code: "metal", name: "Kim loại & Vỏ lon (Metal)", standardBinColor: "xám" },
-    { id: "11111111-1111-1111-1111-111111111105", code: "glass", name: "Thủy tinh (Glass)", standardBinColor: "xanh lá" },
-    { id: "11111111-1111-1111-1111-111111111106", code: "trash", name: "Rác cồng kềnh / Pin / E-waste", standardBinColor: "đỏ" },
+    { id: "11111111-1111-1111-1111-111111111101", code: "plastic", name: "Nhựa tái chế (Plastic)", standardBinColor: "Cam", isRecyclable: true, status: "Active" },
+    { id: "11111111-1111-1111-1111-111111111102", code: "paper", name: "Giấy báo & Tài liệu (Paper)", standardBinColor: "Xanh dương", isRecyclable: true, status: "Active" },
+    { id: "11111111-1111-1111-1111-111111111103", code: "cardboard", name: "Bìa Carton (Cardboard)", standardBinColor: "Nâu vàng", isRecyclable: true, status: "Active" },
+    { id: "11111111-1111-1111-1111-111111111104", code: "metal", name: "Kim loại & Vỏ lon (Metal)", standardBinColor: "Xám kim loại", isRecyclable: true, status: "Active" },
+    { id: "11111111-1111-1111-1111-111111111105", code: "glass", name: "Thủy tinh (Glass)", standardBinColor: "Trắng", isRecyclable: true, status: "Active" },
   ]
   return { items: fallback, fromBackend: false }
 }
@@ -1778,6 +1964,32 @@ export async function uploadReceiptProofPhoto(
   return `https://images.ecolink.vn/proofs/${encodeURIComponent(file.name)}`
 }
 
+const PREVIEW_PLACEHOLDER_PHOTO = "https://images.ecolink.vn/proofs/preview-placeholder.jpg"
+
+export async function previewHandoverReceipt(
+  requestId: string,
+  req: CreateReceiptRequest,
+): Promise<ReceiptDto | null> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+  if (!isUuid) return null
+
+  const validPhotos = (req.scaleProofPhotoUrls ?? []).filter((u) => /^https?:\/\//i.test(u.trim()))
+  const res = await authorizedRequest<ReceiptDto>(
+    "recycler",
+    `/api/v1/recycler/handover-requests/${requestId}/receipt/preview`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        items: req.items,
+        scaleProofPhotoUrls:
+          validPhotos.length > 0 ? validPhotos.slice(0, 5) : [PREVIEW_PLACEHOLDER_PHOTO],
+        receiptImageUrl: req.receiptImageUrl ?? null,
+      }),
+    },
+  )
+  return res.data ?? null
+}
+
 export async function createHandoverReceipt(
   requestId: string,
   req: CreateReceiptRequest,
@@ -1840,7 +2052,7 @@ export async function createHandoverReceipt(
     deviationPercent: 0,
     hasDeviationWarning: false,
     deviationMessage: null,
-    points: Math.round(totalWeight * 2),
+    points: 0,
     pointsCredited: false,
     scaleProofPhotoUrls: req.scaleProofPhotoUrls || [],
     receiptImageUrl: req.receiptImageUrl || null,
@@ -2040,8 +2252,25 @@ export async function fetchUserTransactions(
     if (res.data) {
       return { data: res.data, fromBackend: true }
     }
-  } catch {
-    // Dự phòng
+  } catch (err) {
+    if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+      throw err
+    }
+  }
+
+  if (hasLiveBackendAuth()) {
+    return {
+      data: {
+        items: [],
+        page,
+        pageSize,
+        totalCount: 0,
+        totalWeightKg: 0,
+        totalAmountCash: 0,
+        totalPoints: 0,
+      },
+      fromBackend: false,
+    }
   }
 
   const state = readSyncState()
@@ -2081,8 +2310,10 @@ export async function fetchRecyclerTransactions(
     if (res.data) {
       return { data: res.data, fromBackend: true }
     }
-  } catch {
-    // Dự phòng
+  } catch (err) {
+    if (hasLiveBackendAuth() || (err instanceof ApiError && !err.isNetworkError)) {
+      throw err
+    }
   }
 
   return {

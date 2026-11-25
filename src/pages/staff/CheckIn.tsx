@@ -1,15 +1,42 @@
-import { useEffect, useState } from "react"
-import CheckIn from "@/components/CheckIn"
+import { useEffect, useMemo, useState } from "react"
 import { Empty, Field, PageHead, Status, Table, Td } from "@/components/Portal"
 import { fmt } from "@/data/rewards"
-import { initApiState } from "@/lib/hydration"
+import { initApiState, isSsrSmokeTest } from "@/lib/hydration"
 import {
   checkInStaff,
   checkOutStaff,
   getMyAttendance,
   type StaffAttendanceItemDto,
 } from "@/lib/governanceApi"
-import { useUser } from "@/lib/session"
+import { hasLiveBackendAuth, useUser } from "@/lib/session"
+
+function formatVnDateKey(date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date)
+}
+
+function getLast7VnDays() {
+  const now = new Date()
+  return Array.from({ length: 7 }, (_, idx) => {
+    const offset = 6 - idx
+    const d = new Date(now.getTime() - offset * 86_400_000)
+    const key = formatVnDateKey(d)
+    const shortLabel = new Intl.DateTimeFormat("vi-VN", {
+      timeZone: "Asia/Ho_Chi_Minh",
+      weekday: "short",
+    }).format(d)
+    const dayMonth = new Intl.DateTimeFormat("vi-VN", {
+      timeZone: "Asia/Ho_Chi_Minh",
+      day: "2-digit",
+      month: "2-digit",
+    }).format(d)
+    return { key, shortLabel, dayMonth, isToday: offset === 0 }
+  })
+}
 
 /**
  * S-11 Điểm danh ca trực hằng ngày của Nhân viên vận hành.
@@ -35,6 +62,7 @@ export default function StaffCheckIn() {
   const [errMsg, setErrMsg] = useState("")
 
   useEffect(() => {
+    if (isSsrSmokeTest()) return
     let cancelled = false
     getMyAttendance()
       .then((res) => {
@@ -50,13 +78,25 @@ export default function StaffCheckIn() {
         }
         setIsLive(true)
       })
-      .catch(() => {
-        // Fallback giữ widget CheckIn cục bộ khi chưa kết nối Backend
+      .catch((err) => {
+        if (cancelled) return
+        if (hasLiveBackendAuth()) {
+          setErrMsg(err instanceof Error ? err.message : "Không thể tải dữ liệu điểm danh ca trực.")
+        }
       })
     return () => {
       cancelled = true
     }
   }, [])
+
+  const weekDays = useMemo(() => getLast7VnDays(), [])
+  const attendanceMap = useMemo(() => {
+    const map = new Map<string, StaffAttendanceItemDto>()
+    for (const r of records) {
+      map.set(r.workDate.slice(0, 10), r)
+    }
+    return map
+  }, [records])
 
   const handleServerCheckIn = async () => {
     setErrMsg("")
@@ -116,15 +156,53 @@ export default function StaffCheckIn() {
 
       <section className="card flex flex-col gap-6 p-5 md:p-7 lg:flex-row lg:items-center lg:gap-10">
         <div className="min-w-0 flex-1">
-          <CheckIn
-            balance={points}
-            onEarn={(n) => {
-              setPoints((p) => p + n)
-              if (isLive && !checkedInToday) {
-                void handleServerCheckIn()
-              }
-            }}
-          />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-ink">Điểm danh hằng ngày</h2>
+              <p className="mt-0.5 text-[13px] text-muted">
+                {checkedInToday
+                  ? "Bạn đã ghi nhận mở ca trực hôm nay (theo giờ Việt Nam UTC+7)."
+                  : "Theo dõi chuyên cần 7 ngày gần nhất theo dữ liệu máy chủ."}
+              </p>
+            </div>
+            {!checkedInToday && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  void handleServerCheckIn()
+                }}
+                className="btn-primary h-9 px-4 text-[13px]"
+              >
+                {busy ? "Đang ghi nhận..." : "Điểm danh ngay"}
+              </button>
+            )}
+          </div>
+
+          <div className="mt-4 grid grid-cols-7 gap-2">
+            {weekDays.map((day) => {
+              const rec = attendanceMap.get(day.key)
+              const done = Boolean(rec) || (day.isToday && checkedInToday)
+              return (
+                <div
+                  key={day.key}
+                  className={`flex flex-col items-center rounded-xl border px-2 py-2.5 text-center ${
+                    done
+                      ? "border-brand/40 bg-brand-soft/60 text-brand-deep"
+                      : day.isToday
+                        ? "border-line bg-surface-2 text-ink"
+                        : "border-line-soft bg-white text-muted"
+                  }`}
+                >
+                  <span className="text-[11px] font-semibold uppercase">{day.shortLabel}</span>
+                  <span className="mt-0.5 text-[12px] font-bold tabular-nums">{day.dayMonth}</span>
+                  <span className="mt-1.5 text-[11px] font-semibold">
+                    {done ? `+${rec?.workPointsEarned ?? 10}` : day.isToday ? "Hôm nay" : "—"}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </div>
 
         <dl className="flex shrink-0 flex-col gap-3 border-t border-line-soft pt-5 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-10">

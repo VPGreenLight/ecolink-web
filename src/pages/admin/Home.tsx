@@ -2,8 +2,10 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { ColumnChart, PageHead, Stat, StatRow, Table, Td } from "@/components/admin/ui"
 import { DATASET, STATS, fmtInt, fmtVnd } from "@/data/ops"
+import { fetchAiDatasetDashboard, type AiDatasetDashboardDto } from "@/lib/aiCurationApi"
 import { getAdminAnalyticsCharts, getAdminKpiSummary } from "@/lib/governanceApi"
-import { initApiState } from "@/lib/hydration"
+import { initApiState, isSsrSmokeTest } from "@/lib/hydration"
+import { hasLiveBackendAuth } from "@/lib/session"
 
 /**
  * A-01 Dashboard và thống kê điều hành cấp cao.
@@ -53,8 +55,25 @@ export default function AdminHome() {
   const [aiByGroup, setAiByGroup] = useState(() =>
     initApiState<typeof STATS.aiByGroup>([], STATS.aiByGroup),
   )
+  const [aiByCategory, setAiByCategory] = useState<
+    Pick<
+      AiDatasetDashboardDto["byCategory"][number],
+      "categoryCode" | "categoryName" | "accuracyPercent"
+    >[]
+  >(() =>
+    initApiState(
+      [],
+      DATASET.byClass.map((c) => ({
+        categoryCode: c.label,
+        categoryName: c.label,
+        accuracyPercent: c.accuracy,
+      })),
+    ),
+  )
+  const [loadErr, setLoadErr] = useState("")
 
   useEffect(() => {
+    if (isSsrSmokeTest()) return
     let cancelled = false
     getAdminKpiSummary(period)
       .then((res) => {
@@ -76,8 +95,12 @@ export default function AdminHome() {
           },
         })
       })
-      .catch(() => {
-        // Giữ nguyên khi ngoại tuyến
+      .catch((err) => {
+        if (!cancelled && hasLiveBackendAuth()) {
+          setLoadErr(
+            err instanceof Error ? err.message : "Không thể tải số liệu tổng quan từ Backend.",
+          )
+        }
       })
 
     return () => {
@@ -86,6 +109,7 @@ export default function AdminHome() {
   }, [period])
 
   useEffect(() => {
+    if (isSsrSmokeTest()) return
     let cancelled = false
     getAdminAnalyticsCharts()
       .then((res) => {
@@ -110,8 +134,26 @@ export default function AdminHome() {
           )
         }
       })
-      .catch(() => {
-        // Giữ biểu đồ mẫu
+      .catch((err) => {
+        if (!cancelled && hasLiveBackendAuth()) {
+          setLoadErr((prev) =>
+            prev || (err instanceof Error ? err.message : "Không thể tải dữ liệu biểu đồ."),
+          )
+        }
+      })
+
+    fetchAiDatasetDashboard()
+      .then((res) => {
+        if (!cancelled && res.success && Array.isArray(res.data?.byCategory)) {
+          setAiByCategory(res.data.byCategory)
+        }
+      })
+      .catch((err) => {
+        if (!cancelled && hasLiveBackendAuth()) {
+          setLoadErr((prev) =>
+            prev || (err instanceof Error ? err.message : "Không thể tải độ chính xác theo lớp rác."),
+          )
+        }
       })
     return () => {
       cancelled = true
@@ -189,6 +231,15 @@ export default function AdminHome() {
         <Stat label={`Khối lượng ${periodLabel}`} value={fmtInt(summary.volume)} unit="kg" />
         <Stat label={`Giá trị ${periodLabel}`} value={fmtVnd(summary.gross)} />
       </StatRow>
+
+      {loadErr && (
+        <p
+          role="alert"
+          className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+        >
+          {loadErr}
+        </p>
+      )}
 
       <p className="text-sm text-body">
         Trong {periodLabel} qua, EcoLink ghi nhận doanh thu gói dịch vụ VietQR{" "}
@@ -328,35 +379,41 @@ export default function AdminHome() {
           to="/staff/dataset"
           cta="Tập dữ liệu"
         >
-          <ul className="flex flex-col">
-            {DATASET.byClass.map((c) => {
-              const below = c.accuracy < summary.aiAccuracy
-              return (
-                <li
-                  key={c.label}
-                  className="grid grid-cols-[minmax(0,132px)_1fr_92px] items-center gap-3 py-1.5"
-                >
-                  <span className="truncate text-[13px] text-body">{c.label}</span>
-                  <span className="relative h-2 overflow-hidden rounded-full bg-surface-3">
-                    <span
-                      className="absolute inset-y-0 left-0 bg-[linear-gradient(90deg,var(--color-mint),var(--color-brand))]"
-                      style={{ width: `${c.accuracy}%` }}
-                    />
-                    <span
-                      className="absolute inset-y-0 w-px bg-ink/45"
-                      style={{ left: `${summary.aiAccuracy}%` }}
-                    />
-                  </span>
-                  <span className="text-right text-[13px] font-semibold tabular-nums text-ink">
-                    {c.accuracy}%
-                  </span>
-                  <span className="sr-only">
-                    {below ? "Dưới trung bình toàn hệ thống" : "Bằng hoặc trên trung bình"}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
+          {aiByCategory.length === 0 ? (
+            <p className="py-4 text-sm text-muted">
+              Chưa có dữ liệu kiểm chứng theo danh mục rác từ Backend.
+            </p>
+          ) : (
+            <ul className="flex flex-col">
+              {aiByCategory.map((c) => {
+                const below = c.accuracyPercent < summary.aiAccuracy
+                return (
+                  <li
+                    key={c.categoryCode}
+                    className="grid grid-cols-[minmax(0,132px)_1fr_92px] items-center gap-3 py-1.5"
+                  >
+                    <span className="truncate text-[13px] text-body">{c.categoryName}</span>
+                    <span className="relative h-2 overflow-hidden rounded-full bg-surface-3">
+                      <span
+                        className="absolute inset-y-0 left-0 bg-[linear-gradient(90deg,var(--color-mint),var(--color-brand))]"
+                        style={{ width: `${Math.min(100, Math.max(0, c.accuracyPercent))}%` }}
+                      />
+                      <span
+                        className="absolute inset-y-0 w-px bg-ink/45"
+                        style={{ left: `${Math.min(100, Math.max(0, summary.aiAccuracy))}%` }}
+                      />
+                    </span>
+                    <span className="text-right text-[13px] font-semibold tabular-nums text-ink">
+                      {c.accuracyPercent}%
+                    </span>
+                    <span className="sr-only">
+                      {below ? "Dưới trung bình toàn hệ thống" : "Bằng hoặc trên trung bình"}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </Chart>
       </section>
     </div>

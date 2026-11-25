@@ -6,13 +6,14 @@ import { PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/comp
 import SearchFilterBar from "@/components/SearchFilterBar"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { ApiError } from "@/lib/api"
-import { initApiLoading, initApiState } from "@/lib/hydration"
+import { initApiLoading, initApiState, isSsrSmokeTest } from "@/lib/hydration"
 import {
   decideStaffApplication,
   fetchStaffApplications,
   getInitialStaffApplications,
   type StaffApplicationView,
 } from "@/lib/recyclerWorkflowApi"
+import { hasLiveBackendAuth } from "@/lib/session"
 
 /** S-04 Thẩm định hồ sơ đối tác thu mua (kèm bản đồ đối chiếu vị trí ghim kho bãi `BR-MTH-01`).
  *
@@ -41,6 +42,7 @@ export default function Applications() {
 
   const reloadApplications = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true)
+    setActionErr("")
     try {
       const res = await fetchStaffApplications()
       setList(res.items)
@@ -50,6 +52,14 @@ export default function Applications() {
         }
         return res.items.find((x) => x.status === "pending")?.id ?? null
       })
+    } catch (err) {
+      setActionErr(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Không thể tải danh sách hồ sơ đối tác thu mua.",
+      )
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -57,6 +67,7 @@ export default function Applications() {
   }, [])
 
   useEffect(() => {
+    if (isSsrSmokeTest()) return
     let active = true
     void fetchStaffApplications()
       .then((res) => {
@@ -65,6 +76,18 @@ export default function Applications() {
         const firstPending = res.items.find((x) => x.status === "pending")
         if (firstPending) {
           setInspectingMapId(firstPending.id)
+        }
+      })
+      .catch((err) => {
+        if (!active) return
+        if (hasLiveBackendAuth()) {
+          setActionErr(
+            err instanceof ApiError
+              ? err.message
+              : err instanceof Error
+                ? err.message
+                : "Không thể tải danh sách hồ sơ đối tác thu mua.",
+          )
         }
       })
       .finally(() => {

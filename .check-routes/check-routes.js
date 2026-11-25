@@ -1,13 +1,21 @@
-import { C as signIn, O as useSession, T as syncSessionState, d as ROLE_LABEL, h as getSession, i as ensureActiveAuthSession, u as ROLE_HOME, w as signOut } from "./assets/api-EXSOClT1.js";
-import { r as openAuthPopup } from "./assets/popupAuth-DBlpLiFF.js";
-import { v as useEntitlements } from "./assets/servicePackageApi-D1TAEkwp.js";
-import { m as ConfirmLogoutDialog, o as Portal, p as PORTAL_NAV } from "./assets/Portal-DIwE919r.js";
+import { C as signIn, O as useSession, T as syncSessionState, d as ROLE_LABEL, g as hasLiveBackendAuth, h as getSession, i as ensureActiveAuthSession, u as ROLE_HOME, w as signOut } from "./assets/api-s1n261eu.js";
+import { r as isSsrSmokeTest } from "./assets/hydration-DFDh5R3l.js";
+import { r as openAuthPopup } from "./assets/popupAuth-CbEcM25r.js";
+import { a as markNotificationRead, i as markAllNotificationsRead, n as createNotificationHubConnection, r as fetchMyNotifications, t as NOTIFICATIONS_UPDATED_EVENT } from "./assets/notificationsApi-blefiHjL.js";
+import { o as getAdminReconciliationLedger, v as useEntitlements } from "./assets/servicePackageApi-l8q88aSB.js";
+import { m as ConfirmLogoutDialog, o as Portal, p as PORTAL_NAV } from "./assets/Portal-BCYwLxhx.js";
+import { a as fetchCurrentUserProfile } from "./assets/authApi-B_RZeGQf.js";
 import { t as AI_AVATAR } from "./assets/scanner-DJC07y4s.js";
 import { d as POSTS, f as STAFF, h as fmtVnd, i as COMPLAINTS, m as fmtInt, n as AI_CASES, o as DATASET, p as STATS, r as APPLICATIONS } from "./assets/ops-DEQYZm4o.js";
-import { n as FLOWS } from "./assets/cashflow-CHqRtMGy.js";
+import { t as FLOWS } from "./assets/cashflow-B8HhmFRJ.js";
+import { a as fetchAiDatasetDashboard, l as fetchStaffAiFeedbackQueue } from "./assets/aiCurationApi-CKzkMDeL.js";
+import { l as fetchStaffBlogs } from "./assets/blogApi-y9RkAsWE.js";
+import { c as getAdminKpiSummary, o as getAdminAnalyticsCharts, u as getAdminStaffList } from "./assets/governanceApi-BMnRND9a.js";
+import { h as fetchStaffApplications } from "./assets/recyclerWorkflowApi-KrUDy3w0.js";
+import { l as fetchStaffComplaints } from "./assets/reviewComplaintApi-BPqoqhtM.js";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Link, MemoryRouter, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 //#region src/components/AuthLayout.tsx
 /** Khung trang riêng cho Đăng nhập / Đăng ký.
@@ -17,7 +25,7 @@ import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 *  nền sáng có quầng xanh nhẹ. */
 var HIGHLIGHTS = [
 	"Kết nối cơ sở thu mua gần bạn",
-	"Tích điểm xanh cho mỗi ki-lô-gam tái chế",
+	"Điểm danh hằng ngày và chăm cây tích Điểm Xanh",
 	"Theo dõi cây ảo và phần thưởng"
 ];
 function AuthLayout() {
@@ -66,7 +74,7 @@ function AuthLayout() {
 								}),
 								/* @__PURE__ */ jsx("p", {
 									className: "mt-4 max-w-[26rem] text-[15px] leading-relaxed text-white/80",
-									children: "Theo dõi lịch thu gom, tích điểm cho mỗi ki-lô-gam tái chế và nuôi dưỡng cây ảo của riêng bạn."
+									children: "Theo dõi lịch thu gom minh bạch, điểm danh tích thưởng và nuôi dưỡng cây ảo của riêng bạn."
 								}),
 								/* @__PURE__ */ jsx("ul", {
 									className: "mt-8 grid gap-3",
@@ -169,9 +177,18 @@ var MOBILE_LINKS = [
 var FOOTER_COLUMNS = [{
 	title: "HỆ SINH THÁI",
 	links: [
-		"Nhận diện tự động qua Camera",
-		"Sàn giao dịch phế liệu GPS",
-		"Cổng liên kết nhà máy tái chế",
+		{
+			label: "Nhận diện tự động qua Camera",
+			to: "/scanner"
+		},
+		{
+			label: "Sàn giao dịch phế liệu GPS",
+			to: "/map"
+		},
+		{
+			label: "Cổng liên kết nhà máy tái chế",
+			to: "/partners"
+		},
 		"Chứng chỉ tín chỉ tuần hoàn EPR"
 	]
 }, {
@@ -239,7 +256,17 @@ function Chevron({ open }) {
 		})
 	});
 }
-function Avatar({ user, size = "size-9" }) {
+function Avatar({ user, avatarUrl, size = "size-9" }) {
+	const [imgFailed, setImgFailed] = useState(false);
+	useEffect(() => {
+		setImgFailed(false);
+	}, [avatarUrl]);
+	if (avatarUrl && !imgFailed) return /* @__PURE__ */ jsx("img", {
+		src: avatarUrl,
+		alt: user || "Ảnh đại diện",
+		onError: () => setImgFailed(true),
+		className: `${size} shrink-0 rounded-full border border-line-soft object-cover`
+	});
 	if (user) return /* @__PURE__ */ jsx("span", {
 		className: `grid ${size} shrink-0 place-items-center rounded-full bg-[linear-gradient(145deg,#00874a,#004826)] text-[13px] leading-none font-bold tracking-wide text-white`,
 		children: initialsOf$1(user)
@@ -296,6 +323,7 @@ var ACCOUNT_ITEMS$1 = [{
 var EXPLORE = [
 	["/terms", "Điều khoản"],
 	["/ecofacts", "Eco Facts"],
+	["/partners", "Đối tác tái chế"],
 	["/leaderboard", "Xếp hạng người dùng"]
 ];
 function ExploreList({ close, withRegister }) {
@@ -373,6 +401,7 @@ function AccountMenu$1() {
 				className: "flex h-10 items-center gap-1 rounded-full border border-line bg-white px-1 shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-colors hover:border-sage-line hover:bg-surface-2",
 				children: [/* @__PURE__ */ jsx(Avatar, {
 					user,
+					avatarUrl: session?.avatarUrl,
 					size: "size-8"
 				}), /* @__PURE__ */ jsx(Chevron, { open })]
 			}),
@@ -384,6 +413,7 @@ function AccountMenu$1() {
 						className: "flex items-center gap-3.5 border-b border-line-soft bg-surface-2/60 px-4 py-3.5",
 						children: [/* @__PURE__ */ jsx(Avatar, {
 							user,
+							avatarUrl: session?.avatarUrl,
 							size: "size-11"
 						}), /* @__PURE__ */ jsxs("div", {
 							className: "min-w-0",
@@ -560,40 +590,84 @@ function Navbar() {
 				/* @__PURE__ */ jsxs("div", {
 					className: "ml-auto flex items-center gap-3",
 					children: [
-						/* @__PURE__ */ jsxs("span", {
-							className: "hidden h-10 items-center gap-1.5 text-xs whitespace-nowrap text-body md:flex",
-							children: [/* @__PURE__ */ jsx("i", { className: "size-1.5 rounded-full bg-brand-soft shadow-[0_0_0_3px_rgba(0,112,61,0.12)]" }), "Hà Nội"]
-						}),
 						!session && /* @__PURE__ */ jsx("button", {
 							type: "button",
 							onClick: () => openAuthPopup("login"),
 							className: "hidden h-10 items-center rounded-full bg-brand px-4 text-sm font-semibold whitespace-nowrap text-white shadow-[0_5px_14px_rgba(0,112,61,0.22)] transition-colors hover:bg-brand-deep sm:inline-flex",
 							children: "Đăng nhập"
 						}),
-						session && /* @__PURE__ */ jsxs(Link, {
-							to: "/account/notifications",
-							"aria-label": "Thông báo",
-							className: "group relative flex size-10 items-center justify-center rounded-full border border-line bg-white text-muted shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-[color,border-color,background-color,transform] duration-200 ease-out hover:border-sage-line hover:bg-surface-2 hover:text-ink active:scale-[0.96]",
-							children: [/* @__PURE__ */ jsxs("svg", {
-								viewBox: "0 0 24 24",
-								fill: "none",
-								stroke: "currentColor",
-								strokeWidth: "1.8",
-								strokeLinecap: "round",
-								strokeLinejoin: "round",
-								"aria-hidden": "true",
-								className: "size-[18px] transition-transform duration-200 group-hover:scale-105",
-								children: [/* @__PURE__ */ jsx("path", { d: "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" }), /* @__PURE__ */ jsx("path", { d: "M10.3 21a1.94 1.94 0 0 0 3.4 0" })]
-							}), /* @__PURE__ */ jsxs("span", {
-								className: "absolute top-2 right-2 flex size-2",
-								children: [/* @__PURE__ */ jsx("span", { className: "absolute inline-flex size-full animate-ping rounded-full bg-brand opacity-75" }), /* @__PURE__ */ jsx("span", { className: "relative inline-flex size-2 rounded-full border-2 border-white bg-brand shadow-[0_0_0_1px_rgba(0,112,61,0.2)]" })]
-							})]
-						}),
+						session && /* @__PURE__ */ jsx(NotificationBellLink, { isLoggedIn: Boolean(session) }),
 						/* @__PURE__ */ jsx(AccountMenu$1, {})
 					]
 				})
 			]
 		})
+	});
+}
+function NotificationBellLink({ isLoggedIn }) {
+	const [unreadCount, setUnreadCount] = useState(0);
+	const live = isLoggedIn && !isSsrSmokeTest() && hasLiveBackendAuth();
+	useEffect(() => {
+		if (!live) {
+			setUnreadCount(0);
+			return;
+		}
+		let active = true;
+		const syncUnread = () => {
+			fetchMyNotifications({
+				pageNumber: 1,
+				pageSize: 1
+			}).then((res) => {
+				if (active && res.success && res.data) setUnreadCount(res.data.unreadCount);
+			}).catch(() => {});
+		};
+		syncUnread();
+		const onUpdated = (e) => {
+			const detail = e.detail;
+			if (typeof detail?.unreadCount === "number") {
+				setUnreadCount(Math.max(0, detail.unreadCount));
+				return;
+			}
+			if (typeof detail?.delta === "number") {
+				setUnreadCount((c) => Math.max(0, c + detail.delta));
+				return;
+			}
+			syncUnread();
+		};
+		window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, onUpdated);
+		const connection = createNotificationHubConnection({
+			onReceiveNotification: () => {
+				if (active) setUnreadCount((c) => c + 1);
+			},
+			onUnreadCountUpdated: (payload) => {
+				if (active && typeof payload?.unreadCount === "number") setUnreadCount(Math.max(0, payload.unreadCount));
+			}
+		});
+		if (connection) connection.start().catch(() => {});
+		return () => {
+			active = false;
+			window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, onUpdated);
+			if (connection) connection.stop().catch(() => {});
+		};
+	}, [live]);
+	return /* @__PURE__ */ jsxs(Link, {
+		to: "/account/notifications",
+		"aria-label": unreadCount > 0 ? `Thông báo (${unreadCount} chưa đọc)` : "Thông báo",
+		className: "group relative flex size-10 items-center justify-center rounded-full border border-line bg-white text-muted shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-[color,border-color,background-color,transform] duration-200 ease-out hover:border-sage-line hover:bg-surface-2 hover:text-ink active:scale-[0.96]",
+		children: [/* @__PURE__ */ jsxs("svg", {
+			viewBox: "0 0 24 24",
+			fill: "none",
+			stroke: "currentColor",
+			strokeWidth: "1.8",
+			strokeLinecap: "round",
+			strokeLinejoin: "round",
+			"aria-hidden": "true",
+			className: "size-[18px] transition-transform duration-200 group-hover:scale-105",
+			children: [/* @__PURE__ */ jsx("path", { d: "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" }), /* @__PURE__ */ jsx("path", { d: "M10.3 21a1.94 1.94 0 0 0 3.4 0" })]
+		}), unreadCount > 0 && /* @__PURE__ */ jsx("span", {
+			className: "absolute -top-1 -right-1 inline-flex min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-brand px-1 text-[10px] leading-[14px] font-bold text-white tabular-nums",
+			children: unreadCount > 99 ? "99+" : unreadCount
+		})]
 	});
 }
 //#endregion
@@ -714,7 +788,7 @@ function Layout() {
 }
 //#endregion
 //#region src/components/admin/Assistant.tsx
-var REPLY = [
+var OFFLINE_REPLY = [
 	{
 		keys: [
 			"chờ",
@@ -810,14 +884,142 @@ var REPLY = [
 		})
 	}
 ];
-var CHIPS = [
-	"Còn việc gì chờ?",
-	"AI chính xác bao nhiêu?",
-	"Tiền tháng này thế nào?"
-];
-function reply(text) {
+function buildLiveReply(text, snap) {
 	const q = text.toLowerCase();
-	return REPLY.find((r) => r.keys.some((k) => q.includes(k)))?.answer() ?? { text: "Mình chỉ tra được số liệu đang mở trên console. Hãi hỏi về việc chờ, độ chính xác AI, dòng tiền, xu hướng giao dịch, khiếu nại hoặc nhân viên." };
+	const hasPerm = (perm) => snap.isAdmin || snap.permissions.has(perm);
+	if ([
+		"chờ",
+		"hàng đợi",
+		"tồn đọng",
+		"còn việc"
+	].some((k) => q.includes(k))) {
+		const parts = [];
+		if (snap.isAdmin && snap.kpi) {
+			parts.push(`${snap.kpi.pending.aiMisclassifiedCases} ảnh AI chờ duyệt`, `${snap.kpi.pending.recyclerApplications} hồ sơ đối tác chờ thẩm định`, `${snap.kpi.pending.openComplaints} khiếu nại đang mở`, `${snap.kpi.pending.pendingBlogPosts} bài Blog chờ duyệt`);
+			return {
+				text: `Số liệu trực tiếp từ Backend: ${parts.join(", ")}.`,
+				link: {
+					to: "/staff/ai-review",
+					label: "Mở hàng đợi"
+				}
+			};
+		}
+		if (hasPerm("REVIEW_AI") && snap.pendingAi !== null) parts.push(`${snap.pendingAi} ảnh AI chờ duyệt`);
+		if (hasPerm("VERIFY_RECYCLER") && snap.pendingApps !== null) parts.push(`${snap.pendingApps} hồ sơ đối tác chờ thẩm định`);
+		if (hasPerm("HANDLE_COMPLAINT") && snap.complaints) parts.push(`${snap.complaints.openCount + snap.complaints.investigatingCount} khiếu nại đang xử lý`);
+		if (hasPerm("MANAGE_BLOG") && snap.pendingBlogs !== null) parts.push(`${snap.pendingBlogs} bài Blog chờ duyệt`);
+		if (parts.length > 0) {
+			const target = hasPerm("REVIEW_AI") ? "/staff/ai-review" : hasPerm("VERIFY_RECYCLER") ? "/staff/applications" : hasPerm("HANDLE_COMPLAINT") ? "/staff/complaints" : "/staff/blog";
+			return {
+				text: `Theo quyền của bạn trên Backend: đang có ${parts.join(", ")}.`,
+				link: {
+					to: target,
+					label: "Mở hàng đợi"
+				}
+			};
+		}
+		return { text: snap.loaded ? "Chưa có mục hàng đợi nào được phép truy cập hoặc máy chủ không trả dữ liệu." : "Đang tải số liệu hàng đợi từ máy chủ, bạn vui lòng thử hỏi lại sau giây lát." };
+	}
+	if ([
+		"sai",
+		"chính xác",
+		"nhận diện",
+		"dataset",
+		"tập dữ liệu"
+	].some((k) => q.includes(k))) {
+		if (!hasPerm("CURATE_DATASET")) return { text: "Tài khoản của bạn chưa được cấp quyền xem kho dữ liệu AI (CURATE_DATASET)." };
+		if (snap.dataset?.summary) {
+			const worst = [...snap.dataset.byCategory ?? []].sort((a, b) => a.accuracyPercent - b.accuracyPercent)[0];
+			return {
+				text: worst ? `Độ chính xác thực nghiệm trên tập kiểm chứng là ${snap.dataset.summary.empiricalAccuracyPercent.toFixed(1)}%. Danh mục yếu nhất là ${worst.categoryName} (${worst.accuracyPercent.toFixed(1)}%).` : `Độ chính xác thực nghiệm là ${snap.dataset.summary.empiricalAccuracyPercent.toFixed(1)}% trên ${fmtInt(snap.dataset.summary.verifiedLabeledCount)} mẫu đã gán nhãn.`,
+				link: {
+					to: "/staff/dataset",
+					label: "Mở tập dữ liệu"
+				}
+			};
+		}
+		return { text: "Chưa tải được thống kê tập dữ liệu AI từ Backend." };
+	}
+	if ([
+		"tiền",
+		"doanh thu",
+		"phí",
+		"dòng tiền",
+		"giá trị"
+	].some((k) => q.includes(k))) {
+		if (!snap.isAdmin) return { text: "Số liệu dòng tiền và đối soát gói dịch vụ chỉ hiển thị cho vai trò Admin." };
+		if (snap.kpi) {
+			const ledgerNote = snap.ledgerCount !== null ? ` Sổ đối soát hiện có ${fmtInt(snap.ledgerCount)} giao dịch gói.` : "";
+			return {
+				text: `30 ngày qua hệ thống ghi nhận ${fmtVnd(snap.kpi.grossMerchandiseValueVnd)} giá trị thu gom (${fmtInt(snap.kpi.completedHandovers)} giao dịch) và ${fmtVnd(snap.kpi.vietQrServiceRevenueVnd)} doanh thu VietQR.${ledgerNote}`,
+				link: {
+					to: "/admin/reconciliation",
+					label: "Mở đối soát"
+				}
+			};
+		}
+		return { text: "Chưa tải được báo cáo tài chính từ Backend." };
+	}
+	if ([
+		"giao dịch",
+		"tháng",
+		"xu hướng",
+		"tăng trưởng"
+	].some((k) => q.includes(k))) {
+		if (!snap.isAdmin) return { text: "Biểu đồ tăng trưởng toàn hệ thống thuộc quyền xem của Admin." };
+		const trends = snap.charts?.monthlyTrends ?? [];
+		if (trends.length >= 2) {
+			const first = trends[0];
+			const last = trends[trends.length - 1];
+			const pct = first.completedHandovers > 0 ? ` (${((last.completedHandovers - first.completedHandovers) / first.completedHandovers * 100).toFixed(0)}%)` : "";
+			return {
+				text: `Giao dịch hoàn tất biến động từ ${fmtInt(first.completedHandovers)} (${first.monthLabel}) tới ${fmtInt(last.completedHandovers)} (${last.monthLabel})${pct}.`,
+				link: {
+					to: "/admin",
+					label: "Mở dashboard"
+				}
+			};
+		}
+		if (trends.length === 1) return {
+			text: `Kỳ gần nhất (${trends[0].monthLabel}) ghi nhận ${fmtInt(trends[0].completedHandovers)} giao dịch hoàn tất.`,
+			link: {
+				to: "/admin",
+				label: "Mở dashboard"
+			}
+		};
+		return { text: "Chưa có đủ dữ liệu xu hướng theo tháng từ Backend." };
+	}
+	if (["khiếu nại", "khiếu nại mới"].some((k) => q.includes(k))) {
+		if (!hasPerm("HANDLE_COMPLAINT")) return { text: "Tài khoản của bạn chưa được cấp quyền xử lý khiếu nại (HANDLE_COMPLAINT)." };
+		if (snap.complaints) return {
+			text: `Hiện có ${snap.complaints.openCount} khiếu nại mới mở, ${snap.complaints.investigatingCount} đang điều tra và ${snap.complaints.resolvedCount} đã giải quyết.`,
+			link: {
+				to: "/staff/complaints",
+				label: "Mở danh sách"
+			}
+		};
+		return { text: "Chưa tải được danh sách khiếu nại từ Backend." };
+	}
+	if ([
+		"nhân viên",
+		"staff",
+		"quyền",
+		"phân quyền"
+	].some((k) => q.includes(k))) {
+		if (!snap.isAdmin) return { text: "Quản lý tài khoản nhân viên và phân quyền thuộc thẩm quyền Admin." };
+		if (snap.staff) {
+			const locked = snap.staff.filter((s) => s.status.toUpperCase() !== "ACTIVE").length;
+			return {
+				text: `Hệ thống có ${snap.staff.length} tài khoản nhân viên, trong đó ${locked} tài khoản đang tạm khóa hoặc không hoạt động.`,
+				link: {
+					to: "/admin/permissions",
+					label: "Mở phân quyền"
+				}
+			};
+		}
+		return { text: "Chưa tải được danh sách nhân viên từ Backend." };
+	}
+	return { text: "Mình chỉ tra được số liệu thật đang mở trên console. Hãy hỏi về việc chờ, độ chính xác AI, dòng tiền, xu hướng giao dịch, khiếu nại hoặc nhân viên." };
 }
 function Assistant() {
 	const [open, setOpen] = useState(false);
@@ -828,12 +1030,108 @@ function Assistant() {
 	}]);
 	const [draft, setDraft] = useState("");
 	const end = useRef(null);
+	const liveAuth = !isSsrSmokeTest() && hasLiveBackendAuth();
+	const session = getSession();
+	const isAdmin = session?.role === "admin";
+	const [snap, setSnap] = useState(() => ({
+		loaded: false,
+		isAdmin,
+		permissions: new Set(session?.permissions ?? []),
+		kpi: null,
+		charts: null,
+		dataset: null,
+		staff: null,
+		ledgerCount: null,
+		complaints: null,
+		pendingAi: null,
+		pendingApps: null,
+		pendingBlogs: null
+	}));
+	const chips = useMemo(() => isAdmin || !liveAuth ? [
+		"Còn việc gì chờ?",
+		"AI chính xác bao nhiêu?",
+		"Tiền tháng này thế nào?"
+	] : [
+		"Còn việc gì chờ?",
+		"AI chính xác bao nhiêu?",
+		"Khiếu nại hiện tại?"
+	], [isAdmin, liveAuth]);
+	useEffect(() => {
+		if (!liveAuth || !open || snap.loaded) return;
+		let active = true;
+		const s = getSession();
+		const roleIsAdmin = s?.role === "admin";
+		const perms = new Set(s?.permissions ?? []);
+		const can = (perm) => roleIsAdmin || s?.role === "staff" && perms.has(perm);
+		async function loadLive() {
+			const next = {
+				loaded: true,
+				isAdmin: roleIsAdmin,
+				permissions: perms,
+				kpi: null,
+				charts: null,
+				dataset: null,
+				staff: null,
+				ledgerCount: null,
+				complaints: null,
+				pendingAi: null,
+				pendingApps: null,
+				pendingBlogs: null
+			};
+			const tasks = [];
+			if (roleIsAdmin) tasks.push(getAdminKpiSummary("30d").then((r) => {
+				if (r.success && r.data) next.kpi = r.data;
+			}).catch(() => {}), getAdminAnalyticsCharts().then((r) => {
+				if (r.success && r.data) next.charts = r.data;
+			}).catch(() => {}), getAdminStaffList().then((r) => {
+				if (r.success && Array.isArray(r.data)) next.staff = r.data;
+			}).catch(() => {}), getAdminReconciliationLedger({
+				pageNumber: 1,
+				pageSize: 1
+			}).then((r) => {
+				if (r.success && r.data?.items) next.ledgerCount = r.data.items.totalRecords;
+			}).catch(() => {}));
+			if (can("CURATE_DATASET")) tasks.push(fetchAiDatasetDashboard().then((r) => {
+				if (r.success && r.data) next.dataset = r.data;
+			}).catch(() => {}));
+			if (can("HANDLE_COMPLAINT")) tasks.push(fetchStaffComplaints({
+				pageSize: 1,
+				includeReportedReviews: false
+			}).then((r) => {
+				if (r.success && r.data) next.complaints = r.data;
+			}).catch(() => {}));
+			if (!roleIsAdmin && can("REVIEW_AI")) tasks.push(fetchStaffAiFeedbackQueue({ pageSize: 1 }).then((r) => {
+				if (r.success && r.data) next.pendingAi = r.data.pendingCount;
+			}).catch(() => {}));
+			if (!roleIsAdmin && can("VERIFY_RECYCLER")) tasks.push(fetchStaffApplications().then((r) => {
+				next.pendingApps = r.items.filter((a) => a.status === "pending").length;
+			}).catch(() => {}));
+			if (!roleIsAdmin && can("MANAGE_BLOG")) tasks.push(fetchStaffBlogs({
+				status: "Pending_Approval",
+				pageSize: 1
+			}).then((r) => {
+				if (r.success && r.data) next.pendingBlogs = r.data.totalCount;
+			}).catch(() => {}));
+			await Promise.allSettled(tasks);
+			if (active) setSnap(next);
+		}
+		loadLive();
+		return () => {
+			active = false;
+		};
+	}, [
+		liveAuth,
+		open,
+		snap.loaded
+	]);
 	useEffect(() => {
 		end.current?.scrollIntoView({ block: "end" });
 	}, [msgs, open]);
 	const send = (text) => {
 		const t = text.trim();
 		if (!t) return;
+		const q = t.toLowerCase();
+		const ans = liveAuth ? buildLiveReply(t, snap) : OFFLINE_REPLY.find((r) => r.keys.some((k) => q.includes(k)))?.answer() ?? { text: "Mình chỉ tra được số liệu đang mở trên console. Hãy hỏi về việc chờ, độ chính xác AI, dòng tiền, xu hướng giao dịch, khiếu nại hoặc nhân viên." };
 		setMsgs((ms) => [
 			...ms,
 			{
@@ -844,7 +1142,7 @@ function Assistant() {
 			{
 				id: ms.length + 2,
 				from: "ai",
-				...reply(t)
+				...ans
 			}
 		]);
 		setDraft("");
@@ -910,7 +1208,7 @@ function Assistant() {
 						}, m.id)),
 						msgs.length === 1 && /* @__PURE__ */ jsx("div", {
 							className: "flex flex-wrap gap-1.5 pt-1",
-							children: CHIPS.map((c) => /* @__PURE__ */ jsx("button", {
+							children: chips.map((c) => /* @__PURE__ */ jsx("button", {
 								type: "button",
 								onClick: () => send(c),
 								className: "rounded-full border border-line px-2.5 py-1 text-[12px] text-body transition-colors hover:bg-surface-2 hover:text-ink",
@@ -956,6 +1254,23 @@ function Assistant() {
 }
 //#endregion
 //#region src/components/admin/Shell.tsx
+var STAFF_ROUTE_PERMISSIONS = {
+	"/staff/ai-review": ["REVIEW_AI", "ai.review"],
+	"/staff/dataset": ["CURATE_DATASET", "ai.dataset"],
+	"/staff/applications": ["VERIFY_RECYCLER", "partner.verify"],
+	"/staff/complaints": ["HANDLE_COMPLAINT", "complaint.handle"],
+	"/staff/accounts": ["MANAGE_ACCOUNTS", "account.manage"],
+	"/staff/blog": ["MANAGE_BLOG", "blog.write"],
+	"/staff/ecofacts": ["MANAGE_INVENTORY", "gift.manage"],
+	"/staff/gifts": ["MANAGE_INVENTORY", "gift.manage"]
+};
+function hasStaffRouteAccess(path, permissions) {
+	const required = STAFF_ROUTE_PERMISSIONS[path.replace(/\/+$/, "") || "/"];
+	if (!required) return true;
+	if (!permissions || permissions.length === 0) return false;
+	const granted = new Set(permissions.map((p) => p.trim().toUpperCase()));
+	return required.some((req) => granted.has(req.toUpperCase()));
+}
 /** Menu tài khoản nội bộ.
 *
 *  KHÔNG dùng `/account/profile` và `/account/password` của người dân: đó là
@@ -987,8 +1302,30 @@ var ACCOUNT_ITEMS = {
 function AdminShell({ role }) {
 	const session = useSession();
 	const navigate = useNavigate();
+	const location = useLocation();
 	const [open, setOpen] = useState(false);
 	const [confirmLogout, setConfirmLogout] = useState(false);
+	useEffect(() => {
+		if (role === "staff" && session?.fromBackend && !Array.isArray(session.permissions)) fetchCurrentUserProfile();
+	}, [
+		role,
+		session?.fromBackend,
+		session?.permissions
+	]);
+	const enforceStaffRbac = role === "staff" && Boolean(session?.fromBackend) && Array.isArray(session?.permissions);
+	const navSections = useMemo(() => {
+		const sections = PORTAL_NAV[role];
+		if (!enforceStaffRbac) return sections;
+		return sections.map((sec) => ({
+			...sec,
+			items: sec.items.filter((item) => hasStaffRouteAccess(item.to, session?.permissions))
+		})).filter((sec) => sec.items.length > 0);
+	}, [
+		enforceStaffRbac,
+		role,
+		session?.permissions
+	]);
+	const staffRouteAllowed = !enforceStaffRbac || hasStaffRouteAccess(location.pathname, session?.permissions);
 	const logout = () => {
 		setConfirmLogout(true);
 	};
@@ -1034,13 +1371,13 @@ function AdminShell({ role }) {
 							className: "rounded-md bg-brand/10 px-2 py-1 text-[11px] font-bold tracking-[0.1em] text-brand uppercase",
 							children: ROLE_LABEL[role]
 						}),
-						/* @__PURE__ */ jsx("div", {
-							className: "ml-auto",
-							children: /* @__PURE__ */ jsx(AccountMenu, {
+						/* @__PURE__ */ jsxs("div", {
+							className: "ml-auto flex items-center gap-2.5",
+							children: [/* @__PURE__ */ jsx(NotificationBellPopover, { role }), /* @__PURE__ */ jsx(AccountMenu, {
 								name: session?.name ?? "",
 								label: ROLE_LABEL[role],
 								items: ACCOUNT_ITEMS[role]
-							})
+							})]
 						})
 					]
 				})
@@ -1053,7 +1390,7 @@ function AdminShell({ role }) {
 						id: "admin-nav",
 						"aria-label": "Điều hướng khu vực quản trị",
 						className: `${open ? "block" : "hidden"} lg:block lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-4 lg:py-6`,
-						children: PORTAL_NAV[role].map((sec) => /* @__PURE__ */ jsxs("div", {
+						children: navSections.map((sec) => /* @__PURE__ */ jsxs("div", {
 							className: "px-4 pb-5 lg:px-0",
 							children: [/* @__PURE__ */ jsx("h2", {
 								className: "px-3 text-[11px] font-bold tracking-[0.12em] text-brand uppercase",
@@ -1076,7 +1413,36 @@ function AdminShell({ role }) {
 					})]
 				}), /* @__PURE__ */ jsx("main", {
 					className: "min-w-0 flex-1 px-4 py-6 lg:px-8 lg:py-8",
-					children: /* @__PURE__ */ jsx(Suspense, {
+					children: !staffRouteAllowed ? /* @__PURE__ */ jsxs("div", {
+						role: "alert",
+						className: "mx-auto max-w-xl rounded-2xl border border-warn/30 bg-warn/5 p-6 text-sm text-ink",
+						children: [
+							/* @__PURE__ */ jsx("p", {
+								className: "text-base font-bold text-warn",
+								children: "Bạn chưa được cấp quyền cho chức năng này (BR-ADM-02)"
+							}),
+							/* @__PURE__ */ jsxs("p", {
+								className: "mt-2 leading-6 text-body",
+								children: [
+									"Tài khoản Nhân viên hiện chưa có mã quyền vận hành phù hợp cho trang",
+									" ",
+									/* @__PURE__ */ jsx("code", {
+										className: "rounded bg-white px-1.5 py-0.5 text-xs",
+										children: location.pathname
+									}),
+									". Vui lòng liên hệ Quản trị viên để được bật quyền tại mục Phân quyền Staff."
+								]
+							}),
+							/* @__PURE__ */ jsx("div", {
+								className: "mt-4",
+								children: /* @__PURE__ */ jsx(Link, {
+									to: "/staff",
+									className: "btn-primary inline-flex h-10 items-center px-4 text-xs font-semibold",
+									children: "Quay về tổng quan Nhân viên"
+								})
+							})
+						]
+					}) : /* @__PURE__ */ jsx(Suspense, {
 						fallback: null,
 						children: /* @__PURE__ */ jsx(Outlet, {})
 					})
@@ -1213,6 +1579,213 @@ function AccountMenu({ name, label, items }) {
 		})]
 	});
 }
+function NotificationBellPopover({ role }) {
+	const session = useSession();
+	const live = Boolean(session) && !isSsrSmokeTest() && hasLiveBackendAuth();
+	const [open, setOpen] = useState(false);
+	const [items, setItems] = useState([]);
+	const [unreadCount, setUnreadCount] = useState(0);
+	const [loading, setLoading] = useState(false);
+	const [busyAll, setBusyAll] = useState(false);
+	const [err, setErr] = useState("");
+	const ref = useRef(null);
+	useEffect(() => {
+		if (!open) return;
+		const onDocClick = (e) => {
+			if (!ref.current?.contains(e.target)) setOpen(false);
+		};
+		const onKey = (e) => {
+			if (e.key === "Escape") setOpen(false);
+		};
+		document.addEventListener("mousedown", onDocClick);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("mousedown", onDocClick);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [open]);
+	useEffect(() => {
+		if (!live) {
+			setItems([]);
+			setUnreadCount(0);
+			return;
+		}
+		let active = true;
+		const syncNotifications = () => {
+			setLoading(true);
+			fetchMyNotifications({
+				pageNumber: 1,
+				pageSize: 10
+			}).then((res) => {
+				if (!active || !res.success || !res.data) return;
+				setItems(res.data.items ?? []);
+				setUnreadCount(res.data.unreadCount ?? 0);
+				setErr("");
+			}).catch((error) => {
+				if (active) setErr(error instanceof Error ? error.message : "Không tải được thông báo.");
+			}).finally(() => {
+				if (active) setLoading(false);
+			});
+		};
+		syncNotifications();
+		const onUpdated = (e) => {
+			const detail = e.detail;
+			if (typeof detail?.unreadCount === "number") {
+				setUnreadCount(Math.max(0, detail.unreadCount));
+				if (detail.unreadCount === 0) setItems((prev) => prev.map((it) => ({
+					...it,
+					isRead: true
+				})));
+				return;
+			}
+			if (typeof detail?.delta === "number") {
+				setUnreadCount((c) => Math.max(0, c + detail.delta));
+				return;
+			}
+			syncNotifications();
+		};
+		window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, onUpdated);
+		const connection = createNotificationHubConnection({
+			onReceiveNotification: (incoming) => {
+				if (!active) return;
+				setItems((prev) => [incoming, ...prev.filter((x) => x.id !== incoming.id)].slice(0, 10));
+				if (!incoming.isRead) setUnreadCount((c) => c + 1);
+			},
+			onUnreadCountUpdated: (payload) => {
+				if (active && typeof payload?.unreadCount === "number") setUnreadCount(Math.max(0, payload.unreadCount));
+			}
+		});
+		if (connection) connection.start().catch(() => {});
+		return () => {
+			active = false;
+			window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, onUpdated);
+			if (connection) connection.stop().catch(() => {});
+		};
+	}, [live]);
+	const handleMarkOne = async (n) => {
+		if (n.isRead || !live) return;
+		try {
+			await markNotificationRead(n.id);
+			setItems((prev) => prev.map((x) => x.id === n.id ? {
+				...x,
+				isRead: true
+			} : x));
+		} catch {}
+	};
+	const handleMarkAll = async () => {
+		if (!live || busyAll || unreadCount === 0) return;
+		setBusyAll(true);
+		try {
+			await markAllNotificationsRead();
+			setItems((prev) => prev.map((x) => ({
+				...x,
+				isRead: true
+			})));
+			setUnreadCount(0);
+		} catch (error) {
+			setErr(error instanceof Error ? error.message : "Không thể đánh dấu đã đọc tất cả.");
+		} finally {
+			setBusyAll(false);
+		}
+	};
+	return /* @__PURE__ */ jsxs("div", {
+		className: "relative",
+		ref,
+		children: [/* @__PURE__ */ jsxs("button", {
+			type: "button",
+			onClick: () => setOpen((v) => !v),
+			"aria-label": unreadCount > 0 ? `Thông báo (${unreadCount} chưa đọc)` : "Thông báo",
+			"aria-expanded": open,
+			className: "relative grid size-9 place-items-center rounded-full border border-line bg-white text-muted transition-colors hover:border-sage-line hover:bg-surface-2 hover:text-ink",
+			children: [/* @__PURE__ */ jsxs("svg", {
+				viewBox: "0 0 24 24",
+				fill: "none",
+				stroke: "currentColor",
+				strokeWidth: "1.8",
+				strokeLinecap: "round",
+				strokeLinejoin: "round",
+				"aria-hidden": "true",
+				className: "size-4",
+				children: [/* @__PURE__ */ jsx("path", { d: "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" }), /* @__PURE__ */ jsx("path", { d: "M10.3 21a1.94 1.94 0 0 0 3.4 0" })]
+			}), unreadCount > 0 && /* @__PURE__ */ jsx("span", {
+				className: "absolute -top-1 -right-1 inline-flex min-w-[17px] items-center justify-center rounded-full border-2 border-white bg-brand px-1 text-[10px] leading-[13px] font-bold text-white tabular-nums",
+				children: unreadCount > 99 ? "99+" : unreadCount
+			})]
+		}), open && /* @__PURE__ */ jsxs("div", {
+			role: "dialog",
+			"aria-label": "Hộp thông báo nội bộ",
+			className: "absolute top-full right-0 mt-2 w-80 overflow-hidden rounded-2xl border border-line bg-white shadow-[0_18px_44px_-8px_rgba(15,31,21,0.18)] sm:w-96",
+			children: [
+				/* @__PURE__ */ jsxs("div", {
+					className: "flex items-center justify-between border-b border-line-soft bg-surface-2/70 px-4 py-3",
+					children: [/* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx("p", {
+						className: "text-sm font-bold text-ink",
+						children: "Thông báo hệ thống"
+					}), /* @__PURE__ */ jsx("p", {
+						className: "text-[11px] text-muted",
+						children: unreadCount > 0 ? `${unreadCount} thông báo chưa đọc` : "Đã đọc tất cả"
+					})] }), live && unreadCount > 0 && /* @__PURE__ */ jsx("button", {
+						type: "button",
+						disabled: busyAll,
+						onClick: () => void handleMarkAll(),
+						className: "text-xs font-semibold text-brand-deep hover:underline disabled:opacity-50",
+						children: busyAll ? "Đang xử lý..." : "Đọc tất cả"
+					})]
+				}),
+				/* @__PURE__ */ jsxs("div", {
+					className: "max-h-80 overflow-y-auto divide-y divide-line-soft",
+					children: [err && /* @__PURE__ */ jsx("p", {
+						role: "alert",
+						className: "px-4 py-2.5 text-xs font-medium text-warn",
+						children: err
+					}), !live ? /* @__PURE__ */ jsx("p", {
+						className: "px-4 py-6 text-center text-xs text-muted",
+						children: "Kết nối tài khoản Backend để nhận thông báo thời gian thực."
+					}) : loading && items.length === 0 ? /* @__PURE__ */ jsx("p", {
+						className: "px-4 py-6 text-center text-xs text-muted",
+						children: "Đang tải thông báo..."
+					}) : items.length === 0 ? /* @__PURE__ */ jsx("p", {
+						className: "px-4 py-6 text-center text-xs text-muted",
+						children: "Chưa có thông báo nào."
+					}) : items.map((n) => /* @__PURE__ */ jsxs("button", {
+						type: "button",
+						onClick: () => void handleMarkOne(n),
+						className: `flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-surface-2 ${n.isRead ? "bg-white" : "bg-brand/5"}`,
+						children: [
+							/* @__PURE__ */ jsxs("div", {
+								className: "flex items-start justify-between gap-2",
+								children: [/* @__PURE__ */ jsx("span", {
+									className: "text-xs font-bold text-ink",
+									children: n.title
+								}), !n.isRead && /* @__PURE__ */ jsx("span", {
+									className: "mt-1 size-2 shrink-0 rounded-full bg-brand",
+									"aria-hidden": "true"
+								})]
+							}),
+							/* @__PURE__ */ jsx("p", {
+								className: "text-xs leading-5 text-body",
+								children: n.message
+							}),
+							/* @__PURE__ */ jsx("span", {
+								className: "text-[11px] text-muted tabular-nums",
+								children: new Date(n.createdAt).toLocaleString("vi-VN")
+							})
+						]
+					}, n.id))]
+				}),
+				/* @__PURE__ */ jsx("div", {
+					className: "border-t border-line-soft bg-surface-2/40 px-4 py-2.5 text-right",
+					children: /* @__PURE__ */ jsx(Link, {
+						to: `/${role}/account`,
+						onClick: () => setOpen(false),
+						className: "text-xs font-semibold text-brand-deep hover:underline",
+						children: "Mở trang Hồ sơ & Thông báo →"
+					})
+				})
+			]
+		})]
+	});
+}
 //#endregion
 //#region src/components/RequireRole.tsx
 /** Chốt chặn route theo vai trò. Chưa đăng nhập -> về trang chủ / và mở hộp thoại đăng nhập nhỏ,
@@ -1250,61 +1823,61 @@ function RequireRole({ roles, children }) {
 *  đồng bộ, `lazy` chưa resolve sẽ render ra fallback nên phải nạp trước. */
 var loaders = {
 	Home: () => import("./assets/Home-k8NQ6yEO.js"),
-	Blog: () => import("./assets/Blog-DOf-px4X.js"),
-	BlogDetail: () => import("./assets/BlogDetail-CeP2JUOm.js"),
-	Rewards: () => import("./assets/Rewards-DkIzvi5D.js"),
-	LeaderboardPage: () => import("./assets/Leaderboard-CsQ3Q_xx.js"),
-	Scanner: () => import("./assets/Scanner-Gb2_gs-I.js"),
-	MapPage: () => import("./assets/MapPage-D6QHuDoj.js"),
-	Partners: () => import("./assets/Partners-Brf_fRa0.js"),
-	Feedback: () => import("./assets/Feedback-BsIzZvIs.js"),
-	Guidance: () => import("./assets/Guidance-vhNDnt0I.js"),
-	Waste: () => import("./assets/Waste-BjvnG9uN.js"),
-	Chat: () => import("./assets/Chat-Bbi28rya.js"),
-	JoinRecycler: () => import("./assets/JoinRecycler-DLCYgwOU.js"),
-	ResetPassword: () => import("./assets/ResetPassword-Bow_qBjg.js"),
-	Terms: () => import("./assets/Terms-BGnsUadU.js"),
-	EcoFactsPage: () => import("./assets/EcoFactsPage-Bs7brJ0W.js"),
-	Login: () => import("./assets/Login-BOx_xpnS.js"),
-	Register: () => import("./assets/Register-9wRfC7vi.js"),
-	Logout: () => import("./assets/Logout-1Tpgd6Kl.js"),
+	Blog: () => import("./assets/Blog-DAmbu5nB.js"),
+	BlogDetail: () => import("./assets/BlogDetail-BMwW6G0K.js"),
+	Rewards: () => import("./assets/Rewards-Djmud8sc.js"),
+	LeaderboardPage: () => import("./assets/Leaderboard-CCLSKTqq.js"),
+	Scanner: () => import("./assets/Scanner-BaVOVU4R.js"),
+	MapPage: () => import("./assets/MapPage-DLJW8nJv.js"),
+	Partners: () => import("./assets/Partners-BWm033tw.js"),
+	Feedback: () => import("./assets/Feedback-D2aS4pOs.js"),
+	Guidance: () => import("./assets/Guidance-B64HhuCr.js"),
+	Waste: () => import("./assets/Waste-C3Xvf9nX.js"),
+	Chat: () => import("./assets/Chat-BJG_CC2X.js"),
+	JoinRecycler: () => import("./assets/JoinRecycler-DaBpanVk.js"),
+	ResetPassword: () => import("./assets/ResetPassword-CfDS2T_e.js"),
+	Terms: () => import("./assets/Terms-D_XrPq_m.js"),
+	EcoFactsPage: () => import("./assets/EcoFactsPage-BBmqhcpy.js"),
+	Login: () => import("./assets/Login-DZBXboIG.js"),
+	Register: () => import("./assets/Register-BGU-5WwP.js"),
+	Logout: () => import("./assets/Logout-rhaiOvHH.js"),
 	NotFound: () => import("./assets/NotFound-Cuzh8QZo.js"),
-	Profile: () => import("./assets/Profile-ChQ1e7SA.js"),
-	Notifications: () => import("./assets/Notifications-4LtxqWLB.js"),
-	Password: () => import("./assets/Password-Cbfz_Zp8.js"),
-	UserHome: () => import("./assets/Home-Kwix1Hsc.js"),
-	Handover: () => import("./assets/Handover-DnwkIuzC.js"),
-	Receipt: () => import("./assets/Receipt-C51ELv-_.js"),
-	Payout: () => import("./assets/Payout-BaUkGpK4.js"),
-	Transactions: () => import("./assets/Transactions-BwiPKfmD.js"),
-	Gamification: () => import("./assets/Gamification-DHEnryU3.js"),
-	RecyclerHome: () => import("./assets/Home-BMm3ASlb.js"),
-	Requests: () => import("./assets/Requests-NLGowhfH.js"),
-	Catalog: () => import("./assets/Catalog-BvxQAH0E.js"),
-	RecyclerReceipt: () => import("./assets/Receipt-VSv-mP5L.js"),
-	StaffHome: () => import("./assets/Home-BqHhxiKG.js"),
-	AiReview: () => import("./assets/AiReview-xWQ0hHQJ.js"),
-	Dataset: () => import("./assets/Dataset-8CPTelBH.js"),
-	Applications: () => import("./assets/Applications-C0eeYnPx.js"),
-	Complaints: () => import("./assets/Complaints-C0fr211w.js"),
-	Accounts: () => import("./assets/Accounts-DijfhkqO.js"),
-	BlogEditor: () => import("./assets/BlogEditor-DLNyohTo.js"),
-	EcoFacts: () => import("./assets/EcoFacts-C1ByZJI9.js"),
-	Gifts: () => import("./assets/Gifts-BoqHgx3M.js"),
-	StaffCheckIn: () => import("./assets/CheckIn-BsIaNBw4.js"),
-	AdminHome: () => import("./assets/Home-BoNxe13W.js"),
-	Reports: () => import("./assets/Reports-BHTGCPXI.js"),
-	StaffAccounts: () => import("./assets/StaffAccounts-CrE5Jvuc.js"),
-	Permissions: () => import("./assets/Permissions-Dny4YFbc.js"),
-	BlogReview: () => import("./assets/BlogReview-DpB3O-h5.js"),
-	Categories: () => import("./assets/Categories-CspQ2js6.js"),
-	Policy: () => import("./assets/Policy-B_us6rG3.js"),
-	GamificationConfig: () => import("./assets/Gamification-BDVvNWRJ.js"),
-	LeaderboardConfig: () => import("./assets/Leaderboard-CIL3OhDM.js"),
-	Fees: () => import("./assets/Fees-DuYEuK0G.js"),
-	Reconciliation: () => import("./assets/Reconciliation-exAPCBE0.js"),
-	AccountProfile: () => import("./assets/AccountProfile-Tuc6UErE.js"),
-	AccountPassword: () => import("./assets/AccountPassword-DOWlAfl-.js")
+	Profile: () => import("./assets/Profile-BolPmVSM.js"),
+	Notifications: () => import("./assets/Notifications-Dq0idcdj.js"),
+	Password: () => import("./assets/Password-CCfwnswD.js"),
+	UserHome: () => import("./assets/Home-C5FWynUA.js"),
+	Handover: () => import("./assets/Handover-CSO7jsos.js"),
+	Receipt: () => import("./assets/Receipt-DXgn33pg.js"),
+	Payout: () => import("./assets/Payout-yGmJynFN.js"),
+	Transactions: () => import("./assets/Transactions-Cpejq_Wi.js"),
+	Gamification: () => import("./assets/Gamification-Dxznwx52.js"),
+	RecyclerHome: () => import("./assets/Home-DHFRsPtz.js"),
+	Requests: () => import("./assets/Requests-CdSCfJ8I.js"),
+	Catalog: () => import("./assets/Catalog-ynK0XlfG.js"),
+	RecyclerReceipt: () => import("./assets/Receipt-KPgOM7Er.js"),
+	StaffHome: () => import("./assets/Home-ChPdSLwr.js"),
+	AiReview: () => import("./assets/AiReview-Cgi88xei.js"),
+	Dataset: () => import("./assets/Dataset-C8lc6PPD.js"),
+	Applications: () => import("./assets/Applications-5Qj3lal-.js"),
+	Complaints: () => import("./assets/Complaints-B8Ya5uyn.js"),
+	Accounts: () => import("./assets/Accounts-CPDPaftY.js"),
+	BlogEditor: () => import("./assets/BlogEditor--KCnYcGl.js"),
+	EcoFacts: () => import("./assets/EcoFacts-DFpy_N-E.js"),
+	Gifts: () => import("./assets/Gifts-BBGeHOYF.js"),
+	StaffCheckIn: () => import("./assets/CheckIn-DMew8Zhj.js"),
+	AdminHome: () => import("./assets/Home-hl3j4qUK.js"),
+	Reports: () => import("./assets/Reports-5rwfrv9a.js"),
+	StaffAccounts: () => import("./assets/StaffAccounts-B14WXELa.js"),
+	Permissions: () => import("./assets/Permissions-BKnoyY5X.js"),
+	BlogReview: () => import("./assets/BlogReview-B5bZfrqy.js"),
+	Categories: () => import("./assets/Categories-CTK5j1f-.js"),
+	Policy: () => import("./assets/Policy-CrolMlMo.js"),
+	GamificationConfig: () => import("./assets/Gamification-n8pLUCV9.js"),
+	LeaderboardConfig: () => import("./assets/Leaderboard-B8aN3fQ2.js"),
+	Fees: () => import("./assets/Fees-BqchdO3v.js"),
+	Reconciliation: () => import("./assets/Reconciliation-Di-M7C2g.js"),
+	AccountProfile: () => import("./assets/AccountProfile-DY_fDlJP.js"),
+	AccountPassword: () => import("./assets/AccountPassword-DZlQkZSj.js")
 };
 var PAGES = Object.fromEntries(Object.keys(loaders).map((name) => [name, lazy(loaders[name])]));
 function preloadPages() {
@@ -1326,6 +1899,10 @@ var { Home, Blog, BlogDetail, Rewards, LeaderboardPage, Scanner, MapPage, Partne
 function RolePortal() {
 	const session = useSession();
 	return /* @__PURE__ */ jsx(Portal, { role: session?.role === "recycler" ? "recycler" : "user" });
+}
+function StaffWorkspaceShell() {
+	const session = useSession();
+	return /* @__PURE__ */ jsx(AdminShell, { role: session?.role === "admin" ? "admin" : "staff" });
 }
 function GlobalAuthListener() {
 	const navigate = useNavigate();
@@ -1537,8 +2114,8 @@ function AppRoutes() {
 			/* @__PURE__ */ jsxs(Route, {
 				path: "/staff",
 				element: /* @__PURE__ */ jsx(RequireRole, {
-					roles: ["staff"],
-					children: /* @__PURE__ */ jsx(AdminShell, { role: "staff" })
+					roles: ["staff", "admin"],
+					children: /* @__PURE__ */ jsx(StaffWorkspaceShell, {})
 				}),
 				children: [
 					/* @__PURE__ */ jsx(Route, {
@@ -1683,8 +2260,8 @@ var BY_ROLE = {
 		["/user", "Xin chào"],
 		["/user/handover", "Yêu cầu thu gom rác"],
 		["/user/receipt", "Xác nhận bàn giao rác"],
-		["/user/payout", "Tài khoản nhận tiền"],
-		["/user/transactions", "Lịch sử tiền vào tài khoản"],
+		["/user/payout", "Quy chuẩn thanh toán tiền phế liệu trực tiếp"],
+		["/user/transactions", "Lịch sử biên nhận bàn giao"],
 		["/user/gamification", "Cây ảo của bạn"],
 		["/chat", "Tạo yêu cầu bàn giao"]
 	],

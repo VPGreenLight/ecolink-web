@@ -8,7 +8,7 @@ import { Link, Outlet } from "react-router-dom"
  *  nền sáng có quầng xanh nhẹ. */
 const HIGHLIGHTS = [
   "Kết nối cơ sở thu mua gần bạn",
-  "Tích điểm xanh cho mỗi ki-lô-gam tái chế",
+  "Điểm danh hằng ngày và chăm cây tích Điểm Xanh",
   "Theo dõi cây ảo và phần thưởng",
 ]
 
@@ -44,7 +44,7 @@ export default function AuthLayout() {
               lớn lên cùng cộng đồng.
             </p>
             <p className="mt-4 max-w-[26rem] text-[15px] leading-relaxed text-white/80">
-              Theo dõi lịch thu gom, tích điểm cho mỗi ki-lô-gam tái chế và nuôi
+              Theo dõi lịch thu gom minh bạch, điểm danh tích thưởng và nuôi
               dưỡng cây ảo của riêng bạn.
             </p>
 

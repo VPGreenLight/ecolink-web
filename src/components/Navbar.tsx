@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, NavLink, useNavigate } from "react-router-dom"
-import { ROLE_HOME, ROLE_LABEL, signOut, useSession } from "@/lib/session"
+import { hasLiveBackendAuth, ROLE_HOME, ROLE_LABEL, signOut, useSession } from "@/lib/session"
 import { openAuthPopup } from "@/lib/popupAuth"
+import { isSsrSmokeTest } from "@/lib/hydration"
+import {
+  createNotificationHubConnection,
+  fetchMyNotifications,
+  NOTIFICATIONS_UPDATED_EVENT,
+} from "@/lib/notificationsApi"
 import { useEntitlements } from "@/lib/servicePackageApi"
 import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
 import { NAV_LINKS } from "@/data/nav"
@@ -45,7 +51,30 @@ function Chevron({ open }: { open: boolean }) {
   )
 }
 
-function Avatar({ user, size = "size-9" }: { user: string; size?: string }) {
+function Avatar({
+  user,
+  avatarUrl,
+  size = "size-9",
+}: {
+  user: string
+  avatarUrl?: string | null
+  size?: string
+}) {
+  const [imgFailed, setImgFailed] = useState(false)
+  useEffect(() => {
+    setImgFailed(false)
+  }, [avatarUrl])
+
+  if (avatarUrl && !imgFailed) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={user || "Ảnh đại diện"}
+        onError={() => setImgFailed(true)}
+        className={`${size} shrink-0 rounded-full border border-line-soft object-cover`}
+      />
+    )
+  }
   if (user) {
     return (
       <span
@@ -92,7 +121,7 @@ const ACCOUNT_ITEMS = [
 const EXPLORE = [
   ["/terms", "Điều khoản"],
   ["/ecofacts", "Eco Facts"],
-  // ["/partners", "Đối tác tái chế"],
+  ["/partners", "Đối tác tái chế"],
   ["/leaderboard", "Xếp hạng người dùng"],
 ] as const
 
@@ -172,7 +201,7 @@ function AccountMenu() {
           onClick={() => setOpen((v) => !v)}
           className="flex h-10 items-center gap-1 rounded-full border border-line bg-white px-1 shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-colors hover:border-sage-line hover:bg-surface-2"
         >
-          <Avatar user={user} size="size-8" />
+          <Avatar user={user} avatarUrl={session?.avatarUrl} size="size-8" />
           <Chevron open={open} />
         </button>
 
@@ -184,7 +213,7 @@ function AccountMenu() {
             {user ? (
               <>
                 <div className="flex items-center gap-3.5 border-b border-line-soft bg-surface-2/60 px-4 py-3.5">
-                  <Avatar user={user} size="size-11" />
+                  <Avatar user={user} avatarUrl={session?.avatarUrl} size="size-11" />
                   <div className="min-w-0">
                     <p className="truncate text-base font-bold text-ink">{user}</p>
                     <p className="text-xs text-muted">{ROLE_LABEL[session!.role]}</p>
@@ -352,10 +381,6 @@ export default function Navbar() {
 
         {/* ponytail: one height (40px) for every control here so the row reads as a single line */}
         <div className="ml-auto flex items-center gap-3">
-          <span className="hidden h-10 items-center gap-1.5 text-xs whitespace-nowrap text-body md:flex">
-            <i className="size-1.5 rounded-full bg-brand-soft shadow-[0_0_0_3px_rgba(0,112,61,0.12)]" />
-            Hà Nội
-          </span>
           {!session && (
             <button
               type="button"
@@ -366,34 +391,99 @@ export default function Navbar() {
             </button>
           )}
           {session && (
-            <Link
-              to="/account/notifications"
-              aria-label="Thông báo"
-              className="group relative flex size-10 items-center justify-center rounded-full border border-line bg-white text-muted shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-[color,border-color,background-color,transform] duration-200 ease-out hover:border-sage-line hover:bg-surface-2 hover:text-ink active:scale-[0.96]"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-                className="size-[18px] transition-transform duration-200 group-hover:scale-105"
-              >
-                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-              </svg>
-              {/* Notification dot indicator */}
-              <span className="absolute top-2 right-2 flex size-2">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-brand opacity-75" />
-                <span className="relative inline-flex size-2 rounded-full border-2 border-white bg-brand shadow-[0_0_0_1px_rgba(0,112,61,0.2)]" />
-              </span>
-            </Link>
+            <NotificationBellLink isLoggedIn={Boolean(session)} />
           )}
           <AccountMenu />
         </div>
       </div>
     </header>
+  )
+}
+
+function NotificationBellLink({ isLoggedIn }: { isLoggedIn: boolean }) {
+  const [unreadCount, setUnreadCount] = useState(0)
+  const live = isLoggedIn && !isSsrSmokeTest() && hasLiveBackendAuth()
+
+  useEffect(() => {
+    if (!live) {
+      setUnreadCount(0)
+      return
+    }
+    let active = true
+
+    const syncUnread = () => {
+      void fetchMyNotifications({ pageNumber: 1, pageSize: 1 })
+        .then((res) => {
+          if (active && res.success && res.data) {
+            setUnreadCount(res.data.unreadCount)
+          }
+        })
+        .catch(() => {})
+    }
+
+    syncUnread()
+
+    const onUpdated = (e: Event) => {
+      const detail = (e as CustomEvent<{ unreadCount?: number; delta?: number }>).detail
+      if (typeof detail?.unreadCount === "number") {
+        setUnreadCount(Math.max(0, detail.unreadCount))
+        return
+      }
+      if (typeof detail?.delta === "number") {
+        setUnreadCount((c) => Math.max(0, c + detail.delta!))
+        return
+      }
+      syncUnread()
+    }
+    window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, onUpdated)
+
+    const connection = createNotificationHubConnection({
+      onReceiveNotification: () => {
+        if (active) setUnreadCount((c) => c + 1)
+      },
+      onUnreadCountUpdated: (payload) => {
+        if (active && typeof payload?.unreadCount === "number") {
+          setUnreadCount(Math.max(0, payload.unreadCount))
+        }
+      },
+    })
+    if (connection) {
+      connection.start().catch(() => {})
+    }
+
+    return () => {
+      active = false
+      window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, onUpdated)
+      if (connection) {
+        connection.stop().catch(() => {})
+      }
+    }
+  }, [live])
+
+  return (
+    <Link
+      to="/account/notifications"
+      aria-label={unreadCount > 0 ? `Thông báo (${unreadCount} chưa đọc)` : "Thông báo"}
+      className="group relative flex size-10 items-center justify-center rounded-full border border-line bg-white text-muted shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-[color,border-color,background-color,transform] duration-200 ease-out hover:border-sage-line hover:bg-surface-2 hover:text-ink active:scale-[0.96]"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+        className="size-[18px] transition-transform duration-200 group-hover:scale-105"
+      >
+        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+        <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+      </svg>
+      {unreadCount > 0 && (
+        <span className="absolute -top-1 -right-1 inline-flex min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-brand px-1 text-[10px] leading-[14px] font-bold text-white tabular-nums">
+          {unreadCount > 99 ? "99+" : unreadCount}
+        </span>
+      )}
+    </Link>
   )
 }

@@ -2,7 +2,6 @@ import { useEffect, useState } from "react"
 import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { PageHead, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
-import { VND, WASTES } from "@/data/waste"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { ApiError } from "@/lib/api"
 import { initApiLoading, initApiState } from "@/lib/hydration"
@@ -12,45 +11,97 @@ import {
   fetchWasteCategories,
   saveRecyclerPrices,
   type BulkPriceItemRequest,
-  type WasteCategoryDto,
 } from "@/lib/recyclerWorkflowApi"
 
-const priceOf = (id: string) => WASTES.find((w) => w.id === id)?.price ?? 0
-
-type Row = { id: string; on: boolean; price: number; categoryCode: string }
-
-const WASTE_TO_CAT_CODE: Record<string, string> = {
-  pet: "plastic",
-  hdpe: "plastic",
-  carton: "cardboard",
-  "office-paper": "paper",
-  paper: "paper",
-  aluminum: "metal",
-  alu: "metal",
-  steel: "metal",
-  glass: "glass",
-  battery: "trash",
-  circuit: "trash",
+type CatalogRow = {
+  wasteCategoryId: string
+  code: string
+  name: string
+  standardBinColor: string
+  on: boolean
+  price: number
+  minQuantityKg: number
+  collectionConditions: string
+  hasExistingRecord: boolean
 }
 
-/** R-01 Danh mục thu mua & bảng giá.
- *
- *  Bảng giá đặt ở đây và giá ở `/waste` (tra cứu của người dân) là hai con số
- *  khác nhau có chủ ý: giá hệ thống là mức trần tham khảo để người dân biết
- *  mình bán được bao nhiêu, giá ở đây là giá cơ sở thật sự trả. Người dùng
- *  luôn thấy con số hệ thống nên không bị bất ngờ. */
-const INITIAL_SEED_ROWS: Row[] = WASTES.filter((w) => w.recyclable).map((w) => ({
-  id: w.id,
-  on: true,
-  price: w.price,
-  categoryCode: WASTE_TO_CAT_CODE[w.id] || "plastic",
-}))
+const SUGGESTED_PRICE_BY_CODE: Record<string, number> = {
+  plastic: 7000,
+  paper: 4500,
+  cardboard: 3800,
+  metal: 25000,
+  glass: 1800,
+}
 
+const DEFAULT_CONDITIONS = "Làm sạch cơ bản, để khô ráo trước khi cân"
+
+const INITIAL_SEED_ROWS: CatalogRow[] = [
+  {
+    wasteCategoryId: "11111111-1111-1111-1111-111111111101",
+    code: "plastic",
+    name: "Nhựa tái chế (Plastic)",
+    standardBinColor: "Cam",
+    on: true,
+    price: 7000,
+    minQuantityKg: 1,
+    collectionConditions: "Chai nhựa PET/HDPE đã tráng sạch, bẹp chai",
+    hasExistingRecord: true,
+  },
+  {
+    wasteCategoryId: "11111111-1111-1111-1111-111111111102",
+    code: "paper",
+    name: "Giấy báo & Tài liệu (Paper)",
+    standardBinColor: "Xanh dương",
+    on: true,
+    price: 4500,
+    minQuantityKg: 2,
+    collectionConditions: "Giấy báo, tài liệu khô ráo, không dính dầu mỡ",
+    hasExistingRecord: true,
+  },
+  {
+    wasteCategoryId: "11111111-1111-1111-1111-111111111103",
+    code: "cardboard",
+    name: "Bìa Carton (Cardboard)",
+    standardBinColor: "Nâu vàng",
+    on: true,
+    price: 3800,
+    minQuantityKg: 3,
+    collectionConditions: "Thùng carton gập phẳng, khô ráo",
+    hasExistingRecord: true,
+  },
+  {
+    wasteCategoryId: "11111111-1111-1111-1111-111111111104",
+    code: "metal",
+    name: "Kim loại & Vỏ lon (Metal)",
+    standardBinColor: "Xám kim loại",
+    on: true,
+    price: 25000,
+    minQuantityKg: 0.5,
+    collectionConditions: "Vỏ lon nhôm, sắt vụn đã dốc sạch nước",
+    hasExistingRecord: true,
+  },
+  {
+    wasteCategoryId: "11111111-1111-1111-1111-111111111105",
+    code: "glass",
+    name: "Thủy tinh (Glass)",
+    standardBinColor: "Trắng",
+    on: true,
+    price: 1800,
+    minQuantityKg: 2,
+    collectionConditions: "Chai lọ nguyên vẹn, đã đổ sạch chất lỏng",
+    hasExistingRecord: true,
+  },
+]
+
+function suggestedPriceFor(code: string): number {
+  return SUGGESTED_PRICE_BY_CODE[code.trim().toLowerCase()] ?? 4000
+}
+
+/** R-01 Danh mục thu mua & bảng giá (ánh xạ 1-1 với WasteCategory Active & IsRecyclable). */
 export default function Catalog() {
   const liveAuth = hasLiveBackendAuth()
-  const [rows, setRows] = useState<Row[]>(() => initApiState([], INITIAL_SEED_ROWS))
+  const [rows, setRows] = useState<CatalogRow[]>(() => initApiState([], INITIAL_SEED_ROWS))
   const [loading, setLoading] = useState(() => initApiLoading(true))
-  const [categories, setCategories] = useState<WasteCategoryDto[]>([])
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
@@ -71,35 +122,43 @@ export default function Catalog() {
         ])
         if (!active) return
 
-        if (catsRes.items.length > 0 || catsRes.fromBackend) {
-          setCategories(catsRes.items)
-        }
+        const activeRecyclableCats = catsRes.items.filter(
+          (c) => (c.isRecyclable ?? true) && (c.status ?? "Active") === "Active",
+        )
 
-        const activeCategoryCodes = catsRes.fromBackend
-          ? new Set(catsRes.items.map((c) => c.code.toLowerCase()))
-          : null
-
-        const candidateSeedRows = activeCategoryCodes
-          ? INITIAL_SEED_ROWS.filter((r) =>
-              activeCategoryCodes.has(r.categoryCode.toLowerCase()),
-            )
-          : INITIAL_SEED_ROWS
-
-        const baseRows: Row[] = candidateSeedRows.map((r) => {
+        const baseRows: CatalogRow[] = activeRecyclableCats.map((cat) => {
           const matched = pricesRes.items.find(
             (p) =>
-              p.wasteCategoryCode.toLowerCase() === r.categoryCode.toLowerCase() ||
-              p.wasteCategoryName.toLowerCase().includes(r.categoryCode.toLowerCase()),
+              p.wasteCategoryId === cat.id ||
+              p.wasteCategoryCode.toLowerCase() === cat.code.toLowerCase(),
           )
           if (matched) {
             return {
-              ...r,
+              wasteCategoryId: cat.id,
+              code: cat.code,
+              name: cat.name,
+              standardBinColor: cat.standardBinColor ?? "Tiêu chuẩn",
               on: matched.isActive,
-              price: matched.pricePerKg > 0 ? matched.pricePerKg : r.price,
+              price: matched.pricePerKg > 0 ? matched.pricePerKg : suggestedPriceFor(cat.code),
+              minQuantityKg: matched.minQuantityKg > 0 ? matched.minQuantityKg : 1,
+              collectionConditions: matched.collectionConditions ?? DEFAULT_CONDITIONS,
+              hasExistingRecord: true,
             }
           }
-          return r
+
+          return {
+            wasteCategoryId: cat.id,
+            code: cat.code,
+            name: cat.name,
+            standardBinColor: cat.standardBinColor ?? "Tiêu chuẩn",
+            on: !pricesRes.fromBackend && pricesRes.items.length === 0,
+            price: suggestedPriceFor(cat.code),
+            minQuantityKg: 1,
+            collectionConditions: DEFAULT_CONDITIONS,
+            hasExistingRecord: false,
+          }
         })
+
         setRows(baseRows)
       } catch (err) {
         if (!active) return
@@ -120,8 +179,10 @@ export default function Catalog() {
     }
   }, [liveAuth])
 
-  const set = (id: string, patch: Partial<Row>) => {
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  const set = (wasteCategoryId: string, patch: Partial<CatalogRow>) => {
+    setRows((rs) =>
+      rs.map((r) => (r.wasteCategoryId === wasteCategoryId ? { ...r, ...patch } : r)),
+    )
     setDirty(true)
     setErrMsg("")
   }
@@ -132,40 +193,63 @@ export default function Catalog() {
     setErrMsg("")
     setFlash(null)
     if (rows.length === 0) {
-      setErrMsg("Hiện không có danh mục phế liệu nào đang hoạt động trên hệ thống.")
+      setErrMsg("Hiện không có danh mục phế liệu tái chế nào đang hoạt động trên hệ thống.")
       return
     }
-    const invalidRow = rows.find((r) => r.on && (!Number.isFinite(r.price) || r.price <= 0))
-    if (invalidRow) {
-      const wasteName = WASTES.find((w) => w.id === invalidRow.id)?.name ?? invalidRow.id
-      setErrMsg(`Đơn giá thu mua cho "${wasteName}" phải lớn hơn 0 đ/kg.`)
+
+    const activeRows = rows.filter((r) => r.on)
+    if (activeRows.length === 0 && !rows.some((r) => r.hasExistingRecord)) {
+      setErrMsg("Vui lòng bật thu mua ít nhất một danh mục phế liệu trước khi lưu.")
       return
     }
+
+    for (const r of activeRows) {
+      if (!Number.isFinite(r.price) || r.price <= 0 || !Number.isInteger(r.price)) {
+        setErrMsg(`Đơn giá thu mua cho "${r.name}" phải là số nguyên dương (VNĐ/kg).`)
+        return
+      }
+      if (!Number.isFinite(r.minQuantityKg) || r.minQuantityKg <= 0) {
+        setErrMsg(`Khối lượng tối thiểu cho "${r.name}" phải lớn hơn 0 kg.`)
+        return
+      }
+      if (r.collectionConditions.trim().length > 200) {
+        setErrMsg(`Điều kiện thu gom cho "${r.name}" tối đa 200 ký tự.`)
+        return
+      }
+    }
+
+    const rowsToPersist = rows.filter((r) => r.on || r.hasExistingRecord)
+    if (rowsToPersist.length === 0) {
+      setErrMsg("Vui lòng bật thu mua ít nhất một danh mục phế liệu.")
+      return
+    }
+
     setSaving(true)
     try {
-      // Nhóm theo nhóm phế liệu backend để gửi BulkSavePricesRequest
-      const catCodeToCategory = new Map<string, WasteCategoryDto>()
-      for (const c of categories) {
-        catCodeToCategory.set(c.code.toLowerCase(), c)
-      }
+      const payload: BulkPriceItemRequest[] = rowsToPersist.map((r) => ({
+        wasteCategoryId: r.wasteCategoryId,
+        isActive: r.on,
+        pricePerKg: r.on ? r.price : Math.max(100, Math.round(r.price || 1000)),
+        minQuantityKg: r.minQuantityKg > 0 ? r.minQuantityKg : 1,
+        collectionConditions: r.collectionConditions.trim() || null,
+      }))
 
-      // Mỗi loại phế liệu hệ thống lấy giá đại diện từ các dòng đang bật
-      const payloadMap = new Map<string, BulkPriceItemRequest>()
-      for (const r of rows) {
-        const cat = catCodeToCategory.get(r.categoryCode.toLowerCase())
-        const catId = cat ? cat.id : r.categoryCode
-        if (!payloadMap.has(catId) || r.on) {
-          payloadMap.set(catId, {
-            wasteCategoryId: catId,
-            isActive: r.on,
-            pricePerKg: r.price,
-            minQuantityKg: 1,
-            collectionConditions: r.on ? "Thu gom trực tiếp hoặc tại vựa" : "Tạm ngưng",
-          })
-        }
-      }
-
-      const res = await saveRecyclerPrices(Array.from(payloadMap.values()))
+      const res = await saveRecyclerPrices(payload)
+      const savedMap = new Map(res.items.map((it) => [it.wasteCategoryId, it]))
+      setRows((prev) =>
+        prev.map((r) => {
+          const hit = savedMap.get(r.wasteCategoryId)
+          if (!hit) return r
+          return {
+            ...r,
+            on: hit.isActive,
+            price: hit.pricePerKg > 0 ? hit.pricePerKg : r.price,
+            minQuantityKg: hit.minQuantityKg > 0 ? hit.minQuantityKg : r.minQuantityKg,
+            collectionConditions: hit.collectionConditions ?? r.collectionConditions,
+            hasExistingRecord: true,
+          }
+        }),
+      )
       setDirty(false)
       setFlash(
         res.syncedWithBackend
@@ -190,7 +274,7 @@ export default function Catalog() {
       <PageHead
         eyebrow="THU MUA"
         title="Danh mục và bảng giá"
-        body="Chọn loại rác bạn thu mua và đặt giá trả cho người dân. Loại tắt sẽ không hiện trên bản đồ và người dân không đặt được."
+        body="Mỗi dòng tương ứng trực tiếp một danh mục phế liệu tái chế đang Active trên hệ thống. Bật thu mua và đặt đơn giá, khối lượng tối thiểu cùng điều kiện nhận hàng của cơ sở."
         action={
           <button
             type="submit"
@@ -226,8 +310,9 @@ export default function Catalog() {
           if (activeFilter === "on" && !r.on) return false
           if (activeFilter === "off" && r.on) return false
           if (!kw) return true
-          const w = WASTES.find((x) => x.id === r.id)
-          return `${w?.name ?? ""} ${w?.group ?? ""} ${r.categoryCode}`.toLowerCase().includes(kw)
+          return `${r.name} ${r.code} ${r.collectionConditions}`
+            .toLowerCase()
+            .includes(kw)
         })
         const pagedRows = paginateItems(filteredRows, page, pageSize)
 
@@ -239,10 +324,10 @@ export default function Catalog() {
                 setSearch(v)
                 setPage(1)
               }}
-              label="Tìm kiếm loại rác"
-              placeholder="Tìm theo tên loại rác hoặc nhóm (Nhựa, Giấy, Kim loại)..."
+              label="Tìm kiếm danh mục phế liệu"
+              placeholder="Tìm theo tên danh mục, mã hoặc điều kiện thu gom..."
               totalCount={filteredRows.length}
-              countLabel="loại rác"
+              countLabel="danh mục"
             >
               <select
                 aria-label="Lọc trạng thái thu mua"
@@ -263,49 +348,79 @@ export default function Catalog() {
               <TableSkeleton rows={5} />
             ) : (
             <>
-            <Table head={["Loại rác", "Nhóm", "Thu mua", "Giá bạn trả", "Giá hệ thống"]}>
+            <Table head={["Danh mục phế liệu", "Thu mua", "Đơn giá (đ/kg)", "Tối thiểu (kg)", "Điều kiện thu mua"]}>
               {pagedRows.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-6 text-center text-xs text-muted">
-                    Không có loại rác nào khớp bộ lọc hiện tại.
+                    Không có danh mục phế liệu nào khớp bộ lọc hiện tại.
                   </td>
                 </tr>
               ) : (
-                pagedRows.map((r) => {
-                  const w = WASTES.find((x) => x.id === r.id)!
-                  return (
-                    <tr key={r.id}>
-                      <Td className="font-semibold text-ink">{w.name}</Td>
-                      <Td>{w.group}</Td>
-                      <Td>
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            className="size-4 accent-brand"
-                            checked={r.on}
-                            onChange={(e) => set(r.id, { on: e.target.checked })}
-                          />
-                          <span className="text-[13px] text-body">
-                            {r.on ? "Có" : "Không"}
-                          </span>
-                        </label>
-                      </Td>
-                      <Td>
+                pagedRows.map((r) => (
+                  <tr key={r.wasteCategoryId} className={!r.on ? "opacity-75" : undefined}>
+                    <Td>
+                      <p className="font-semibold text-ink">{r.name}</p>
+                      <p className="mt-0.5 text-[11px] text-muted">
+                        Mã: <code>{r.code}</code> · Thùng {r.standardBinColor}
+                      </p>
+                    </Td>
+                    <Td>
+                      <label className="flex items-center gap-2">
                         <input
-                          className="input h-9 w-32 tabular-nums"
-                          type="number"
-                          min={0}
-                          step={100}
-                          disabled={!r.on}
-                          value={r.price}
-                          onChange={(e) => set(r.id, { price: Number(e.target.value) })}
-                          aria-label={`Giá thu mua ${w.name}`}
+                          type="checkbox"
+                          className="size-4 accent-brand"
+                          checked={r.on}
+                          onChange={(e) => set(r.wasteCategoryId, { on: e.target.checked })}
                         />
-                      </Td>
-                      <Td className="tabular-nums text-muted">{VND(priceOf(r.id))}</Td>
-                    </tr>
-                  )
-                })
+                        <span className="text-[13px] text-body">
+                          {r.on ? "Đang mua" : "Tạm ngưng"}
+                        </span>
+                      </label>
+                    </Td>
+                    <Td>
+                      <input
+                        className="input h-9 w-28 tabular-nums"
+                        type="number"
+                        min={100}
+                        step={100}
+                        disabled={!r.on}
+                        value={r.price}
+                        onChange={(e) =>
+                          set(r.wasteCategoryId, { price: Number(e.target.value) })
+                        }
+                        aria-label={`Giá thu mua ${r.name}`}
+                      />
+                    </Td>
+                    <Td>
+                      <input
+                        className="input h-9 w-24 tabular-nums"
+                        type="number"
+                        min={0.1}
+                        step={0.5}
+                        disabled={!r.on}
+                        value={r.minQuantityKg}
+                        onChange={(e) =>
+                          set(r.wasteCategoryId, { minQuantityKg: Number(e.target.value) })
+                        }
+                        aria-label={`Khối lượng tối thiểu ${r.name}`}
+                      />
+                    </Td>
+                    <Td>
+                      <input
+                        className="input h-9 min-w-[200px] text-[13px]"
+                        type="text"
+                        maxLength={200}
+                        disabled={!r.on}
+                        value={r.collectionConditions}
+                        onChange={(e) =>
+                          set(r.wasteCategoryId, { collectionConditions: e.target.value })
+                        }
+                        placeholder="Ví dụ: Khô ráo, gập phẳng..."
+                        aria-label={`Điều kiện thu gom ${r.name}`}
+                      />
+                    </Td>
+                  </tr>
+                ))
               )}
             </Table>
 
@@ -314,7 +429,7 @@ export default function Catalog() {
               pageSize={pageSize}
               totalCount={filteredRows.length}
               onPageChange={setPage}
-              itemLabel="loại rác"
+              itemLabel="danh mục"
             />
             </>
             )}
@@ -323,13 +438,14 @@ export default function Catalog() {
       })()}
 
       <p className="max-w-[70ch] text-sm leading-6 text-muted">
-        Giá hệ thống là mức trần EcoLink hiển thị cho người dân. Không đặt cao
-        hơn mức đó — yêu cầu sẽ bị từ chối khi đối soát dòng tiền.
+        Bảng giá bạn công bố tại đây hiển thị công khai trên bản đồ tìm kiếm cơ sở thu
+        mua (<code className="text-xs">/map</code>) và được áp dụng làm giá đề xuất khi
+        người dân đặt lịch bàn giao.
       </p>
 
       <Status tone="wait">
-        Đổi bảng giá chỉ áp dụng cho yêu cầu tạo sau đây, không đổi giá của các
-        yêu cầu đã chốt.
+        Đổi bảng giá chỉ áp dụng cho yêu cầu tạo mới sau thời điểm lưu, không thay đổi
+        đơn giá các đơn bàn giao đã chốt.
       </Status>
     </form>
   )

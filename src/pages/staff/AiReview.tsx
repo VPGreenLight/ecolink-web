@@ -4,18 +4,40 @@ import { PageHead, RequiredMark, Status } from "@/components/Portal"
 import { AI_CASES } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { ApiError } from "@/lib/api"
-import { initApiLoading, initApiState } from "@/lib/hydration"
-import { AI_CLASS_OPTIONS, getCategoryMeta } from "@/lib/wasteScanApi"
+import { initApiLoading, initApiState, isSsrSmokeTest } from "@/lib/hydration"
+import { AI_CLASS_OPTIONS, fetchWasteCategories, getCategoryMeta, type DetectedWasteObjectDto } from "@/lib/wasteScanApi"
 import { getAccessToken, hasLiveBackendAuth } from "@/lib/session"
 import {
   assignGroundTruthLabel,
   batchAssignAiLabels,
   fetchAiLabelingQueue,
+  fetchStaffAiFeedbackDetail,
   fetchStaffAiFeedbackQueue,
   reviewStaffAiFeedback,
   type AiDatasetItemDto,
+  type StaffAiFeedbackDetailDto,
   type StaffAiFeedbackSummaryDto,
 } from "@/lib/aiCurationApi"
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function formatNormalizedYoloFromDetected(
+  obj: DetectedWasteObjectDto,
+  imgW: number,
+  imgH: number,
+): string | null {
+  if (!Array.isArray(obj.bbox) || obj.bbox.length < 4 || imgW <= 0 || imgH <= 0) return null
+  const [x1, y1, x2, y2] = obj.bbox
+  if (![x1, y1, x2, y2].every(Number.isFinite)) return null
+  const isAlreadyNorm = x2 <= 1 && y2 <= 1 && x1 >= 0 && y1 >= 0 && x2 > x1 && y2 > y1
+  const xc = isAlreadyNorm ? (x1 + x2) / 2 : (x1 + x2) / 2 / imgW
+  const yc = isAlreadyNorm ? (y1 + y2) / 2 : (y1 + y2) / 2 / imgH
+  const w = isAlreadyNorm ? x2 - x1 : (x2 - x1) / imgW
+  const h = isAlreadyNorm ? y2 - y1 : (y2 - y1) / imgH
+  if (w <= 0 || h <= 0) return null
+  const clamp = (v: number) => Math.min(1, Math.max(0.0001, Number(v.toFixed(4))))
+  return `${clamp(xc)} ${clamp(yc)} ${clamp(w)} ${clamp(h)}`
+}
 
 type TabMode = "feedback" | "labeling"
 type FeedbackFilter = "All" | "Pending" | "Reviewed" | "Rejected"
@@ -63,6 +85,8 @@ export default function AiReview() {
   const [verifiedLabel, setVerifiedLabel] = useState<string>("plastic")
   const [reviewNote, setReviewNote] = useState<string>("")
   const [yoloBoxText, setYoloBoxText] = useState<string>("")
+  const [fbDetail, setFbDetail] = useState<StaffAiFeedbackDetailDto | null>(null)
+  const [loadingDetail, setLoadingDetail] = useState(false)
   const [savingFb, setSavingFb] = useState(false)
   const [flashFb, setFlashFb] = useState<string>("")
   const [errFb, setErrFb] = useState<string>("")
@@ -78,6 +102,9 @@ export default function AiReview() {
   const [savingLabel, setSavingLabel] = useState(false)
   const [flashLabel, setFlashLabel] = useState<string>("")
   const [errLabel, setErrLabel] = useState<string>("")
+  const [categoryOptions, setCategoryOptions] = useState<
+    readonly { code: string; label: string }[]
+  >(AI_CLASS_OPTIONS)
 
   // Search & Pagination state
   const [fbSearch, setFbSearch] = useState("")
@@ -183,12 +210,66 @@ export default function AiReview() {
   useEffect(() => {
     void loadFeedbackQueue("All")
     void loadLabelQueue("Unlabeled")
+    if (isSsrSmokeTest()) return
+    let active = true
+    fetchWasteCategories({ includeNonRecyclable: true })
+      .then((cats) => {
+        if (!active || cats.length === 0) return
+        const activeOpts = cats
+          .filter((c) => (c.status ?? "Active") === "Active")
+          .map((c) => ({
+            code: c.code,
+            label: `${c.name} (${c.code})`,
+          }))
+        if (activeOpts.length > 0) {
+          setCategoryOptions(activeOpts)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
   }, [])
+
+  useEffect(() => {
+    if (isSsrSmokeTest() || tab !== "feedback") return
+    if (!UUID_REGEX.test(selectedFbId) || (!liveConnected && !hasLiveBackendAuth())) {
+      setFbDetail(null)
+      return
+    }
+    let active = true
+    setLoadingDetail(true)
+    setFbDetail(null)
+    void fetchStaffAiFeedbackDetail(selectedFbId)
+      .then((res) => {
+        if (!active || !res.success || !res.data) return
+        setFbDetail(res.data)
+        if (res.data.adminVerifiedLabel || res.data.userReportedLabel) {
+          setVerifiedLabel(res.data.adminVerifiedLabel || res.data.userReportedLabel)
+        }
+        if (res.data.reviewNote) {
+          setReviewNote(res.data.reviewNote)
+        }
+        if (res.data.existingYoloAnnotations?.length > 0) {
+          const box = res.data.existingYoloAnnotations[0]
+          setYoloBoxText(`${box.xCenter} ${box.yCenter} ${box.width} ${box.height}`)
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoadingDetail(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [selectedFbId, tab, liveConnected])
 
   const chooseFeedback = (fb: StaffAiFeedbackSummaryDto) => {
     setSelectedFbId(fb.id)
     setVerifiedLabel(fb.adminVerifiedLabel || fb.userReportedLabel || "plastic")
     setReviewNote(fb.reviewNote ?? "")
+    setYoloBoxText("")
+    setFbDetail(null)
     setFlashFb("")
     setErrFb("")
   }
@@ -345,7 +426,10 @@ export default function AiReview() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setTab("feedback")}
+            onClick={() => {
+              setTab("feedback")
+              setYoloBoxText("")
+            }}
             className={`rounded-lg px-4 py-2 text-[13px] font-semibold transition-colors ${
               tab === "feedback"
                 ? "bg-brand text-white"
@@ -356,7 +440,10 @@ export default function AiReview() {
           </button>
           <button
             type="button"
-            onClick={() => setTab("labeling")}
+            onClick={() => {
+              setTab("labeling")
+              setYoloBoxText("")
+            }}
             className={`rounded-lg px-4 py-2 text-[13px] font-semibold transition-colors ${
               tab === "labeling"
                 ? "bg-brand text-white"
@@ -400,6 +487,46 @@ export default function AiReview() {
                 </figcaption>
               </figure>
 
+              {loadingDetail ? (
+                <p className="text-xs text-muted">Đang tải chi tiết snapshot vật thể &amp; khung YOLO...</p>
+              ) : fbDetail && fbDetail.detectedObjectsSnapshot?.length > 0 ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line-soft bg-surface-2 px-3.5 py-2.5 text-xs">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-semibold text-ink">Khung AI đã nhận diện:</span>
+                    {fbDetail.detectedObjectsSnapshot.map((obj, idx) => (
+                      <span
+                        key={`${obj.id}-${idx}`}
+                        className="rounded-full bg-white px-2.5 py-0.5 font-medium text-body ring-1 ring-line"
+                      >
+                        #{idx + 1} {obj.displayName || obj.label} ({Math.round(obj.confidence * 100)}%)
+                      </span>
+                    ))}
+                  </div>
+                  {(() => {
+                    const primary =
+                      fbDetail.detectedObjectsSnapshot.find((o) => o.isPrimary) ??
+                      fbDetail.detectedObjectsSnapshot[0]
+                    const norm = primary
+                      ? formatNormalizedYoloFromDetected(
+                          primary,
+                          fbDetail.imageWidth,
+                          fbDetail.imageHeight,
+                        )
+                      : null
+                    if (!norm) return null
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setYoloBoxText(norm)}
+                        className="font-semibold text-brand-deep hover:underline"
+                      >
+                        Nạp tọa độ khung AI gốc
+                      </button>
+                    )
+                  })()}
+                </div>
+              ) : null}
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="rounded-lg border border-line bg-surface-2 px-4 py-3">
                   <p className="text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
@@ -432,7 +559,7 @@ export default function AiReview() {
                     }}
                   >
                     <option value="">Chọn nhãn chuẩn</option>
-                    {AI_CLASS_OPTIONS.map((opt) => (
+                    {categoryOptions.map((opt) => (
                       <option key={opt.code} value={opt.code}>
                         {opt.label}
                       </option>
@@ -648,7 +775,7 @@ export default function AiReview() {
                       value={singleGtLabel}
                       onChange={(e) => setSingleGtLabel(e.target.value)}
                     >
-                      {AI_CLASS_OPTIONS.map((opt) => (
+                      {categoryOptions.map((opt) => (
                         <option key={opt.code} value={opt.code}>
                           {opt.label}
                         </option>
@@ -710,7 +837,7 @@ export default function AiReview() {
                   value={batchLabel}
                   onChange={(e) => setBatchLabel(e.target.value)}
                 >
-                  {AI_CLASS_OPTIONS.map((opt) => (
+                  {categoryOptions.map((opt) => (
                     <option key={opt.code} value={opt.code}>
                       {opt.label}
                     </option>
@@ -810,6 +937,12 @@ export default function AiReview() {
                       setSelectedItemId(item.id)
                       setSingleGtLabel(
                         item.groundTruthLabel || item.predictedLabel || "plastic",
+                      )
+                      const firstBox = item.yoloAnnotations?.[0]
+                      setYoloBoxText(
+                        firstBox
+                          ? `${firstBox.xCenter} ${firstBox.yCenter} ${firstBox.width} ${firstBox.height}`
+                          : "",
                       )
                     }}
                     className="flex min-w-0 flex-1 items-center gap-2.5 text-left"

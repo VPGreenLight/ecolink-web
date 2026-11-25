@@ -421,7 +421,7 @@ export default function Complaints() {
                         <div className="mt-2 border-t border-line-soft pt-2">
                           <p className="font-semibold text-ink">
                             Biên nhận #{dossier.receipt.receiptCode}: {dossier.receipt.totalWeightKg} kg ·{" "}
-                            {dossier.receipt.totalAmountCash.toLocaleString("vi-VN")} đ · +{dossier.receipt.pointsAwarded} điểm
+                            {dossier.receipt.totalAmountCash.toLocaleString("vi-VN")} đ
                           </p>
                           <div className="mt-1.5 flex flex-wrap gap-2">
                             {dossier.receipt.scaleProofPhotoUrls.map((url, idx) => (

@@ -111,8 +111,8 @@ const CASES = [
   ["user/Home", UserHome, "Xin chào"],
   ["user/Handover", Handover, "Yêu cầu thu gom rác"],
   ["user/Receipt", Receipt, "Xác nhận bàn giao rác"],
-  ["user/Payout", Payout, "Tài khoản nhận tiền"],
-  ["user/Transactions", Transactions, "Lịch sử tiền vào tài khoản"],
+  ["user/Payout", Payout, "Quy chuẩn thanh toán tiền phế liệu trực tiếp"],
+  ["user/Transactions", Transactions, "Lịch sử biên nhận bàn giao"],
   ["user/Gamification", Gamification, "Cây ảo của bạn"],
 
   // ---- phân hệ RECYCLER ----

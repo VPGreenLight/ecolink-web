@@ -38,6 +38,11 @@ function RolePortal() {
   return <Portal role={session?.role === "recycler" ? "recycler" : "user"} />
 }
 
+function StaffWorkspaceShell() {
+  const session = useSession()
+  return <AdminShell role={session?.role === "admin" ? "admin" : "staff"} />
+}
+
 function GlobalAuthListener() {
   const navigate = useNavigate()
 
@@ -146,12 +151,13 @@ export function AppRoutes() {
 
           {/* ---- phân hệ STAFF ----
               Nằm NGOÀI <Layout> như admin: khu vực làm việc nội bộ không mượn
-              navbar, footer và tab-bar của app công khai. */}
+              navbar, footer và tab-bar của app công khai.
+              Cho phép Admin điều hướng thẳng vào các hàng đợi xử lý từ Dashboard Admin. */}
           <Route
             path="/staff"
             element={
-              <RequireRole roles={["staff"]}>
-                <AdminShell role="staff" />
+              <RequireRole roles={["staff", "admin"]}>
+                <StaffWorkspaceShell />
               </RequireRole>
             }
           >
