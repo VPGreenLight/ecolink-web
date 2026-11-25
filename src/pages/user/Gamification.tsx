@@ -167,7 +167,7 @@ export default function Gamification() {
               type="button"
               disabled={!tree.canUpgrade || upgrading}
               onClick={() => void handleUpgrade()}
-              className="btn-primary h-10 shrink-0 px-4 text-sm"
+              className="btn-primary min-h-11 w-full shrink-0 px-4 text-sm sm:h-10 sm:min-h-0 sm:w-auto"
             >
               {upgrading
                 ? "Đang nâng cấp..."
@@ -185,8 +185,8 @@ export default function Gamification() {
           </p>
         )}
 
-        <div className="grid gap-6 p-5 md:grid-cols-[260px_1fr]">
-          <figure className="rounded-xl border border-line bg-surface-2 p-4">
+        <div className="grid gap-5 p-4 sm:p-5 md:grid-cols-[260px_1fr] md:gap-6">
+          <figure className="mx-auto w-full max-w-[260px] rounded-xl border border-line bg-surface-2 p-4 md:mx-0 md:max-w-none">
             <svg
               viewBox="0 0 200 240"
               className="w-full"
@@ -262,7 +262,7 @@ export default function Gamification() {
                   }}
                   placeholder="Tìm kiến thức Eco Fact..."
                   aria-label="Tìm Eco Fact"
-                  className="input h-9 w-full max-w-xs text-xs"
+                  className="input h-10 w-full text-base sm:h-9 sm:max-w-xs sm:text-xs"
                 />
               </div>
               {(() => {

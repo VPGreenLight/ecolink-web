@@ -41,11 +41,17 @@ export default function Home() {
               Chụp ảnh để nhận diện rác, nhận hướng dẫn xử lý và kết nối với
               điểm thu gom tái chế gần bạn.
             </p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Link to="/scanner" className="btn-primary h-12 px-6">
+            <div className="mt-7 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3">
+              <Link
+                to="/scanner"
+                className="btn-primary h-11 px-2 text-xs min-[360px]:px-3 min-[360px]:text-[13px] sm:h-12 sm:px-6 sm:text-sm"
+              >
                 Thử nhận diện ngay
               </Link>
-              <Link to="/map" className="btn-outline h-12 px-6">
+              <Link
+                to="/map"
+                className="btn-outline h-11 px-2 text-xs min-[360px]:px-3 min-[360px]:text-[13px] sm:h-12 sm:px-6 sm:text-sm"
+              >
                 Tìm người thu gom
               </Link>
             </div>

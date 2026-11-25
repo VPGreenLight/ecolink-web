@@ -335,6 +335,15 @@
       pb-1 text-sm font-semibold text-brand-deep transition-colors
       hover:border-brand-deep;
   }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* Chuẩn hoá khung bản đồ tương tác Leaflet đồng bộ phông chữ & bảng màu EcoLink */

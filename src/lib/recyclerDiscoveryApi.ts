@@ -27,9 +27,19 @@ export interface CollectionPartnerDto {
   businessPhotoUrl?: string | null
   hasVerifiedBadge?: boolean
   isFeatured?: boolean
+  isOnline?: boolean
+  activeStatus?: string | null
   averageRating?: number
   totalReviews?: number
   materials: AcceptedMaterialDto[]
+}
+
+export function isPartnerOnline(partner: CollectionPartnerDto): boolean {
+  if (typeof partner.isOnline === "boolean") return partner.isOnline
+  if (partner.activeStatus) {
+    return partner.activeStatus.trim().toLowerCase() === "online"
+  }
+  return true
 }
 
 export interface DiscoveryFallbackSuggestionDto {
