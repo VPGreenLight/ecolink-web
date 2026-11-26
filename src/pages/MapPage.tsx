@@ -1,6 +1,6 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
-import { BadgeCheck, ChevronDown, Clock, MapPin, Navigation, Phone, Search, ShieldCheck, Tag } from "lucide-react"
+import { BadgeCheck, ChevronDown, Clock, List, Map as MapIcon, MapPin, Navigation, Phone, Search, ShieldCheck, Tag, X } from "lucide-react"
 import ShinyText from "@/components/ShinyText"
 import LeafletRecyclerMap, {
   type SearchCoordinateSource,
@@ -18,12 +18,14 @@ import {
   formatVnd,
   getRecyclerPublicDetail,
   isDiscoverableCategory,
+  isPartnerOnline,
   LOCATION_PRESETS,
   RADIUS_OPTIONS,
   searchNearbyRecyclers,
   type CollectionPartnerDto,
   type DiscoverableCategory,
   type DiscoveryFallbackSuggestionDto,
+  type LocationPreset,
   type RecyclerSortBy,
 } from "@/lib/recyclerDiscoveryApi"
 import { fetchWasteCategories, getCategoryMeta, parsePreparationSteps } from "@/lib/wasteScanApi"
@@ -241,6 +243,20 @@ const CATEGORY_SHORT: Record<string, string> = {
   glass: "Thủy tinh",
 }
 
+function getPartnerPriceSummary(
+  partner: CollectionPartnerDto,
+  category: "" | DiscoverableCategory,
+) {
+  const matchedMat = category
+    ? partner.materials.find((m) => m.categoryCode.toLowerCase() === category)
+    : undefined
+  const minPrice =
+    partner.materials.length > 0
+      ? Math.min(...partner.materials.map((m) => m.pricePerKg))
+      : 0
+  return { matchedMat, minPrice }
+}
+
 /** U-05 Tìm kiếm cơ sở thu gom theo vị trí địa lý trên bản đồ tương tác (Privacy-First Geocoding).
  *
  *  Kết nối trực tiếp với:
@@ -249,6 +265,8 @@ const CATEGORY_SHORT: Record<string, string> = {
  *   - Bảo mật vị trí `BR-MTH-05`: làm mờ toạ độ sang lưới `~500m` (`0.005°`) cho cả GPS, Click-to-Pin và địa chỉ tìm kiếm
  *   - `GET /api/v1/recyclers/nearby` & `GET /api/v1/recyclers/{recyclerId}` */
 export default function MapPage() {
+  const session = useSession()
+  const isGuest = !session && !isSsrSmokeTest()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialCatParam = searchParams.get("category")
   const initialCat: "" | DiscoverableCategory = isDiscoverableCategory(initialCatParam)
@@ -325,13 +343,37 @@ export default function MapPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedDetail, setSelectedDetail] = useState<CollectionPartnerDto | null>(null)
   const [loadingDetail, setLoadingDetail] = useState<boolean>(false)
+  const [mobileView, setMobileView] = useState<"map" | "list">("map")
+  const [mobileSheetOpen, setMobileSheetOpen] = useState<boolean>(false)
 
-  // Khi mở một cơ sở, đôn dòng đó lên đầu khung danh sách để detail chiếm trọn tầm nhìn
+  useEffect(() => {
+    if (!selectedId) setMobileSheetOpen(false)
+  }, [selectedId])
+
+  // Khoá cuộn nền khi mở sheet khu vực hoặc chi tiết cơ sở trên mobile (< xl)
+  useEffect(() => {
+    if (typeof window === "undefined" || window.innerWidth >= 1280) return
+    if (!showLocationPicker && !mobileSheetOpen) return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      setMobileSheetOpen(false)
+      setShowLocationPicker(false)
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.body.style.overflow = prevOverflow
+      window.removeEventListener("keydown", onKeyDown)
+    }
+  }, [showLocationPicker, mobileSheetOpen])
+
+  // Khi mở một cơ sở trên desktop, đôn dòng đó lên đầu khung danh sách để detail chiếm trọn tầm nhìn
   const listScrollRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     if (!selectedId) return
     const container = listScrollRef.current
-    if (!container) return
+    if (!container || container.scrollHeight <= container.clientHeight) return
     const li = container.querySelector<HTMLLIElement>(`li[data-partner-id="${selectedId}"]`)
     if (!li) return
     const delta = li.getBoundingClientRect().top - container.getBoundingClientRect().top
@@ -601,6 +643,17 @@ export default function MapPage() {
   }, [radiusKm])
 
   const activePartner = selectedDetail ?? partners.find((p) => p.id === selectedId) ?? null
+  const activePartnerIndex = activePartner
+    ? partners.findIndex((p) => p.id === activePartner.id)
+    : -1
+  const activePartnerPrice = useMemo(
+    () => (activePartner ? getPartnerPriceSummary(activePartner, category) : null),
+    [activePartner, category],
+  )
+  const mobileExpandedRadius =
+    fallback?.suggestedExpandedRadiusKm && fallback.suggestedExpandedRadiusKm > radiusKm
+      ? fallback.suggestedExpandedRadiusKm
+      : Math.min(50, Math.round(radiusKm * 2.5))
 
   const handoverUrl = useMemo(() => {
     if (!activePartner) return "/user/handover"
@@ -632,9 +685,113 @@ export default function MapPage() {
   }, [coords.isFuzzed, coords.source])
 
   return (
-    <div className="flex flex-col gap-3 p-3 md:p-4 xl:h-[calc(100dvh-76px)] xl:flex-row">
+    <div
+      className={`flex flex-col gap-2.5 p-2.5 sm:p-3 md:p-4 xl:h-[calc(100dvh-76px)] xl:flex-row xl:gap-3 xl:pb-4 ${
+        mobileView === "map"
+          ? "h-[calc(100dvh-70px)] pb-[78px] md:h-[calc(100dvh-76px)] md:pb-[78px] lg:pb-4"
+          : ""
+      }`}
+    >
+      {/* Thanh điều khiển gọn cho Mobile/Tablet (< xl): chọn khu vực, lọc phế liệu 1 hàng, chuyển Bản đồ / Danh sách */}
+      <div className="flex shrink-0 flex-col gap-2 rounded-2xl border border-line bg-surface p-2.5 shadow-2xs xl:hidden">
+        <button
+          type="button"
+          onClick={() => setShowLocationPicker(true)}
+          aria-expanded={showLocationPicker}
+          className="flex min-h-11 w-full items-center gap-2.5 rounded-xl border border-line bg-surface-2/60 px-3 py-2 text-left transition-colors active:scale-[0.99] active:bg-surface-2"
+        >
+          <MapPin className="size-4 shrink-0 text-brand" strokeWidth={1.6} aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13px] font-semibold text-ink">{coords.label}</p>
+            <p className="truncate text-[11px] text-muted">
+              Bán kính {radiusKm} km · {privacyMode ? "Ẩn vị trí ~500m" : "Vị trí chính xác"}
+            </p>
+          </div>
+          <span className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg bg-brand-deep px-2.5 text-xs font-semibold text-white">
+            Đổi
+            <ChevronDown className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+          </span>
+        </button>
+
+        <div
+          role="group"
+          aria-label="Lọc theo loại phế liệu"
+          className="no-scrollbar -mx-0.5 flex items-center gap-1.5 overflow-x-auto px-0.5 py-0.5"
+        >
+          {visibleCategories.map((c) => {
+            const on = category === c.value
+            const short = CATEGORY_SHORT[c.value] ?? c.label.replace(/\s*\(.*\)/, "")
+            return (
+              <button
+                key={c.value || "all"}
+                type="button"
+                onClick={() => changeCategory(c.value)}
+                aria-pressed={on}
+                title={c.label.replace(/\s*\(.*\)/, "")}
+                className={`inline-flex h-9 shrink-0 items-center rounded-full border px-3.5 text-xs whitespace-nowrap transition-all active:scale-[0.97] ${
+                  on
+                    ? "border-brand-deep bg-brand-deep font-semibold text-white shadow-xs"
+                    : "border-line bg-surface-2/60 font-medium text-body hover:bg-surface-2 hover:text-ink"
+                }`}
+              >
+                {short}
+              </button>
+            )
+          })}
+        </div>
+
+        <div
+          role="tablist"
+          aria-label="Chế độ xem điểm thu gom"
+          className="grid grid-cols-2 gap-1 rounded-xl border border-line-soft bg-surface-2/80 p-1"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileView === "map"}
+            onClick={() => setMobileView("map")}
+            className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-lg text-xs transition-all ${
+              mobileView === "map"
+                ? "bg-surface font-semibold text-brand-deep shadow-xs ring-1 ring-black/5"
+                : "font-medium text-body hover:text-ink"
+            }`}
+          >
+            <MapIcon className="size-3.5" strokeWidth={1.7} aria-hidden="true" />
+            Bản đồ
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileView === "list"}
+            onClick={() => setMobileView("list")}
+            className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-lg text-xs transition-all ${
+              mobileView === "list"
+                ? "bg-surface font-semibold text-brand-deep shadow-xs ring-1 ring-black/5"
+                : "font-medium text-body hover:text-ink"
+            }`}
+          >
+            <List className="size-3.5" strokeWidth={1.7} aria-hidden="true" />
+            Danh sách ({loading ? "…" : partners.length})
+          </button>
+        </div>
+
+        {gpsStatusMsg && (
+          <p
+            role="status"
+            data-message-code="MSG-MTH-02"
+            className="rounded-xl border border-warn/30 bg-warn/5 px-3 py-2 text-xs text-warn"
+          >
+            {gpsStatusMsg}
+          </p>
+        )}
+      </div>
+
       {/* Cột trái: khung bản đồ tương tác + tra cứu khu vực + bảo mật vị trí ~500m */}
-      <section className="relative flex h-[460px] shrink-0 flex-col overflow-clip rounded-2xl border border-line bg-surface-3 sm:h-[520px] xl:h-full xl:min-h-[520px] xl:flex-1">
+      <section
+        className={`relative min-h-0 flex-1 flex-col overflow-clip rounded-2xl border border-line bg-surface-3 xl:flex xl:h-full xl:min-h-[520px] ${
+          mobileView === "map" ? "flex" : "hidden"
+        }`}
+      >
         <div className="relative h-full w-full flex-1">
           <LeafletRecyclerMap
             centerLat={coords.lat}
@@ -645,13 +802,145 @@ export default function MapPage() {
             partners={partners}
             selectedPartnerId={activePartner?.id ?? null}
             locatingGps={locatingGps}
+            mobileLiftControls={Boolean(activePartner) || (!loading && partners.length === 0)}
             onSelectPartner={(id) => setSelectedId(id)}
             onMapPinClick={handleMapPinClick}
             onRequestGps={requestBrowserGps}
           />
 
-          {/* Thanh điều khiển gọn trên bản đồ: khu vực, quyền riêng tư và bán kính */}
-          <div className="pointer-events-none absolute inset-x-4 top-4 z-30 flex flex-col gap-2">
+          {/* Nhãn dữ liệu mẫu gọn trên bản đồ mobile khi Backend offline */}
+          {isOfflineDemo && (
+            <span className="pointer-events-none absolute top-3 left-3 z-20 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface/92 px-2.5 py-1 text-[11px] font-medium text-muted shadow-2xs backdrop-blur-md xl:hidden">
+              <span className="size-1.5 rounded-full bg-warn" />
+              Dữ liệu mẫu
+            </span>
+          )}
+
+          {/* Gợi ý thao tác ngắn trên mobile khi chưa chọn ghim */}
+          {!activePartner && !loading && partners.length > 0 && (
+            <div className="pointer-events-none absolute bottom-3 left-3 z-20 max-w-[calc(100%-4.5rem)] xl:hidden">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface/92 px-3 py-1.5 text-[11px] font-medium text-body shadow-2xs backdrop-blur-md">
+                <span className="size-1.5 shrink-0 rounded-full bg-brand" />
+                <span className="truncate">Chạm ghim số xem giá · Chạm bản đồ dời tâm</span>
+              </span>
+            </div>
+          )}
+
+          {/* Thẻ xem nhanh cơ sở ở đáy bản đồ mobile khi chạm ghim */}
+          {activePartner && !mobileSheetOpen && (
+            <div className="absolute inset-x-3 bottom-3 z-30 rounded-2xl border border-line bg-surface/98 p-3.5 shadow-[0_12px_32px_rgba(15,31,21,0.16)] backdrop-blur-md xl:hidden">
+              <div className="flex items-start gap-2.5">
+                <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-brand-deep text-[11px] font-semibold tabular-nums text-white">
+                  {activePartnerIndex >= 0 ? activePartnerIndex + 1 : "•"}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="truncate text-sm leading-5 font-semibold text-ink">
+                      {activePartner.facilityName}
+                    </p>
+                    {activePartner.hasVerifiedBadge && (
+                      <BadgeCheck
+                        className="size-4 shrink-0 text-brand"
+                        strokeWidth={1.6}
+                        aria-label="Đã xác minh"
+                      />
+                    )}
+                    {activePartner.isFeatured && (
+                      <span className="inline-flex shrink-0 items-center rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5 text-[10px] font-semibold text-brand-deep">
+                        Đối tác Pro
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-muted">{activePartner.address}</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <OnlineStatusBadge online={isPartnerOnline(activePartner)} />
+                    <span className="inline-flex items-center gap-1 font-medium tabular-nums text-ink">
+                      <Clock className="size-3.5 text-muted" strokeWidth={1.5} aria-hidden="true" />
+                      {activePartner.operatingHours || "08:00 - 18:00"}
+                    </span>
+                    <span className="font-semibold tabular-nums text-amber-700">
+                      ★ {(activePartner.averageRating ?? 0).toFixed(1)} ({activePartner.totalReviews ?? 0})
+                    </span>
+                    <span className="font-medium tabular-nums text-ink">
+                      {formatDistance(activePartner.distanceKm)}
+                    </span>
+                  </div>
+                  {activePartnerPrice && (
+                    <p className="mt-1 text-xs font-semibold tabular-nums text-brand-deep">
+                      {activePartnerPrice.matchedMat
+                        ? `${activePartnerPrice.matchedMat.categoryName.replace(/\s*\(.*\)/, "")}: ${formatVnd(activePartnerPrice.matchedMat.pricePerKg)}/kg`
+                        : activePartnerPrice.minPrice > 0
+                          ? `từ ${formatVnd(activePartnerPrice.minPrice)}/kg · ${activePartner.materials.length} loại phế liệu`
+                          : `${activePartner.materials.length} loại phế liệu`}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(null)}
+                  aria-label="Đóng thẻ xem nhanh"
+                  className="-mt-1 -mr-1 grid size-9 shrink-0 place-items-center rounded-full text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+                >
+                  <X className="size-4" strokeWidth={1.7} aria-hidden="true" />
+                </button>
+              </div>
+
+              <div className="mt-2.5 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMobileSheetOpen(true)}
+                  className="btn-outline h-10 rounded-xl px-2 text-xs min-[360px]:px-3"
+                >
+                  Xem bảng giá
+                </button>
+                <Link
+                  to={chatUrl}
+                  onClick={(e) => {
+                    if (isGuest) {
+                      e.preventDefault()
+                      openAuthPopup("login")
+                    }
+                  }}
+                  className="btn-primary h-10 rounded-xl px-2 text-xs min-[360px]:px-3"
+                >
+                  Nhắn thương lượng
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* Phương án dự phòng gọn trên bản đồ mobile khi không có cơ sở trong bán kính */}
+          {!activePartner && !loading && partners.length === 0 && (
+            <div className="absolute inset-x-3 bottom-3 z-30 rounded-2xl border border-line bg-surface/98 p-3.5 shadow-[0_12px_32px_rgba(15,31,21,0.16)] backdrop-blur-md xl:hidden">
+              <p className="text-xs font-semibold text-ink">
+                Không có cơ sở trong {radiusKm} km
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted">
+                Thử mở rộng bán kính hoặc xem hướng dẫn phân loại.
+              </p>
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                {radiusKm < 50 && (
+                  <button
+                    type="button"
+                    onClick={() => setRadiusKm(mobileExpandedRadius)}
+                    className="btn-primary h-10 flex-1 rounded-xl px-3 text-xs"
+                  >
+                    Mở rộng {mobileExpandedRadius} km
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setMobileView("list")}
+                  className="btn-outline h-10 flex-1 rounded-xl px-3 text-xs"
+                >
+                  Xem hướng dẫn
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Thanh điều khiển gọn trên bản đồ Desktop (xl+): khu vực, quyền riêng tư và bán kính */}
+          <div className="pointer-events-none absolute inset-x-4 top-4 z-30 hidden flex-col gap-2 xl:flex">
             <div className="pointer-events-auto flex flex-wrap items-start gap-2">
               <div className="flex min-w-[280px] flex-1 items-center gap-2.5 rounded-xl border border-line bg-surface/95 px-3 py-2 shadow-sm backdrop-blur-md">
                 <MapPin className="size-4 shrink-0 text-brand" strokeWidth={1.5} />
@@ -718,148 +1007,30 @@ export default function MapPage() {
               </div>
             </div>
 
-            {/* Hộp thoại tra cứu khu vực: gợi ý nội bộ 0ms + Nominatim khi nhấn Enter */}
+            {/* Hộp thoại tra cứu khu vực trên Desktop: gợi ý nội bộ 0ms + Nominatim khi nhấn Enter */}
             {showLocationPicker && (
               <div className="pointer-events-auto max-h-[400px] overflow-y-auto rounded-xl border border-line bg-surface p-4 shadow-lg">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="text-[13px] font-medium text-ink">Tra cứu theo khu vực</p>
-                    <p className="mt-0.5 text-xs text-muted">
-                      Gõ tên Quận/Phường để chọn ngay, hoặc nhấn Enter để tìm chợ, đường
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={requestBrowserGps}
-                    disabled={locatingGps}
-                    className="btn-primary h-8 px-3 text-xs"
-                  >
-                    {locatingGps ? "Đang lấy GPS..." : "Dùng GPS hiện tại"}
-                  </button>
-                </div>
-
-                {/* Ô tìm kiếm địa danh (Submit-only cho Nominatim) */}
-                <form noValidate onSubmit={handlePlaceSubmit} className="mt-3 flex gap-2">
-                  <div className="relative min-w-0 flex-1">
-                    <Search
-                      className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted"
-                      strokeWidth={1.5}
-                    />
-                    <input
-                      type="search"
-                      value={placeQuery}
-                      onChange={(e) => {
-                        setPlaceQuery(e.target.value)
-                        if (placeSearchNotice) setPlaceSearchNotice("")
-                      }}
-                      placeholder="Phường, Quận, Chợ hoặc Ngã tư"
-                      aria-label="Nhập tên phường, quận, chợ hoặc ngã tư"
-                      className="h-9 w-full rounded-lg border border-sage-line bg-surface pr-3 pl-8 text-xs text-ink placeholder:text-muted focus:border-brand focus:outline-none"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={searchingPlaces}
-                    className="btn-outline h-9 shrink-0 px-3 text-xs"
-                  >
-                    {searchingPlaces ? "Đang tìm..." : "Tìm địa danh"}
-                  </button>
-                </form>
-
-                {placeSearchNotice && (
-                  <p
-                    role="alert"
-                    className="mt-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs font-medium text-warn"
-                  >
-                    {placeSearchNotice}
-                  </p>
-                )}
-
-                {/* Kết quả từ Backend Geocoding Proxy (Nominatim / LocationIQ) sau khi nhấn Enter */}
-                {remoteSuggestions.length > 0 && (
-                  <div className="mt-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium text-ink">Kết quả tra cứu</span>
-                      {placeAttribution && (
-                        <span className="text-[11px] text-muted">{placeAttribution}</span>
-                      )}
-                    </div>
-                    <div className="mt-1.5 divide-y divide-line-soft rounded-lg border border-line">
-                      {remoteSuggestions.map((item) => (
-                        <button
-                          key={item.placeId}
-                          type="button"
-                          onClick={() => {
-                            setRawAnchor({
-                              rawLat: item.latitude,
-                              rawLng: item.longitude,
-                              label: item.shortLabel || item.displayName,
-                              source: "search",
-                            })
-                            setGpsStatusMsg("")
-                            setShowLocationPicker(false)
-                          }}
-                          className="block w-full px-3 py-2 text-left transition-colors hover:bg-surface-2"
-                        >
-                          <span className="block text-xs font-medium text-ink">
-                            {item.shortLabel}
-                          </span>
-                          <span className="block truncate text-[11px] text-muted">
-                            {item.displayName}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Tầng 1: Gợi ý khu vực tức thì (0 HTTP request) */}
-                <div className="mt-3">
-                  <span className="text-xs text-muted">
-                    {placeQuery.trim()
-                      ? `Khu vực gợi ý (${instantPresets.length})`
-                      : "Khu vực phổ biến"}
-                  </span>
-                  {instantPresets.length === 0 ? (
-                    <p className="mt-1.5 rounded-lg border border-dashed border-line px-3 py-2 text-xs text-muted">
-                      Không khớp khu vực có sẵn. Nhấn Enter để tra cứu trên toàn quốc.
-                    </p>
-                  ) : (
-                    <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-                      {instantPresets.map((preset) => {
-                        const active =
-                          Math.abs(rawAnchor.rawLat - preset.lat) < 0.001 &&
-                          Math.abs(rawAnchor.rawLng - preset.lng) < 0.001
-                        return (
-                          <button
-                            key={preset.id}
-                            type="button"
-                            onClick={() => {
-                              setRawAnchor({
-                                rawLat: preset.lat,
-                                rawLng: preset.lng,
-                                label: preset.address,
-                                source: "preset",
-                              })
-                              setGpsStatusMsg("")
-                              setShowLocationPicker(false)
-                            }}
-                            className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
-                              active
-                                ? "border-brand/40 bg-brand/10 text-brand-deep"
-                                : "border-line-soft bg-surface hover:bg-surface-2"
-                            }`}
-                          >
-                            <span className="block truncate font-medium">{preset.label}</span>
-                            <span className="block truncate text-[11px] text-muted">
-                              {preset.address}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
+                <LocationPickerBody
+                  placeQuery={placeQuery}
+                  onPlaceQueryChange={(val) => {
+                    setPlaceQuery(val)
+                    if (placeSearchNotice) setPlaceSearchNotice("")
+                  }}
+                  onPlaceSubmit={handlePlaceSubmit}
+                  searchingPlaces={searchingPlaces}
+                  placeSearchNotice={placeSearchNotice}
+                  remoteSuggestions={remoteSuggestions}
+                  placeAttribution={placeAttribution}
+                  instantPresets={instantPresets}
+                  rawAnchor={rawAnchor}
+                  locatingGps={locatingGps}
+                  onRequestGps={requestBrowserGps}
+                  onSelectLocation={(rawLat, rawLng, label, source) => {
+                    setRawAnchor({ rawLat, rawLng, label, source })
+                    setGpsStatusMsg("")
+                    setShowLocationPicker(false)
+                  }}
+                />
               </div>
             )}
 
@@ -877,14 +1048,18 @@ export default function MapPage() {
       </section>
 
       {/* Cột phải: danh sách cơ sở đã xác minh, mở rộng tại chỗ để xem bảng giá */}
-      <section className="flex min-h-[580px] w-full shrink-0 flex-col overflow-clip rounded-2xl border border-line bg-surface xl:h-full xl:w-[460px]">
-        <header className="shrink-0 border-b border-line px-5 pt-4 pb-3">
+      <section
+        className={`w-full shrink-0 flex-col overflow-clip rounded-2xl border border-line bg-surface xl:flex xl:h-full xl:w-[460px] ${
+          mobileView === "list" ? "flex" : "hidden"
+        }`}
+      >
+        <header className="shrink-0 border-b border-line px-4 pt-3.5 pb-3 xl:px-5 xl:pt-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h1 className="text-[19px] leading-6 font-semibold text-ink">
+              <h1 className="text-lg leading-6 font-semibold text-ink xl:text-[19px]">
                 Cơ sở thu mua gần bạn
               </h1>
-              <p className="mt-1 text-xs text-muted">Đã xác minh và đang mở cửa nhận đơn</p>
+              <p className="mt-0.5 text-xs text-muted xl:mt-1">Đã xác minh và đang mở cửa nhận đơn</p>
             </div>
             <span className="shrink-0 pt-0.5 text-xs tabular-nums text-muted">
               {loading ? "Đang tìm" : `${partners.length} cơ sở`}
@@ -894,7 +1069,7 @@ export default function MapPage() {
           <div
             role="group"
             aria-label="Lọc theo loại phế liệu"
-            className="mt-2.5 flex flex-wrap gap-1"
+            className="mt-2.5 hidden flex-wrap gap-1 xl:flex"
           >
             {visibleCategories.map((c) => {
               const on = category === c.value
@@ -918,10 +1093,10 @@ export default function MapPage() {
             })}
           </div>
 
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2.5 flex flex-col gap-2 sm:flex-row xl:mt-2">
             <div className="relative min-w-0 flex-1">
               <Search
-                className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted"
+                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted xl:left-2.5 xl:size-3.5"
                 strokeWidth={1.5}
               />
               <input
@@ -930,7 +1105,7 @@ export default function MapPage() {
                 onChange={(e) => setKeyword(e.target.value)}
                 placeholder="Tên cơ sở hoặc đường, quận"
                 aria-label="Lọc tên cơ sở hoặc địa chỉ"
-                className="h-9 w-full rounded-lg border border-sage-line bg-surface pr-3 pl-8 text-xs text-ink placeholder:text-muted focus:border-brand focus:outline-none"
+                className="h-11 w-full rounded-xl border border-sage-line bg-surface pr-3 pl-9 text-base text-ink placeholder:text-muted focus:border-brand focus:outline-none sm:text-sm xl:h-9 xl:rounded-lg xl:pl-8 xl:text-xs"
               />
             </div>
             <select
@@ -938,7 +1113,7 @@ export default function MapPage() {
               value={!category && sortBy === "price_desc" ? "distance" : sortBy}
               onChange={(e) => setSortBy(e.target.value as RecyclerSortBy)}
               title="Chọn tiêu chí sắp xếp"
-              className="h-9 shrink-0 rounded-lg border border-sage-line bg-surface px-2.5 text-xs font-medium text-ink focus:border-brand focus:outline-none"
+              className="h-11 shrink-0 rounded-xl border border-sage-line bg-surface px-3 text-sm font-medium text-ink focus:border-brand focus:outline-none xl:h-9 xl:rounded-lg xl:px-2.5 xl:text-xs"
             >
               <option value="distance">Gần nhất</option>
               <option value="rating_desc">Đánh giá cao nhất</option>
@@ -954,7 +1129,7 @@ export default function MapPage() {
           )}
         </header>
 
-        <div ref={listScrollRef} className="flex-1 overflow-y-auto">
+        <div ref={listScrollRef} className="xl:flex-1 xl:overflow-y-auto">
           {errorMsg && (
             <div
               role="alert"
@@ -987,13 +1162,7 @@ export default function MapPage() {
             <ul className="divide-y divide-line-soft">
               {partners.map((p, index) => {
                 const isSelected = p.id === activePartner?.id
-                const matchedMat = category
-                  ? p.materials.find((m) => m.categoryCode.toLowerCase() === category)
-                  : undefined
-                const minPrice =
-                  p.materials.length > 0
-                    ? Math.min(...p.materials.map((m) => m.pricePerKg))
-                    : 0
+                const { matchedMat, minPrice } = getPartnerPriceSummary(p, category)
 
                 return (
                   <li
@@ -1013,7 +1182,7 @@ export default function MapPage() {
                         setSelectedId((prev) => (prev === p.id ? null : p.id))
                       }
                       aria-expanded={isSelected}
-                      className="w-full px-5 py-3 text-left transition-colors hover:bg-mint/10"
+                      className="w-full px-4 py-3.5 text-left transition-colors hover:bg-mint/10 xl:px-5 xl:py-3"
                     >
                       <div className="flex items-start gap-3">
                         <span
@@ -1029,8 +1198,8 @@ export default function MapPage() {
                         </span>
 
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate text-sm leading-5 font-semibold text-ink">
+                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 xl:flex-nowrap">
+                            <span className="line-clamp-2 text-sm leading-5 font-semibold text-ink xl:line-clamp-none xl:truncate">
                               {p.facilityName}
                             </span>
                             {p.hasVerifiedBadge && (
@@ -1064,7 +1233,13 @@ export default function MapPage() {
                           </div>
                           <p className="mt-0.5 truncate text-xs text-muted">{p.address}</p>
 
-                          <dl className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+                          <dl className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
+                            <div className="inline-flex items-center">
+                              <dt className="sr-only">Trạng thái hoạt động</dt>
+                              <dd>
+                                <OnlineStatusBadge online={isPartnerOnline(p)} />
+                              </dd>
+                            </div>
                             <div className="inline-flex items-center gap-1 font-semibold tabular-nums text-amber-700">
                               <dt className="sr-only">Đánh giá</dt>
                               <dd>
@@ -1145,6 +1320,7 @@ export default function MapPage() {
                         loadingDetail={loadingDetail}
                         handoverUrl={handoverUrl}
                         chatUrl={chatUrl}
+                        onFocusOnMap={() => setMobileView("map")}
                       />
                     )}
                   </li>
@@ -1154,11 +1330,191 @@ export default function MapPage() {
           )}
         </div>
       </section>
+
+      {/* Bottom Sheet chọn khu vực, bán kính & ẩn vị trí ~500m trên Mobile/Tablet (< xl) */}
+      {showLocationPicker && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Chọn khu vực và bán kính tìm kiếm"
+          onClick={() => setShowLocationPicker(false)}
+          className="fixed inset-0 z-50 flex items-end bg-ink/45 backdrop-blur-[2px] xl:hidden"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[88dvh] w-full overflow-y-auto overscroll-contain rounded-t-2xl border-t border-line bg-surface p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl"
+          >
+            <div className="mb-3 flex items-center justify-between gap-3 border-b border-line-soft pb-3">
+              <div>
+                <h2 className="text-base font-semibold text-ink">Khu vực &amp; Bán kính</h2>
+                <p className="text-xs text-muted">
+                  {coordinateSourceLabel} · {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLocationPicker(false)}
+                aria-label="Đóng bảng chọn khu vực"
+                className="grid size-10 shrink-0 place-items-center rounded-full border border-line bg-surface text-body transition-colors hover:bg-surface-2 hover:text-ink"
+              >
+                <X className="size-4" strokeWidth={1.7} aria-hidden="true" />
+              </button>
+            </div>
+
+            <LocationPickerBody
+              placeQuery={placeQuery}
+              onPlaceQueryChange={(val) => {
+                setPlaceQuery(val)
+                if (placeSearchNotice) setPlaceSearchNotice("")
+              }}
+              onPlaceSubmit={handlePlaceSubmit}
+              searchingPlaces={searchingPlaces}
+              placeSearchNotice={placeSearchNotice}
+              remoteSuggestions={remoteSuggestions}
+              placeAttribution={placeAttribution}
+              instantPresets={instantPresets}
+              rawAnchor={rawAnchor}
+              locatingGps={locatingGps}
+              onRequestGps={requestBrowserGps}
+              onSelectLocation={(rawLat, rawLng, label, source) => {
+                setRawAnchor({ rawLat, rawLng, label, source })
+                setGpsStatusMsg("")
+                setShowLocationPicker(false)
+              }}
+              mobileExtras={
+                <div className="mb-4 flex flex-col gap-3">
+                  <div className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-line bg-surface-2/60 px-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-ink">Ẩn vị trí chính xác (~500m)</p>
+                      <p className="text-[11px] text-muted">
+                        Làm tròn GPS &amp; điểm chấm trước khi gửi đi
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPrivacyMode((v) => !v)}
+                      data-message-code="BR-MTH-05"
+                      aria-pressed={privacyMode}
+                      className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+                        privacyMode
+                          ? "border-brand/40 bg-brand-deep text-white"
+                          : "border-line bg-surface text-body"
+                      }`}
+                    >
+                      <ShieldCheck className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+                      {privacyMode ? "Đang bật" : "Đang tắt"}
+                    </button>
+                  </div>
+
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold text-ink">Bán kính tìm kiếm</p>
+                    <div role="group" aria-label="Bán kính tìm kiếm" className="grid grid-cols-4 gap-2">
+                      {radiusChoices.map((r) => (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setRadiusKm(r)}
+                          aria-pressed={radiusKm === r}
+                          className={`h-11 rounded-xl border text-xs font-semibold tabular-nums transition-colors ${
+                            radiusKm === r
+                              ? "border-brand-deep bg-brand-deep text-white shadow-xs"
+                              : "border-line bg-surface text-ink hover:bg-surface-2"
+                          }`}
+                        >
+                          {r} km
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              }
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Sheet chi tiết bảng giá & đặt lịch khi mở từ ghim bản đồ Mobile */}
+      {mobileSheetOpen && activePartner && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Chi tiết ${activePartner.facilityName}`}
+          onClick={() => setMobileSheetOpen(false)}
+          className="fixed inset-0 z-50 flex items-end bg-ink/45 backdrop-blur-[2px] xl:hidden"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[86dvh] w-full overflow-y-auto overscroll-contain rounded-t-2xl border-t border-line bg-surface pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl"
+          >
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-line bg-surface/95 px-4 py-3 backdrop-blur-md">
+              <div className="flex min-w-0 items-start gap-2.5">
+                <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-brand-deep text-[11px] font-semibold tabular-nums text-white">
+                  {activePartnerIndex >= 0 ? activePartnerIndex + 1 : "•"}
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <h2 className="text-sm leading-5 font-semibold text-ink">
+                      {activePartner.facilityName}
+                    </h2>
+                    {activePartner.hasVerifiedBadge && (
+                      <BadgeCheck className="size-4 shrink-0 text-brand" strokeWidth={1.6} aria-label="Đã xác minh" />
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted">{activePartner.address}</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <OnlineStatusBadge online={isPartnerOnline(activePartner)} />
+                    <span className="inline-flex items-center gap-1 font-medium tabular-nums text-ink">
+                      <Clock className="size-3.5 text-muted" strokeWidth={1.5} aria-hidden="true" />
+                      {activePartner.operatingHours || "08:00 - 18:00"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileSheetOpen(false)}
+                aria-label="Đóng chi tiết cơ sở"
+                className="grid size-10 shrink-0 place-items-center rounded-full border border-line bg-surface text-body transition-colors hover:bg-surface-2 hover:text-ink"
+              >
+                <X className="size-4" strokeWidth={1.7} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="pt-2">
+              <PartnerDetail
+                partner={activePartner}
+                highlightedCategory={category}
+                loadingDetail={loadingDetail}
+                handoverUrl={handoverUrl}
+                chatUrl={chatUrl}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 /* ---------------------------------------------------------------- Chi tiết cơ sở & bảng giá */
+
+function OnlineStatusBadge({ online }: { online: boolean }) {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+        online
+          ? "border-brand/25 bg-brand/10 text-brand-deep"
+          : "border-line bg-surface-2 text-muted"
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`size-1.5 rounded-full ${online ? "bg-brand" : "bg-muted"}`}
+      />
+      {online ? "Đang online" : "Offline"}
+    </span>
+  )
+}
 
 function PartnerDetail({
   partner,
@@ -1166,12 +1522,14 @@ function PartnerDetail({
   loadingDetail,
   handoverUrl,
   chatUrl,
+  onFocusOnMap,
 }: {
   partner: CollectionPartnerDto
   highlightedCategory: "" | DiscoverableCategory
   loadingDetail: boolean
   handoverUrl: string
   chatUrl: string
+  onFocusOnMap?: () => void
 }) {
   const session = useSession()
   const isGuest = !session && !isSsrSmokeTest()
@@ -1240,10 +1598,10 @@ function PartnerDetail({
   }
 
   return (
-    <div className="pr-5 pb-4 pl-14">
+    <div className="px-4 pb-4 xl:pr-5 xl:pl-14">
       <div className="border-t border-line-soft pt-3">
-        {(partner.description || partner.representativeName || partner.contactPhone) && (
-          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5">
+        {(partner.description || partner.representativeName || partner.contactPhone || onFocusOnMap) && (
+          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
             <div className="min-w-0 flex-1">
               {partner.description && (
                 <p className="text-xs leading-5 text-body">{partner.description}</p>
@@ -1254,28 +1612,40 @@ function PartnerDetail({
                 </p>
               )}
             </div>
-            {partner.contactPhone && (
-              isGuest ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {onFocusOnMap && (
                 <button
                   type="button"
-                  onClick={() => openAuthPopup("login")}
-                  title="Đăng nhập để xem đầy đủ và liên hệ cơ sở thu mua"
-                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2"
+                  onClick={onFocusOnMap}
+                  className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-xs font-medium text-brand-deep transition-colors hover:bg-surface-2 xl:hidden"
                 >
-                  <Phone className="size-3.5" strokeWidth={1.5} />
-                  {maskPhoneForGuest(partner.contactPhone)} · Đăng nhập
+                  <MapPin className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+                  Xem trên bản đồ
                 </button>
-              ) : (
-                <a
-                  href={`tel:${partner.contactPhone}`}
-                  title={`Gọi ${partner.contactPhone}`}
-                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2"
-                >
-                  <Phone className="size-3.5" strokeWidth={1.5} />
-                  {partner.contactPhone}
-                </a>
-              )
-            )}
+              )}
+              {partner.contactPhone && (
+                isGuest ? (
+                  <button
+                    type="button"
+                    onClick={() => openAuthPopup("login")}
+                    title="Đăng nhập để xem đầy đủ và liên hệ cơ sở thu mua"
+                    className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2 xl:h-8"
+                  >
+                    <Phone className="size-3.5" strokeWidth={1.5} />
+                    {maskPhoneForGuest(partner.contactPhone)} · Đăng nhập
+                  </button>
+                ) : (
+                  <a
+                    href={`tel:${partner.contactPhone}`}
+                    title={`Gọi ${partner.contactPhone}`}
+                    className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2 xl:h-8"
+                  >
+                    <Phone className="size-3.5" strokeWidth={1.5} />
+                    {partner.contactPhone}
+                  </a>
+                )
+              )}
+            </div>
           </div>
         )}
         <div className="mt-3">
@@ -1322,7 +1692,7 @@ function PartnerDetail({
           </ul>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="mt-3 grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
           <Link
             to={handoverUrl}
             onClick={(e) => {
@@ -1331,7 +1701,7 @@ function PartnerDetail({
                 openAuthPopup("login")
               }
             }}
-            className="btn-primary h-9 rounded-lg px-3 text-xs"
+            className="btn-primary h-11 rounded-xl px-3 text-[13px] xl:h-9 xl:rounded-lg xl:text-xs"
           >
             Đặt lịch bàn giao
           </Link>
@@ -1343,15 +1713,15 @@ function PartnerDetail({
                 openAuthPopup("login")
               }
             }}
-            className="btn-outline h-9 rounded-lg px-3 text-xs"
+            className="btn-outline h-11 rounded-xl px-3 text-[13px] xl:h-9 xl:rounded-lg xl:text-xs"
           >
             Nhắn thương lượng
           </Link>
         </div>
       </div>
 
-      <div className="border-t border-line-soft pt-3">
-        <div className="flex items-center justify-between gap-2">
+      <div className="mt-3 border-t border-line-soft pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-xs font-bold tracking-wide text-ink uppercase">
             Đánh giá từ người dân (U-10)
           </h3>
@@ -1371,7 +1741,7 @@ function PartnerDetail({
           <ul className="mt-2 flex flex-col gap-1.5">
             {reviewsSummary.reviews.items.map((rv) => (
               <li key={rv.reviewId} className="rounded-lg border border-line-soft bg-white p-2.5 text-xs">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-semibold text-ink">
                     {rv.reviewerDisplayName} ·{" "}
                     <span className="text-amber-700">{"★".repeat(rv.ratingStars)}</span>
@@ -1380,7 +1750,7 @@ function PartnerDetail({
                     type="button"
                     disabled={reportBusyId === rv.reviewId}
                     onClick={() => openReportForm(rv.reviewId)}
-                    className="text-[11px] text-muted hover:text-warn hover:underline"
+                    className="inline-flex min-h-8 items-center rounded-md px-2 text-[11px] text-muted hover:text-warn hover:underline xl:min-h-0 xl:px-0"
                   >
                     {reportingReviewId === rv.reviewId ? "Đóng" : "Báo cáo vi phạm"}
                   </button>
@@ -1400,7 +1770,7 @@ function PartnerDetail({
                         setReportErr("")
                       }}
                       placeholder="Nhập lý do báo cáo đánh giá vi phạm (5–500 ký tự)..."
-                      className="input h-auto py-1.5 text-xs"
+                      className="input h-auto py-1.5 text-base sm:text-xs"
                     />
                     {reportErr && (
                       <p role="alert" className="text-[11px] font-medium text-warn">
@@ -1411,7 +1781,7 @@ function PartnerDetail({
                       <button
                         type="submit"
                         disabled={reportBusyId === rv.reviewId}
-                        className="btn-primary h-7 px-3 text-[11px]"
+                        className="btn-primary h-10 px-3 text-xs sm:h-7 sm:text-[11px]"
                       >
                         {reportBusyId === rv.reviewId ? "Đang gửi..." : "Gửi báo cáo"}
                       </button>
@@ -1421,7 +1791,7 @@ function PartnerDetail({
                           setReportingReviewId(null)
                           setReportErr("")
                         }}
-                        className="btn-ghost h-7 px-2.5 text-[11px]"
+                        className="btn-ghost h-10 px-3 text-xs sm:h-7 sm:px-2.5 sm:text-[11px]"
                       >
                         Hủy
                       </button>
@@ -1435,6 +1805,177 @@ function PartnerDetail({
           <p className="mt-1.5 text-[11px] text-muted">
             Chưa có nhận xét nào hiển thị cho cơ sở này.
           </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------------- Tra cứu khu vực dùng chung Desktop + Mobile Sheet */
+
+function LocationPickerBody({
+  placeQuery,
+  onPlaceQueryChange,
+  onPlaceSubmit,
+  searchingPlaces,
+  placeSearchNotice,
+  remoteSuggestions,
+  placeAttribution,
+  instantPresets,
+  rawAnchor,
+  locatingGps,
+  onRequestGps,
+  onSelectLocation,
+  mobileExtras,
+}: {
+  placeQuery: string
+  onPlaceQueryChange: (val: string) => void
+  onPlaceSubmit: (e: FormEvent) => void
+  searchingPlaces: boolean
+  placeSearchNotice: string
+  remoteSuggestions: GeocodingSuggestionDto[]
+  placeAttribution: string
+  instantPresets: LocationPreset[]
+  rawAnchor: { rawLat: number; rawLng: number }
+  locatingGps: boolean
+  onRequestGps: () => void
+  onSelectLocation: (
+    rawLat: number,
+    rawLng: number,
+    label: string,
+    source: SearchCoordinateSource,
+  ) => void
+  mobileExtras?: ReactNode
+}) {
+  return (
+    <div>
+      {mobileExtras}
+
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-[13px] font-medium text-ink">Tra cứu theo khu vực</p>
+          <p className="mt-0.5 text-xs text-muted">
+            Gõ tên Quận/Phường để chọn ngay, hoặc nhấn Enter để tìm chợ, đường
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onRequestGps}
+          disabled={locatingGps}
+          className="btn-primary h-10 w-full px-3 text-xs sm:w-auto xl:h-8"
+        >
+          {locatingGps ? "Đang lấy GPS..." : "Dùng GPS hiện tại"}
+        </button>
+      </div>
+
+      {/* Ô tìm kiếm địa danh (Submit-only cho Nominatim) */}
+      <form noValidate onSubmit={onPlaceSubmit} className="mt-3 flex gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted xl:left-2.5 xl:size-3.5"
+            strokeWidth={1.5}
+          />
+          <input
+            type="search"
+            value={placeQuery}
+            onChange={(e) => onPlaceQueryChange(e.target.value)}
+            placeholder="Phường, Quận, Chợ hoặc Ngã tư"
+            aria-label="Nhập tên phường, quận, chợ hoặc ngã tư"
+            className="h-11 w-full rounded-xl border border-sage-line bg-surface pr-3 pl-9 text-base text-ink placeholder:text-muted focus:border-brand focus:outline-none sm:text-sm xl:h-9 xl:rounded-lg xl:pl-8 xl:text-xs"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={searchingPlaces}
+          className="btn-outline h-11 shrink-0 rounded-xl px-3.5 text-xs xl:h-9 xl:rounded-lg xl:px-3"
+        >
+          {searchingPlaces ? "Đang tìm..." : "Tìm địa danh"}
+        </button>
+      </form>
+
+      {placeSearchNotice && (
+        <p
+          role="alert"
+          className="mt-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs font-medium text-warn"
+        >
+          {placeSearchNotice}
+        </p>
+      )}
+
+      {/* Kết quả từ Backend Geocoding Proxy (Nominatim / LocationIQ) sau khi nhấn Enter */}
+      {remoteSuggestions.length > 0 && (
+        <div className="mt-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-ink">Kết quả tra cứu</span>
+            {placeAttribution && (
+              <span className="text-[11px] text-muted">{placeAttribution}</span>
+            )}
+          </div>
+          <div className="mt-1.5 divide-y divide-line-soft rounded-lg border border-line">
+            {remoteSuggestions.map((item) => (
+              <button
+                key={item.placeId}
+                type="button"
+                onClick={() =>
+                  onSelectLocation(
+                    item.latitude,
+                    item.longitude,
+                    item.shortLabel || item.displayName,
+                    "search",
+                  )
+                }
+                className="block min-h-11 w-full px-3 py-2.5 text-left transition-colors hover:bg-surface-2 xl:min-h-0 xl:py-2"
+              >
+                <span className="block text-xs font-medium text-ink">
+                  {item.shortLabel}
+                </span>
+                <span className="block truncate text-[11px] text-muted">
+                  {item.displayName}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tầng 1: Gợi ý khu vực tức thì (0 HTTP request) */}
+      <div className="mt-3">
+        <span className="text-xs text-muted">
+          {placeQuery.trim()
+            ? `Khu vực gợi ý (${instantPresets.length})`
+            : "Khu vực phổ biến"}
+        </span>
+        {instantPresets.length === 0 ? (
+          <p className="mt-1.5 rounded-lg border border-dashed border-line px-3 py-2 text-xs text-muted">
+            Không khớp khu vực có sẵn. Nhấn Enter để tra cứu trên toàn quốc.
+          </p>
+        ) : (
+          <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+            {instantPresets.map((preset) => {
+              const active =
+                Math.abs(rawAnchor.rawLat - preset.lat) < 0.001 &&
+                Math.abs(rawAnchor.rawLng - preset.lng) < 0.001
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() =>
+                    onSelectLocation(preset.lat, preset.lng, preset.address, "preset")
+                  }
+                  className={`min-h-11 rounded-lg border px-3 py-2.5 text-left text-xs transition-colors xl:min-h-0 xl:py-2 ${
+                    active
+                      ? "border-brand/40 bg-brand/10 text-brand-deep"
+                      : "border-line-soft bg-surface hover:bg-surface-2"
+                  }`}
+                >
+                  <span className="block truncate font-medium">{preset.label}</span>
+                  <span className="block truncate text-[11px] text-muted">
+                    {preset.address}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
         )}
       </div>
     </div>

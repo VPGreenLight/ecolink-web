@@ -6,7 +6,7 @@ export default function MobileNav() {
   return (
     <nav
       aria-label="Điều hướng chính"
-      className="fixed right-3 bottom-3 left-3 z-50 grid grid-cols-4 overflow-hidden rounded-[14px] border border-line/80 bg-white/94 shadow-[0_8px_28px_rgba(15,31,21,0.14)] backdrop-blur-xl lg:hidden"
+      className="fixed right-3 bottom-3 left-3 z-40 grid grid-cols-4 overflow-hidden rounded-[14px] border border-line/80 bg-white/94 shadow-[0_8px_28px_rgba(15,31,21,0.14)] backdrop-blur-xl lg:hidden"
     >
       {MOBILE_LINKS.map((link) => (
         <NavLink

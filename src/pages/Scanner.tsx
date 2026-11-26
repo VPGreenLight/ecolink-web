@@ -1931,21 +1931,42 @@ function CameraPanel({
   const video = useRef<HTMLVideoElement>(null)
   const [err, setErr] = useState("")
   const [ready, setReady] = useState(false)
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment")
+
+  // Khoá cuộn trang nền khi mở camera toàn màn hình trên mobile
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [])
 
   useEffect(() => {
     let stream: MediaStream | undefined
     let alive = true
+    setReady(false)
+    setErr("")
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setErr("Trình duyệt này không mở được camera. Bạn dùng nút tải ảnh lên được.")
       return
     }
 
+    const isPortrait =
+      typeof window !== "undefined" && window.innerHeight > window.innerWidth
+
+    const constraints: MediaStreamConstraints = {
+      video: {
+        facingMode: { ideal: facingMode },
+        width: { ideal: isPortrait ? 1080 : 1280 },
+        height: { ideal: isPortrait ? 1920 : 720 },
+      },
+      audio: false,
+    }
+
     navigator.mediaDevices
-      .getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      })
+      .getUserMedia(constraints)
       .then((s) => {
         if (!alive) {
           s.getTracks().forEach((t) => t.stop())
@@ -1964,7 +1985,7 @@ function CameraPanel({
           e.name === "NotAllowedError" || e.name === "SecurityError"
             ? "Bạn chưa cấp quyền dùng camera. Cho phép trong cài đặt trình duyệt rồi thử lại, hoặc dùng nút tải ảnh lên."
             : e.name === "NotFoundError" || e.name === "OverconstrainedError"
-              ? "Máy này không có camera. Bạn dùng nút tải ảnh lên được."
+              ? "Không tìm thấy camera hoặc độ phân giải không được hỗ trợ."
               : "Không mở được camera. Bạn dùng nút tải ảnh lên được.",
         )
       })
@@ -1973,7 +1994,11 @@ function CameraPanel({
       alive = false
       stream?.getTracks().forEach((t) => t.stop())
     }
-  }, [])
+  }, [facingMode])
+
+  const toggleFacingMode = () => {
+    setFacingMode((prev) => (prev === "environment" ? "user" : "environment"))
+  }
 
   const shoot = useCallback(
     (autoScan: boolean) => {
@@ -1982,7 +2007,9 @@ function CameraPanel({
       const c = document.createElement("canvas")
       c.width = v.videoWidth
       c.height = v.videoHeight
-      c.getContext("2d")?.drawImage(v, 0, 0, c.width, c.height)
+      const ctx = c.getContext("2d")
+      if (!ctx) return
+      ctx.drawImage(v, 0, 0, c.width, c.height)
       c.toBlob(
         (blob) => {
           if (blob) {
@@ -2009,13 +2036,47 @@ function CameraPanel({
   }, [ready, err, shoot])
 
   return (
-    <div className="overflow-clip rounded-2xl border border-line/70 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-      <div className="relative aspect-video bg-ink">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black select-none md:relative md:inset-auto md:z-auto md:overflow-clip md:rounded-2xl md:border md:border-line/70 md:bg-white md:shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+      {/* Mobile Top Bar */}
+      <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/85 via-black/40 to-transparent z-20 md:hidden">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md border border-white/10">
+          <i className="pulse-bar size-1.5 rounded-full bg-mint-bright" />
+          Camera AI trực tiếp
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleFacingMode}
+            aria-label="Đổi camera trước hoặc sau"
+            className="grid size-10 place-items-center rounded-full bg-white/15 text-white backdrop-blur-md border border-white/15 active:scale-90 transition-transform"
+          >
+            <CameraRotateIcon className="size-5" />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Đóng camera"
+            className="grid size-10 place-items-center rounded-full bg-white/15 text-white backdrop-blur-md border border-white/15 active:scale-90 transition-transform"
+          >
+            <CloseModalIcon className="size-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Viewfinder Frame Container */}
+      <div className="relative min-h-0 flex-1 md:flex-none md:aspect-video bg-black overflow-hidden flex items-center justify-center">
         {err ? (
           <div className="grid h-full place-items-center px-6 text-center">
             <div>
               <p className="text-sm font-semibold text-white">Không mở được camera</p>
               <p className="mt-1.5 text-[13px] leading-5 text-white/70">{err}</p>
+              <button
+                type="button"
+                onClick={onClose}
+                className="mt-4 inline-flex h-9 items-center rounded-xl bg-white/20 px-4 text-xs font-semibold text-white hover:bg-white/30"
+              >
+                Đóng camera
+              </button>
             </div>
           </div>
         ) : (
@@ -2024,30 +2085,74 @@ function CameraPanel({
               ref={video}
               playsInline
               muted
-              className="size-full object-cover"
+              autoPlay
+              className={`size-full object-cover ${facingMode === "user" ? "scale-x-[-1]" : ""}`}
               aria-label="Khung hình camera"
             />
             {!ready && (
-              <p className="absolute inset-0 grid place-items-center text-[13px] text-white/70">
+              <p className="absolute inset-0 grid place-items-center text-[13px] text-white/70 bg-black/60 z-10">
                 Đang bật camera...
               </p>
             )}
 
-            <span className="absolute top-3 left-3 inline-flex items-center gap-1.5 rounded-full bg-ink/85 px-3 py-1.5 text-[11px] font-semibold text-white">
+            {/* Desktop Top Badges & Close Button */}
+            <span className="hidden md:inline-flex absolute top-3 left-3 items-center gap-1.5 rounded-full bg-ink/85 px-3 py-1.5 text-[11px] font-semibold text-white z-10 backdrop-blur-sm border border-white/10">
               <i className="pulse-bar size-1.5 rounded-full bg-mint-bright" />
               Camera đang mở
             </span>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Đóng camera"
+              className="hidden md:grid absolute top-3 right-3 size-8 place-items-center rounded-full bg-ink/70 hover:bg-ink text-white/80 hover:text-white transition-colors z-10"
+            >
+              <CloseModalIcon className="size-4" />
+            </button>
           </>
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-surface-2 px-4 py-2.5">
+      {/* Mobile Bottom Control Bar */}
+      <div className="flex md:hidden flex-col gap-3 p-4 pb-[max(2rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-black via-black/85 to-transparent z-20">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => shoot(false)}
+            disabled={!!err || !ready}
+            className="flex-1 h-13 rounded-2xl bg-white/15 hover:bg-white/25 active:scale-95 text-white font-semibold text-sm backdrop-blur-md border border-white/20 transition-all flex items-center justify-center gap-2 disabled:opacity-40"
+          >
+            <EyeScanIcon className="size-4 text-white/80" />
+            Chụp xem lại
+          </button>
+          <button
+            type="button"
+            onClick={() => shoot(true)}
+            disabled={!!err || !ready}
+            className="flex-[1.4] h-13 rounded-2xl bg-gradient-to-r from-brand to-emerald-600 hover:from-brand-deep hover:to-emerald-700 active:scale-95 text-white font-bold text-sm shadow-[0_8px_24px_rgba(0,135,74,0.4)] transition-all flex items-center justify-center gap-2 disabled:opacity-40"
+          >
+            <SparkIcon />
+            Chụp &amp; Quét ngay
+          </button>
+        </div>
+      </div>
+
+      {/* Desktop Bottom Action Bar */}
+      <div className="hidden md:flex flex-wrap items-center justify-between gap-3 border-t border-surface-2 px-5 py-3.5 bg-white">
         <p className="text-[13px] text-muted">
           {err ? "Hoặc đóng rồi dùng nút tải ảnh lên" : "Nhấn Enter để chụp & quét ngay"}
         </p>
-        <div className="flex shrink-0 flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2.5">
           <button type="button" onClick={onClose} className="btn-ghost h-9 px-3.5 text-[13px]">
             Huỷ
+          </button>
+          <button
+            type="button"
+            onClick={toggleFacingMode}
+            className="btn-outline h-9 px-3 text-[13px] flex items-center gap-1.5"
+            title="Đổi camera trước hoặc sau"
+          >
+            <CameraRotateIcon className="size-3.5 text-muted" />
+            Đổi camera
           </button>
           <button
             type="button"
@@ -2055,13 +2160,13 @@ function CameraPanel({
             disabled={!!err || !ready}
             className="btn-outline h-9 px-3.5 text-[13px] disabled:opacity-50"
           >
-            Chụp xem trước
+            Chụp xem lại
           </button>
           <button
             type="button"
             onClick={() => shoot(true)}
             disabled={!!err || !ready}
-            className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50"
+            className="btn-primary h-9 px-4 text-[13px] font-semibold disabled:opacity-50 shadow-sm"
           >
             <SparkIcon />
             Chụp &amp; Quét ngay
@@ -2069,6 +2174,29 @@ function CameraPanel({
         </div>
       </div>
     </div>
+  )
+}
+
+export const CameraRotateIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 640 640" aria-hidden="true" {...props}>
+    <path fill="currentColor" d="m202.7 160l10.4-31.2c6.5-19.6 24.8-32.8 45.5-32.8h122.8c20.7 0 39 13.2 45.5 32.8l10.4 31.2H512c35.3 0 64 28.7 64 64v256c0 35.3-28.7 64-64 64H128c-35.3 0-64-28.7-64-64V224c0-35.3 28.7-64 64-64zM160 369.9c0 3.9 1.4 7.7 4 10.6l48 54c6.4 7.2 17.6 7.2 23.9 0l48-54c2.6-2.9 4-6.7 4-10.6V368c0-8.8-7.2-16-16-16h-24c0-39.8 32.2-72 72-72q6.6 0 12.9 1.2l34.9-39.3c-14.6-6.4-30.8-9.9-47.8-9.9c-66.3 0-120 53.7-120 120h-24c-8.8 0-16 7.2-16 16v1.9zm196-46.5c-2.6 2.9-4 6.7-4 10.6v1.9c0 8.8 7.2 16 16 16h24c0 39.8-32.2 72-72 72q-6.6 0-12.9-1.2L272.2 462c14.7 6.4 30.8 9.9 47.8 9.9c66.3 0 120-53.7 120-120h24c8.8 0 16-7.2 16-16V334c0-3.9-1.4-7.7-4-10.6l-48-54c-6.4-7.2-17.6-7.2-23.9 0l-48 54z"/>
+  </svg>
+);
+
+function CloseModalIcon({ className = "size-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  )
+}
+
+function EyeScanIcon({ className = "size-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
   )
 }
 

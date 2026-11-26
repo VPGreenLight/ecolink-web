@@ -208,7 +208,7 @@ function AccountMenu() {
         {open && (
           <div
             role="menu"
-            className="absolute top-full right-0 mt-2.5 w-[360px] overflow-hidden rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)]"
+            className="absolute top-full right-0 mt-2.5 max-h-[calc(100dvh-5.75rem)] w-[min(360px,calc(100vw-2rem))] overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)]"
           >
             {user ? (
               <>

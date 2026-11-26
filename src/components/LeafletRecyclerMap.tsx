@@ -19,6 +19,7 @@ interface LeafletRecyclerMapProps {
   partners: CollectionPartnerDto[]
   selectedPartnerId: string | null
   locatingGps: boolean
+  mobileLiftControls?: boolean
   onSelectPartner: (partnerId: string) => void
   onMapPinClick: (rawLat: number, rawLng: number) => void
   onRequestGps: () => void
@@ -56,6 +57,7 @@ export default function LeafletRecyclerMap({
   partners,
   selectedPartnerId,
   locatingGps,
+  mobileLiftControls = false,
   onSelectPartner,
   onMapPinClick,
   onRequestGps,
@@ -68,6 +70,9 @@ export default function LeafletRecyclerMap({
 
   const onSelectPartnerRef = useRef(onSelectPartner)
   const onMapPinClickRef = useRef(onMapPinClick)
+  const latestViewRef = useRef({ centerLat, centerLng, radiusKm })
+  latestViewRef.current = { centerLat, centerLng, radiusKm }
+
   useEffect(() => {
     onSelectPartnerRef.current = onSelectPartner
   }, [onSelectPartner])
@@ -125,7 +130,12 @@ export default function LeafletRecyclerMap({
         if (rafId !== null) cancelAnimationFrame(rafId)
         rafId = requestAnimationFrame(() => {
           rafId = null
+          const sz = map.getSize()
           map.invalidateSize({ pan: false })
+          if (sz.x === 0 || sz.y === 0) {
+            const { centerLat: lat, centerLng: lng, radiusKm: r } = latestViewRef.current
+            map.setView([lat, lng], radiusToZoom(r), { animate: false })
+          }
         })
       }
 
@@ -161,21 +171,38 @@ export default function LeafletRecyclerMap({
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
+    const sz = map.getSize()
+    if (sz.x === 0 || sz.y === 0) return
     map.flyTo([centerLat, centerLng], radiusToZoom(radiusKm), {
       duration: 0.5,
     })
   }, [centerLat, centerLng, radiusKm, mapReady])
 
-  // 3. Nếu người dùng bấm chọn 1 cơ sở ở danh sách bên phải, trượt nhẹ để pin nằm trong khung nhìn
+  // 3. Nếu người dùng bấm chọn 1 cơ sở, trượt nhẹ để pin nằm trong phần nhìn thấy của bản đồ
   useEffect(() => {
     const map = mapRef.current
     const L = leafletModRef.current
     if (!map || !L || !mapReady || !selectedPartnerId) return
 
+    const sz = map.getSize()
+    if (sz.x === 0 || sz.y === 0) return
+
     const target = partners.find((p) => p.id === selectedPartnerId)
     if (!target) return
 
     const pt = L.latLng(target.latitude, target.longitude)
+    if (typeof window !== "undefined" && window.innerWidth < 1280) {
+      // Trên mobile có thẻ xem nhanh ở đáy (~170px), giữ ghim ở nửa trên thoáng của bản đồ
+      const px = map.latLngToContainerPoint(pt)
+      const safeBottom = Math.max(140, sz.y - 185)
+      if (px.x < 36 || px.x > sz.x - 36 || px.y < 48 || px.y > safeBottom) {
+        const projected = map.project(pt)
+        projected.y += 68
+        map.panTo(map.unproject(projected), { animate: true })
+      }
+      return
+    }
+
     if (!map.getBounds().pad(-0.14).contains(pt)) {
       map.panTo(pt, { animate: true })
     }
@@ -310,14 +337,18 @@ export default function LeafletRecyclerMap({
       )}
 
       {/* Cụm điều khiển Phóng to / Thu nhỏ / Về tâm / Định vị GPS ở góc dưới phải */}
-      <div className="absolute right-4 bottom-8 z-20 flex flex-col gap-2">
-        <div className="flex flex-col overflow-hidden rounded-lg border border-line bg-surface/95 shadow-sm backdrop-blur-md">
+      <div
+        className={`absolute right-3 z-20 flex flex-col gap-2 transition-[bottom] duration-200 sm:right-4 ${
+          mobileLiftControls ? "bottom-[198px] xl:bottom-8" : "bottom-7 xl:bottom-8"
+        }`}
+      >
+        <div className="flex flex-col overflow-hidden rounded-xl border border-line bg-surface/95 shadow-sm backdrop-blur-md xl:rounded-lg">
           <button
             type="button"
             onClick={handleZoomIn}
             title="Phóng to bản đồ"
             aria-label="Phóng to bản đồ"
-            className="grid size-9 place-items-center border-b border-line-soft text-ink transition-colors hover:bg-surface-2"
+            className="grid size-10 place-items-center border-b border-line-soft text-ink transition-colors hover:bg-surface-2 active:bg-surface-3 xl:size-9"
           >
             <Plus className="size-4" strokeWidth={1.5} />
           </button>
@@ -326,7 +357,7 @@ export default function LeafletRecyclerMap({
             onClick={handleZoomOut}
             title="Thu nhỏ bản đồ"
             aria-label="Thu nhỏ bản đồ"
-            className="grid size-9 place-items-center text-ink transition-colors hover:bg-surface-2"
+            className="grid size-10 place-items-center text-ink transition-colors hover:bg-surface-2 active:bg-surface-3 xl:size-9"
           >
             <Minus className="size-4" strokeWidth={1.5} />
           </button>
@@ -337,7 +368,7 @@ export default function LeafletRecyclerMap({
           onClick={handleRecenter}
           title="Đưa bản đồ về tâm khu vực đang chọn"
           aria-label="Về tâm khu vực đang chọn"
-          className="grid size-9 place-items-center rounded-lg border border-line bg-surface/95 text-ink shadow-sm backdrop-blur-md transition-colors hover:bg-surface-2"
+          className="grid size-10 place-items-center rounded-xl border border-line bg-surface/95 text-ink shadow-sm backdrop-blur-md transition-colors hover:bg-surface-2 active:scale-95 xl:size-9 xl:rounded-lg"
         >
           <Crosshair className="size-4" strokeWidth={1.5} />
         </button>
@@ -348,7 +379,7 @@ export default function LeafletRecyclerMap({
           disabled={locatingGps}
           title="Lấy vị trí GPS hiện tại (tự động làm mờ ~500m nếu bật bảo mật)"
           aria-label="Lấy vị trí GPS hiện tại"
-          className="grid size-9 place-items-center rounded-lg border border-line bg-surface/95 text-brand-deep shadow-sm backdrop-blur-md transition-colors hover:bg-surface-2 disabled:opacity-60"
+          className="grid size-10 place-items-center rounded-xl border border-line bg-surface/95 text-brand-deep shadow-sm backdrop-blur-md transition-colors hover:bg-surface-2 active:scale-95 disabled:opacity-60 xl:size-9 xl:rounded-lg"
         >
           <LocateFixed className="size-4" strokeWidth={1.5} />
         </button>
