@@ -228,7 +228,7 @@ export default function Gamification() {
   )
 
   return (
-    <div className="flex flex-col gap-6 sm:gap-8">
+    <div className="page flex flex-col gap-6 py-6 sm:gap-8 lg:py-8">
       <PageHead
         eyebrow="ECO FACT"
         title="Thư viện kiến thức Eco Fact"

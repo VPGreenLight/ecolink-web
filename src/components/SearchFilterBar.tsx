@@ -34,11 +34,11 @@ export default function SearchFilterBar({
       className={`rounded-2xl border border-line-soft bg-surface-2/60 p-3.5 sm:p-4 ${className}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-        <label htmlFor={inputId} className="text-[13px] font-semibold text-ink">
+        <label htmlFor={inputId} className="text-sm font-semibold text-ink">
           {label}
         </label>
         {typeof totalCount === "number" && (
-          <p className="text-xs font-medium tabular-nums text-muted">
+          <p className="text-sm font-medium tabular-nums text-muted">
             {totalCount.toLocaleString("vi-VN")} {countLabel}
           </p>
         )}
@@ -48,7 +48,7 @@ export default function SearchFilterBar({
         <div className="relative min-w-0 flex-1">
           <Search
             aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted"
+            className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted"
           />
           <input
             id={inputId}
@@ -56,16 +56,16 @@ export default function SearchFilterBar({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
-            className="input pr-9 pl-9"
+            className="input min-h-12 pr-11 pl-10 text-base sm:text-[15px]"
           />
           {value && (
             <button
               type="button"
               onClick={() => onChange("")}
               aria-label="Xóa từ khóa tìm kiếm"
-              className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded p-1 text-muted hover:bg-surface-3 hover:text-ink"
+              className="absolute top-1/2 right-0.5 inline-flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-lg text-[15px] text-muted hover:bg-surface-3 hover:text-ink sm:text-sm"
             >
-              <X className="size-3.5" />
+              <X className="size-4" />
             </button>
           )}
         </div>

@@ -1,6 +1,7 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
-import { BadgeCheck, ChevronDown, Clock, List, Map as MapIcon, MapPin, Navigation, Phone, Search, Tag, X } from "lucide-react"
+import { BadgeCheck, ChevronDown, Clock, List, Map as MapIcon, MapPin, Navigation, Phone, Search, Tag, User, X } from "lucide-react"
+import FacilityPhotoCard, { resolveFacilityPhotoSrc } from "@/components/FacilityPhotoCard"
 import ShinyText from "@/components/ShinyText"
 import LeafletRecyclerMap, {
   type SearchCoordinateSource,
@@ -8,6 +9,7 @@ import LeafletRecyclerMap, {
 import { ApiError } from "@/lib/api"
 import {
   filterAreaPresets,
+  requestBrowserGeolocation,
   searchPlacesOnSubmit,
   type GeocodingSuggestionDto,
 } from "@/lib/geocodingApi"
@@ -341,6 +343,32 @@ export default function MapPage() {
   const [loadingDetail, setLoadingDetail] = useState<boolean>(false)
   const [mobileView, setMobileView] = useState<"map" | "list">("map")
   const [mobileSheetOpen, setMobileSheetOpen] = useState<boolean>(false)
+  const mobileMapSectionRef = useRef<HTMLElement | null>(null)
+
+  const focusMobileMap = useCallback((partnerId?: string) => {
+    if (partnerId) setSelectedId(partnerId)
+    setMobileSheetOpen(false)
+    // Đặt về đầu trang ngay trước khi ẩn danh sách dài để tránh trình duyệt tụt cuộn xuống footer
+    if (typeof window !== "undefined" && window.innerWidth < 1280) {
+      window.scrollTo(0, 0)
+    }
+    setMobileView("map")
+    if (typeof window !== "undefined" && window.innerWidth < 1280) {
+      requestAnimationFrame(() => {
+        const el = mobileMapSectionRef.current
+        if (!el) return
+        const rect = el.getBoundingClientRect()
+        const mapBottomDoc = rect.bottom + window.scrollY
+        const usableBottom = window.innerHeight - 72
+        if (mapBottomDoc > usableBottom) {
+          window.scrollTo({
+            top: Math.max(0, rect.top + window.scrollY - 72),
+            behavior: "smooth",
+          })
+        }
+      })
+    }
+  }, [])
 
   useEffect(() => {
     if (!selectedId) setMobileSheetOpen(false)
@@ -422,36 +450,22 @@ export default function MapPage() {
   }, [])
 
   // Thao tác Lớp 3: Người dùng chủ động bấm lấy vị trí GPS trình duyệt
-  const requestBrowserGps = useCallback(() => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setGpsStatusMsg(
-        "Trình duyệt không hỗ trợ định vị GPS. Bạn có thể chọn khu vực hoặc bấm trực tiếp lên bản đồ.",
-      )
-      return
-    }
+  const requestBrowserGps = useCallback(async () => {
     setLocatingGps(true)
     setGpsStatusMsg("")
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const rawLat = Number(pos.coords.latitude.toFixed(6))
-        const rawLng = Number(pos.coords.longitude.toFixed(6))
-        setRawAnchor({
-          rawLat,
-          rawLng,
-          label: "Khu vực quanh vị trí hiện tại của bạn",
-          source: "gps",
-        })
-        setLocatingGps(false)
-        setShowLocationPicker(false)
-      },
-      () => {
-        setLocatingGps(false)
-        setGpsStatusMsg(
-          "Chưa cấp quyền vị trí GPS. Bạn có thể nhập tên Phường/Quận/Chợ hoặc bấm chọn điểm trên bản đồ.",
-        )
-      },
-      { enableHighAccuracy: true, timeout: 7000, maximumAge: 60000 },
-    )
+    const res = await requestBrowserGeolocation(true)
+    setLocatingGps(false)
+    if (res.ok) {
+      setRawAnchor({
+        rawLat: res.lat,
+        rawLng: res.lng,
+        label: "Khu vực quanh vị trí hiện tại của bạn",
+        source: "gps",
+      })
+      setShowLocationPicker(false)
+      return
+    }
+    setGpsStatusMsg(res.message)
   }, [])
 
   // Tầng 2: Chỉ gọi Backend Geocoding Proxy (Nominatim) khi nhấn Enter / nút "Tìm khu vực"
@@ -646,14 +660,16 @@ export default function MapPage() {
       : Math.min(50, Math.round(radiusKm * 2.5))
 
   const handoverUrl = useMemo(() => {
-    if (!activePartner) return "/user/handover"
     const p = new URLSearchParams()
-    p.set("partnerId", activePartner.id)
-    p.set("partnerName", activePartner.facilityName)
+    p.set("newHandover", "1")
+    if (activePartner) {
+      p.set("partnerId", activePartner.id)
+      p.set("partnerName", activePartner.facilityName)
+    }
     if (category) {
       p.set("waste", getCategoryMeta(category).handoverWasteId)
     }
-    return `/user/handover?${p.toString()}`
+    return `/chat?${p.toString()}`
   }, [activePartner, category])
 
   const chatUrl = useMemo(() => {
@@ -673,29 +689,23 @@ export default function MapPage() {
   }, [coords.source])
 
   return (
-    <div
-      className={`flex flex-col gap-2.5 p-2.5 sm:p-3 md:p-4 xl:h-[calc(100dvh-76px)] xl:flex-row xl:gap-3 xl:pb-4 ${
-        mobileView === "map"
-          ? "h-[calc(100dvh-70px)] pb-[78px] md:h-[calc(100dvh-76px)] md:pb-[78px] lg:pb-4"
-          : ""
-      }`}
-    >
+    <div className="flex flex-col gap-2 p-2.5 sm:gap-2.5 sm:p-3 md:p-4 xl:h-[calc(100dvh-76px)] xl:flex-row xl:gap-3 xl:pb-4">
       {/* Thanh điều khiển gọn cho Mobile/Tablet (< xl): chọn khu vực, lọc phế liệu 1 hàng, chuyển Bản đồ / Danh sách */}
-      <div className="flex shrink-0 flex-col gap-2 rounded-2xl border border-line bg-surface p-2.5 shadow-2xs xl:hidden">
+      <div className="flex shrink-0 flex-col gap-1.5 rounded-2xl border border-line bg-surface p-2 shadow-2xs xl:hidden">
         <button
           type="button"
           onClick={() => setShowLocationPicker(true)}
           aria-expanded={showLocationPicker}
-          className="flex min-h-11 w-full items-center gap-2.5 rounded-xl border border-line bg-surface-2/60 px-3 py-2 text-left transition-colors active:scale-[0.99] active:bg-surface-2"
+          className="flex min-h-11 w-full items-center gap-2.5 rounded-xl border border-line bg-surface-2/60 px-2.5 py-1.5 text-left transition-colors active:scale-[0.99] active:bg-surface-2"
         >
           <MapPin className="size-4 shrink-0 text-brand" strokeWidth={1.6} aria-hidden="true" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-semibold text-ink">{coords.label}</p>
-            <p className="truncate text-[11px] text-muted">
+            <p className="truncate text-sm font-semibold text-ink">{coords.label}</p>
+            <p className="truncate text-xs text-muted">
               Bán kính {radiusKm} km · {coordinateSourceLabel}
             </p>
           </div>
-          <span className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg bg-brand-deep px-2.5 text-xs font-semibold text-white">
+          <span className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-lg bg-brand-deep px-2.5 text-[13px] font-semibold text-white">
             Đổi
             <ChevronDown className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
           </span>
@@ -716,7 +726,7 @@ export default function MapPage() {
                 onClick={() => changeCategory(c.value)}
                 aria-pressed={on}
                 title={c.label.replace(/\s*\(.*\)/, "")}
-                className={`inline-flex h-9 shrink-0 items-center rounded-full border px-3.5 text-xs whitespace-nowrap transition-all active:scale-[0.97] ${
+                className={`inline-flex min-h-10 shrink-0 items-center rounded-full border px-3.5 text-[13px] whitespace-nowrap transition-all active:scale-[0.97] ${
                   on
                     ? "border-brand-deep bg-brand-deep font-semibold text-white shadow-xs"
                     : "border-line bg-surface-2/60 font-medium text-body hover:bg-surface-2 hover:text-ink"
@@ -737,8 +747,8 @@ export default function MapPage() {
             type="button"
             role="tab"
             aria-selected={mobileView === "map"}
-            onClick={() => setMobileView("map")}
-            className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-lg text-xs transition-all ${
+            onClick={() => focusMobileMap()}
+            className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg text-[13px] transition-all ${
               mobileView === "map"
                 ? "bg-surface font-semibold text-brand-deep shadow-xs ring-1 ring-black/5"
                 : "font-medium text-body hover:text-ink"
@@ -752,7 +762,7 @@ export default function MapPage() {
             role="tab"
             aria-selected={mobileView === "list"}
             onClick={() => setMobileView("list")}
-            className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-lg text-xs transition-all ${
+            className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg text-[13px] transition-all ${
               mobileView === "list"
                 ? "bg-surface font-semibold text-brand-deep shadow-xs ring-1 ring-black/5"
                 : "font-medium text-body hover:text-ink"
@@ -767,29 +777,29 @@ export default function MapPage() {
           <p
             role="status"
             data-message-code="MSG-MTH-02"
-            className="rounded-xl border border-warn/30 bg-warn/5 px-3 py-2 text-xs text-warn"
+            className="rounded-xl border border-warn/30 bg-warn/5 px-3 py-2 text-sm leading-6 text-warn"
           >
             {gpsStatusMsg}
           </p>
         )}
       </div>
 
-      {/* Cột trái: khung bản đồ tương tác + tra cứu khu vực */}
+      {/* Cột trái: khung bản đồ tương tác + tra cứu khu vực (tỷ lệ dọc trên mobile < xl) */}
       <section
-        className={`relative min-h-0 flex-1 flex-col overflow-clip rounded-2xl border border-line bg-surface-3 xl:flex xl:h-full xl:min-h-[520px] ${
+        ref={mobileMapSectionRef}
+        className={`relative aspect-[3/4] min-h-[max(480px,calc(100dvh-332px))] w-full shrink-0 flex-col overflow-clip rounded-2xl border border-line bg-surface-3 md:aspect-[4/5] md:min-h-[620px] lg:aspect-auto lg:h-[calc(100dvh-250px)] lg:min-h-[540px] xl:flex xl:h-full xl:min-h-[520px] xl:flex-1 ${
           mobileView === "map" ? "flex" : "hidden"
         }`}
       >
         <div className="relative h-full w-full flex-1">
           <LeafletRecyclerMap
-            centerLat={coords.lat}
-            centerLng={coords.lng}
+            centerLat={rawAnchor.rawLat}
+            centerLng={rawAnchor.rawLng}
             radiusKm={radiusKm}
             source={coords.source}
             partners={partners}
             selectedPartnerId={activePartner?.id ?? null}
             locatingGps={locatingGps}
-            mobileLiftControls={Boolean(activePartner) || (!loading && partners.length === 0)}
             onSelectPartner={(id) => setSelectedId(id)}
             onMapPinClick={handleMapPinClick}
             onRequestGps={requestBrowserGps}
@@ -797,7 +807,7 @@ export default function MapPage() {
 
           {/* Nhãn dữ liệu mẫu gọn trên bản đồ mobile khi Backend offline */}
           {isOfflineDemo && (
-            <span className="pointer-events-none absolute top-3 left-3 z-20 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface/92 px-2.5 py-1 text-[11px] font-medium text-muted shadow-2xs backdrop-blur-md xl:hidden">
+            <span className="pointer-events-none absolute top-3 left-3 z-20 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface/92 px-2.5 py-1 text-xs font-medium text-muted shadow-2xs backdrop-blur-md xl:hidden">
               <span className="size-1.5 rounded-full bg-warn" />
               Dữ liệu mẫu
             </span>
@@ -806,7 +816,7 @@ export default function MapPage() {
           {/* Gợi ý thao tác ngắn trên mobile khi chưa chọn ghim */}
           {!activePartner && !loading && partners.length > 0 && (
             <div className="pointer-events-none absolute bottom-3 left-3 z-20 max-w-[calc(100%-4.5rem)] xl:hidden">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface/92 px-3 py-1.5 text-[11px] font-medium text-body shadow-2xs backdrop-blur-md">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface/92 px-3 py-1.5 text-xs font-medium text-body shadow-2xs backdrop-blur-md">
                 <span className="size-1.5 shrink-0 rounded-full bg-brand" />
                 <span className="truncate">Chạm ghim số xem giá · Chạm bản đồ dời tâm</span>
               </span>
@@ -817,9 +827,49 @@ export default function MapPage() {
           {activePartner && !mobileSheetOpen && (
             <div className="absolute inset-x-3 bottom-3 z-30 rounded-2xl border border-line bg-surface/98 p-3.5 shadow-[0_12px_32px_rgba(15,31,21,0.16)] backdrop-blur-md xl:hidden">
               <div className="flex items-start gap-2.5">
-                <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-brand-deep text-[11px] font-semibold tabular-nums text-white">
-                  {activePartnerIndex >= 0 ? activePartnerIndex + 1 : "•"}
-                </span>
+                {activePartner.recyclerType === "Individual" ? (
+                  <button
+                    type="button"
+                    onClick={() => setMobileSheetOpen(true)}
+                    aria-label={`Xem chi tiết ${activePartner.facilityName}`}
+                    className="relative mt-0.5 grid size-14 shrink-0 place-items-center rounded-xl border border-sky-200 bg-sky-50 text-sky-800 focus-visible:outline-2 focus-visible:outline-brand"
+                  >
+                    <User className="size-6" strokeWidth={1.6} aria-hidden="true" />
+                    <span className="absolute top-1 left-1 grid size-5 place-items-center rounded-full bg-brand-deep/90 text-[10px] font-bold tabular-nums text-white ring-1 ring-white/50">
+                      {activePartnerIndex >= 0 ? activePartnerIndex + 1 : "•"}
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setMobileSheetOpen(true)}
+                    aria-label={`Xem chi tiết và ảnh kho bãi ${activePartner.facilityName}`}
+                    className="group relative mt-0.5 size-14 shrink-0 overflow-hidden rounded-xl border border-line bg-surface-3 ring-1 ring-black/5 focus-visible:outline-2 focus-visible:outline-brand"
+                  >
+                    <img
+                      key={activePartner.id}
+                      src={resolveFacilityPhotoSrc(
+                        activePartner.id,
+                        activePartner.businessPhotoUrls?.[0] ?? activePartner.businessPhotoUrl,
+                        activePartner.facilityName,
+                      )}
+                      alt={`Ảnh thực tế mặt tiền ${activePartner.facilityName}`}
+                      onError={(e) => {
+                        if (e.currentTarget.dataset.fallback) return
+                        e.currentTarget.dataset.fallback = "1"
+                        e.currentTarget.src = resolveFacilityPhotoSrc(
+                          activePartner.id,
+                          null,
+                          activePartner.facilityName,
+                        )
+                      }}
+                      className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                    <span className="absolute top-1 left-1 grid size-5 place-items-center rounded-full bg-brand-deep/90 text-[10px] font-bold tabular-nums text-white ring-1 ring-white/50">
+                      {activePartnerIndex >= 0 ? activePartnerIndex + 1 : "•"}
+                    </span>
+                  </button>
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <p className="truncate text-sm leading-5 font-semibold text-ink">
@@ -837,9 +887,14 @@ export default function MapPage() {
                         Đối tác Pro
                       </span>
                     )}
+                    {activePartner.recyclerType === "Individual" && (
+                      <span className="inline-flex shrink-0 items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
+                        Thu mua lưu động
+                      </span>
+                    )}
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-muted">{activePartner.address}</p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <p className="mt-0.5 truncate text-[13px] leading-5 text-muted">{activePartner.address}</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
                     <OnlineStatusBadge online={isPartnerOnline(activePartner)} />
                     <span className="inline-flex items-center gap-1 font-medium tabular-nums text-ink">
                       <Clock className="size-3.5 text-muted" strokeWidth={1.5} aria-hidden="true" />
@@ -853,7 +908,7 @@ export default function MapPage() {
                     </span>
                   </div>
                   {activePartnerPrice && (
-                    <p className="mt-1 text-xs font-semibold tabular-nums text-brand-deep">
+                    <p className="mt-1 text-[13px] font-semibold tabular-nums text-brand-deep">
                       {activePartnerPrice.matchedMat
                         ? `${activePartnerPrice.matchedMat.categoryName.replace(/\s*\(.*\)/, "")}: ${formatVnd(activePartnerPrice.matchedMat.pricePerKg)}/kg`
                         : activePartnerPrice.minPrice > 0
@@ -876,7 +931,7 @@ export default function MapPage() {
                 <button
                   type="button"
                   onClick={() => setMobileSheetOpen(true)}
-                  className="btn-outline h-10 rounded-xl px-2 text-xs min-[360px]:px-3"
+                  className="btn-outline min-h-10 rounded-xl px-2 text-[13px] font-semibold min-[360px]:px-3"
                 >
                   Xem bảng giá
                 </button>
@@ -888,7 +943,7 @@ export default function MapPage() {
                       openAuthPopup("login")
                     }
                   }}
-                  className="btn-primary h-10 rounded-xl px-2 text-xs min-[360px]:px-3"
+                  className="btn-primary min-h-10 rounded-xl px-2 text-[13px] font-semibold min-[360px]:px-3"
                 >
                   Nhắn thương lượng
                 </Link>
@@ -899,10 +954,10 @@ export default function MapPage() {
           {/* Phương án dự phòng gọn trên bản đồ mobile khi không có cơ sở trong bán kính */}
           {!activePartner && !loading && partners.length === 0 && (
             <div className="absolute inset-x-3 bottom-3 z-30 rounded-2xl border border-line bg-surface/98 p-3.5 shadow-[0_12px_32px_rgba(15,31,21,0.16)] backdrop-blur-md xl:hidden">
-              <p className="text-xs font-semibold text-ink">
+              <p className="text-sm font-semibold text-ink">
                 Không có cơ sở trong {radiusKm} km
               </p>
-              <p className="mt-0.5 text-[11px] text-muted">
+              <p className="mt-0.5 text-sm leading-6 text-muted">
                 Thử mở rộng bán kính hoặc xem hướng dẫn phân loại.
               </p>
               <div className="mt-2.5 flex flex-wrap gap-2">
@@ -910,7 +965,7 @@ export default function MapPage() {
                   <button
                     type="button"
                     onClick={() => setRadiusKm(mobileExpandedRadius)}
-                    className="btn-primary h-10 flex-1 rounded-xl px-3 text-xs"
+                    className="btn-primary min-h-10 flex-1 rounded-xl px-3 text-[13px] font-semibold"
                   >
                     Mở rộng {mobileExpandedRadius} km
                   </button>
@@ -918,7 +973,7 @@ export default function MapPage() {
                 <button
                   type="button"
                   onClick={() => setMobileView("list")}
-                  className="btn-outline h-10 flex-1 rounded-xl px-3 text-xs"
+                  className="btn-outline min-h-10 flex-1 rounded-xl px-3 text-[13px] font-semibold"
                 >
                   Xem hướng dẫn
                 </button>
@@ -932,8 +987,8 @@ export default function MapPage() {
               <div className="flex min-w-[280px] flex-1 items-center gap-2.5 rounded-xl border border-line bg-surface/95 px-3 py-2 shadow-sm backdrop-blur-md">
                 <MapPin className="size-4 shrink-0 text-brand" strokeWidth={1.5} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-medium text-ink">{coords.label}</p>
-                  <p className="truncate text-xs text-muted">
+                  <p className="truncate text-sm font-medium text-ink">{coords.label}</p>
+                  <p className="truncate text-[13px] text-muted">
                     {coordinateSourceLabel} · {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
                   </p>
                 </div>
@@ -942,7 +997,7 @@ export default function MapPage() {
                   type="button"
                   onClick={() => setShowLocationPicker((v) => !v)}
                   aria-expanded={showLocationPicker}
-                  className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg bg-brand-deep px-2.5 text-xs font-medium text-white transition-colors hover:bg-brand"
+                  className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-lg bg-brand-deep px-3 text-[13px] font-semibold text-white transition-colors hover:bg-brand"
                 >
                   Đổi khu vực
                   <ChevronDown
@@ -957,14 +1012,14 @@ export default function MapPage() {
                 aria-label="Bán kính tìm kiếm"
                 className="flex shrink-0 items-center rounded-xl border border-line bg-surface/95 p-1 shadow-sm backdrop-blur-md"
               >
-                <span className="px-2 text-xs text-muted">Bán kính</span>
+                <span className="px-2 text-[13px] text-muted">Bán kính</span>
                 {radiusChoices.map((r) => (
                   <button
                     key={r}
                     type="button"
                     onClick={() => setRadiusKm(r)}
                     aria-pressed={radiusKm === r}
-                    className={`h-7 rounded-lg px-2 text-xs font-medium tabular-nums transition-colors ${
+                    className={`min-h-9 rounded-lg px-2.5 text-[13px] font-semibold tabular-nums transition-colors ${
                       radiusKm === r
                         ? "bg-brand-deep text-white"
                         : "text-ink hover:bg-surface-2"
@@ -1007,7 +1062,7 @@ export default function MapPage() {
               <p
                 role="status"
                 data-message-code="MSG-MTH-02"
-                className="pointer-events-auto rounded-xl border border-warn/30 bg-surface px-3 py-2 text-xs text-warn"
+                className="pointer-events-auto rounded-xl border border-warn/30 bg-surface px-3 py-2 text-sm leading-6 text-warn"
               >
                 {gpsStatusMsg}
               </p>
@@ -1028,9 +1083,9 @@ export default function MapPage() {
               <h1 className="text-lg leading-6 font-semibold text-ink xl:text-[19px]">
                 Cơ sở thu mua gần bạn
               </h1>
-              <p className="mt-0.5 text-xs text-muted xl:mt-1">Đã xác minh và đang mở cửa nhận đơn</p>
+              <p className="mt-0.5 text-sm leading-5 text-muted xl:mt-1">Đã xác minh và đang mở cửa nhận đơn</p>
             </div>
-            <span className="shrink-0 pt-0.5 text-xs tabular-nums text-muted">
+            <span className="shrink-0 pt-0.5 text-[13px] tabular-nums text-muted">
               {loading ? "Đang tìm" : `${partners.length} cơ sở`}
             </span>
           </div>
@@ -1038,7 +1093,7 @@ export default function MapPage() {
           <div
             role="group"
             aria-label="Lọc theo loại phế liệu"
-            className="mt-2.5 hidden flex-wrap gap-1 xl:flex"
+            className="mt-2.5 hidden flex-wrap gap-1.5 xl:flex"
           >
             {visibleCategories.map((c) => {
               const on = category === c.value
@@ -1050,7 +1105,7 @@ export default function MapPage() {
                   onClick={() => changeCategory(c.value)}
                   aria-pressed={on}
                   title={c.label.replace(/\s*\(.*\)/, "")}
-                  className={`h-7 flex-1 min-w-[60px] truncate rounded-lg px-1.5 text-[11px] transition-colors ${
+                  className={`min-h-9 flex-1 min-w-[64px] truncate rounded-lg px-2 text-[13px] transition-colors ${
                     on
                       ? "bg-brand-deep font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
                       : "font-medium text-body hover:bg-surface-2 hover:text-ink"
@@ -1065,7 +1120,7 @@ export default function MapPage() {
           <div className="mt-2.5 flex flex-col gap-2 sm:flex-row xl:mt-2">
             <div className="relative min-w-0 flex-1">
               <Search
-                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted xl:left-2.5 xl:size-3.5"
+                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted"
                 strokeWidth={1.5}
               />
               <input
@@ -1074,7 +1129,7 @@ export default function MapPage() {
                 onChange={(e) => setKeyword(e.target.value)}
                 placeholder="Tên cơ sở hoặc đường, quận"
                 aria-label="Lọc tên cơ sở hoặc địa chỉ"
-                className="h-11 w-full rounded-xl border border-sage-line bg-surface pr-3 pl-9 text-base text-ink placeholder:text-muted focus:border-brand focus:outline-none sm:text-sm xl:h-9 xl:rounded-lg xl:pl-8 xl:text-xs"
+                className="min-h-11 w-full rounded-xl border border-sage-line bg-surface pr-3 pl-9 text-base text-ink placeholder:text-muted focus:border-brand focus:outline-none sm:text-[15px]"
               />
             </div>
             <select
@@ -1082,7 +1137,7 @@ export default function MapPage() {
               value={!category && sortBy === "price_desc" ? "distance" : sortBy}
               onChange={(e) => setSortBy(e.target.value as RecyclerSortBy)}
               title="Chọn tiêu chí sắp xếp"
-              className="h-11 shrink-0 rounded-xl border border-sage-line bg-surface px-3 text-sm font-medium text-ink focus:border-brand focus:outline-none xl:h-9 xl:rounded-lg xl:px-2.5 xl:text-xs"
+              className="min-h-11 shrink-0 rounded-xl border border-sage-line bg-surface px-3 text-base font-medium text-ink focus:border-brand focus:outline-none sm:text-[15px]"
             >
               <option value="distance">Gần nhất</option>
               <option value="rating_desc">Đánh giá cao nhất</option>
@@ -1091,7 +1146,7 @@ export default function MapPage() {
           </div>
 
           {isOfflineDemo && (
-            <p className="mt-2 flex items-center gap-2 text-[11px] text-muted">
+            <p className="mt-2 flex items-center gap-2 text-xs text-muted">
               <span className="size-1.5 rounded-full bg-warn" />
               Đang hiển thị dữ liệu mẫu vì máy chủ chưa phản hồi
             </p>
@@ -1102,7 +1157,7 @@ export default function MapPage() {
           {errorMsg && (
             <div
               role="alert"
-              className="m-4 rounded-xl border border-warn/30 bg-warn/5 p-3.5 text-xs leading-5 text-warn"
+              className="m-4 rounded-xl border border-warn/30 bg-warn/5 p-3.5 text-sm leading-6 text-warn"
             >
               {errorMsg}
             </div>
@@ -1205,9 +1260,9 @@ export default function MapPage() {
                               </span>
                             )}
                           </div>
-                          <p className="mt-0.5 truncate text-xs text-muted">{p.address}</p>
+                          <p className="mt-0.5 truncate text-[13px] leading-5 text-muted">{p.address}</p>
 
-                          <dl className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
+                          <dl className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
                             <div className="inline-flex items-center">
                               <dt className="sr-only">Trạng thái hoạt động</dt>
                               <dd>
@@ -1245,7 +1300,7 @@ export default function MapPage() {
                           </dl>
 
                           {matchedMat ? (
-                            <p className="mt-1.5 inline-flex items-center gap-1.5 text-[12px] font-semibold text-brand-deep">
+                            <p className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-deep">
                               <Tag
                                 className="size-3.5"
                                 strokeWidth={1.5}
@@ -1257,7 +1312,7 @@ export default function MapPage() {
                               </span>
                             </p>
                           ) : (
-                            <p className="mt-1.5 text-[12px]">
+                            <p className="mt-1.5 text-sm">
                               {minPrice > 0 ? (
                                 <>
                                   <span className="font-semibold tabular-nums text-ink">
@@ -1294,7 +1349,7 @@ export default function MapPage() {
                         loadingDetail={loadingDetail}
                         handoverUrl={handoverUrl}
                         chatUrl={chatUrl}
-                        onFocusOnMap={() => setMobileView("map")}
+                        onFocusOnMap={() => focusMobileMap(p.id)}
                       />
                     )}
                   </li>
@@ -1321,7 +1376,7 @@ export default function MapPage() {
             <div className="mb-3 flex items-center justify-between gap-3 border-b border-line-soft pb-3">
               <div>
                 <h2 className="text-base font-semibold text-ink">Khu vực &amp; Bán kính</h2>
-                <p className="text-xs text-muted">
+                <p className="text-[13px] text-muted">
                   {coordinateSourceLabel} · {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
                 </p>
               </div>
@@ -1358,7 +1413,7 @@ export default function MapPage() {
               mobileExtras={
                 <div className="mb-4 flex flex-col gap-3">
                   <div>
-                    <p className="mb-1.5 text-xs font-semibold text-ink">Bán kính tìm kiếm</p>
+                    <p className="mb-1.5 text-sm font-semibold text-ink">Bán kính tìm kiếm</p>
                     <div role="group" aria-label="Bán kính tìm kiếm" className="grid grid-cols-4 gap-2">
                       {radiusChoices.map((r) => (
                         <button
@@ -1366,7 +1421,7 @@ export default function MapPage() {
                           type="button"
                           onClick={() => setRadiusKm(r)}
                           aria-pressed={radiusKm === r}
-                          className={`h-11 rounded-xl border text-xs font-semibold tabular-nums transition-colors ${
+                          className={`min-h-11 rounded-xl border text-sm font-semibold tabular-nums transition-colors ${
                             radiusKm === r
                               ? "border-brand-deep bg-brand-deep text-white shadow-xs"
                               : "border-line bg-surface text-ink hover:bg-surface-2"
@@ -1410,13 +1465,25 @@ export default function MapPage() {
                     {activePartner.hasVerifiedBadge && (
                       <BadgeCheck className="size-4 shrink-0 text-brand" strokeWidth={1.6} aria-label="Đã xác minh" />
                     )}
+                    {activePartner.isFeatured && (
+                      <span className="inline-flex shrink-0 items-center rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5 text-[10px] font-semibold text-brand-deep">
+                        Đối tác Pro
+                      </span>
+                    )}
+                    {activePartner.recyclerType === "Individual" && (
+                      <span className="inline-flex shrink-0 items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
+                        Thu mua lưu động
+                      </span>
+                    )}
                   </div>
-                  <p className="mt-0.5 text-xs text-muted">{activePartner.address}</p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs">
                     <OnlineStatusBadge online={isPartnerOnline(activePartner)} />
                     <span className="inline-flex items-center gap-1 font-medium tabular-nums text-ink">
                       <Clock className="size-3.5 text-muted" strokeWidth={1.5} aria-hidden="true" />
                       {activePartner.operatingHours || "08:00 - 18:00"}
+                    </span>
+                    <span className="font-semibold tabular-nums text-amber-700">
+                      ★ {(activePartner.averageRating ?? 0).toFixed(1)}
                     </span>
                   </div>
                 </div>
@@ -1551,58 +1618,117 @@ function PartnerDetail({
   return (
     <div className="px-4 pb-4 xl:pr-5 xl:pl-14">
       <div className="border-t border-line-soft pt-3">
-        {(partner.description || partner.representativeName || partner.contactPhone || onFocusOnMap) && (
-          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        {partner.recyclerType === "Individual" ? (
+          <div className="mb-3.5 rounded-xl border border-sky-200 bg-sky-50/80 px-3.5 py-2.5 text-xs leading-5 text-sky-950">
+            <strong className="font-semibold">Người thu mua lưu động (Cá nhân):</strong> Hoạt động thu gom tận nơi bằng xe cá nhân, được miễn Giấy phép ĐKKD và kho bãi cố định theo Nghị định 39/2007/NĐ-CP. Đã xác thực CCCD 2 mặt.
+          </div>
+        ) : (
+          <FacilityPhotoCard
+            facilityName={partner.facilityName}
+            address={partner.address}
+            photoUrl={partner.businessPhotoUrl}
+            photoUrls={partner.businessPhotoUrls}
+            partnerKey={partner.id}
+            variant="detail"
+            className="mb-3.5"
+          />
+        )}
+
+        {/* Khối Vị trí cơ sở: rộng 100%, hiển thị trọn vẹn địa chỉ và khoảng cách trên mobile lẫn desktop */}
+        <div className="rounded-xl border border-line bg-surface-2/65 p-3">
+          <div className="flex items-start gap-2.5">
+            <span
+              aria-hidden="true"
+              className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg border border-brand/20 bg-brand/10 text-brand-deep"
+            >
+              <MapPin className="size-3.5" strokeWidth={1.7} />
+            </span>
             <div className="min-w-0 flex-1">
-              {partner.description && (
-                <p className="text-xs leading-5 text-body">{partner.description}</p>
-              )}
-              {partner.representativeName && (
-                <p className="mt-0.5 text-[11px] text-muted">
-                  Đại diện: {partner.representativeName}
-                </p>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                <span className="text-xs font-semibold tracking-wide text-brand-deep uppercase">
+                  Vị trí cơ sở
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-line bg-white px-2 py-0.5 text-xs font-semibold tabular-nums text-ink">
+                  <Navigation className="size-3 text-brand" strokeWidth={1.6} aria-hidden="true" />
+                  {formatDistance(partner.distanceKm)}
+                </span>
+              </div>
+              <p className="mt-1 text-sm leading-6 font-medium text-ink [overflow-wrap:anywhere]">
+                {partner.address}
+              </p>
               {onFocusOnMap && (
                 <button
                   type="button"
                   onClick={onFocusOnMap}
-                  className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-xs font-medium text-brand-deep transition-colors hover:bg-surface-2 xl:hidden"
+                  className="mt-2 inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-line bg-white px-3 text-[13px] font-semibold text-brand-deep transition-colors hover:bg-surface-2 xl:hidden"
                 >
-                  <MapPin className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
+                  <MapPin className="size-3.5 shrink-0" strokeWidth={1.6} aria-hidden="true" />
                   Xem trên bản đồ
                 </button>
               )}
-              {partner.contactPhone && (
-                isGuest ? (
-                  <button
-                    type="button"
-                    onClick={() => openAuthPopup("login")}
-                    title="Đăng nhập để xem đầy đủ và liên hệ cơ sở thu mua"
-                    className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2 xl:h-8"
-                  >
-                    <Phone className="size-3.5" strokeWidth={1.5} />
-                    {maskPhoneForGuest(partner.contactPhone)} · Đăng nhập
-                  </button>
-                ) : (
-                  <a
-                    href={`tel:${partner.contactPhone}`}
-                    title={`Gọi ${partner.contactPhone}`}
-                    className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2 xl:h-8"
-                  >
-                    <Phone className="size-3.5" strokeWidth={1.5} />
-                    {partner.contactPhone}
-                  </a>
-                )
-              )}
             </div>
+          </div>
+        </div>
+
+        {(partner.description || partner.representativeName || partner.contactPhone) && (
+          <div className="mt-2.5 flex flex-col gap-2.5 rounded-xl border border-line bg-white p-3">
+            {partner.description && (
+              <div>
+                <p className="text-xs font-semibold tracking-wide text-muted uppercase">
+                  Giới thiệu cơ sở
+                </p>
+                <p className="mt-1 text-sm leading-6 text-body [overflow-wrap:anywhere]">
+                  {partner.description}
+                </p>
+              </div>
+            )}
+            {(partner.representativeName || partner.contactPhone) && (
+              <div
+                className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 ${
+                  partner.description ? "border-t border-line-soft pt-2.5" : ""
+                }`}
+              >
+                {partner.representativeName && (
+                  <p className="inline-flex min-w-0 items-center gap-1.5 text-sm text-muted">
+                    <User className="size-3.5 shrink-0 text-brand" strokeWidth={1.6} aria-hidden="true" />
+                    <span className="[overflow-wrap:anywhere]">
+                      Đại diện:{" "}
+                      <strong className="font-semibold text-ink">
+                        {partner.representativeName}
+                      </strong>
+                    </span>
+                  </p>
+                )}
+                {partner.contactPhone && (
+                  isGuest ? (
+                    <button
+                      type="button"
+                      onClick={() => openAuthPopup("login")}
+                      title="Đăng nhập để xem đầy đủ và liên hệ cơ sở thu mua"
+                      className="inline-flex min-h-10 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-semibold text-ink transition-colors hover:bg-surface-2 min-[430px]:w-auto sm:min-h-9"
+                    >
+                      <Phone className="size-3.5 shrink-0 text-brand" strokeWidth={1.6} />
+                      <span>{maskPhoneForGuest(partner.contactPhone)} · Đăng nhập</span>
+                    </button>
+                  ) : (
+                    <a
+                      href={`tel:${partner.contactPhone}`}
+                      title={`Gọi ${partner.contactPhone}`}
+                      className="inline-flex min-h-10 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-semibold text-ink transition-colors hover:bg-surface-2 min-[430px]:w-auto sm:min-h-9"
+                    >
+                      <Phone className="size-3.5 shrink-0 text-brand" strokeWidth={1.6} />
+                      <span className="tabular-nums">{partner.contactPhone}</span>
+                    </a>
+                  )
+                )}
+              </div>
+            )}
           </div>
         )}
         <div className="mt-3">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-semibold text-ink">Bảng giá thu mua</p>
-            {loadingDetail && <span className="text-[11px] text-muted">Đang cập nhật</span>}
+            <p className="text-sm font-semibold text-ink">Bảng giá thu mua</p>
+            {loadingDetail && <span className="text-xs text-muted">Đang cập nhật</span>}
           </div>
 
           <ul className="mt-1">
@@ -1619,19 +1745,19 @@ function PartnerDetail({
                 >
                   <div className="min-w-0">
                     <p
-                      className={`text-[13px] ${
+                      className={`text-sm ${
                         isHighlighted ? "font-semibold text-ink" : "font-medium text-ink"
                       }`}
                     >
                       {m.categoryName.replace(/\s*\(.*\)/, "")}
                     </p>
-                    <p className="mt-0.5 truncate text-[11px] text-muted">
+                    <p className="mt-0.5 truncate text-[13px] text-muted">
                       Tối thiểu {m.minimumQuantityKg} kg
                       {m.collectionConditions ? ` · ${m.collectionConditions}` : ""}
                     </p>
                   </div>
                   <span
-                    className={`shrink-0 text-[13px] font-semibold tabular-nums ${
+                    className={`shrink-0 text-sm font-semibold tabular-nums ${
                       isHighlighted ? "text-brand-deep" : "text-ink"
                     }`}
                   >
@@ -1652,7 +1778,7 @@ function PartnerDetail({
                 openAuthPopup("login")
               }
             }}
-            className="btn-primary h-11 rounded-xl px-3 text-[13px] xl:h-9 xl:rounded-lg xl:text-xs"
+            className="btn-primary min-h-11 rounded-xl px-3 text-sm font-semibold sm:min-h-9"
           >
             Đặt lịch bàn giao
           </Link>
@@ -1664,7 +1790,7 @@ function PartnerDetail({
                 openAuthPopup("login")
               }
             }}
-            className="btn-outline h-11 rounded-xl px-3 text-[13px] xl:h-9 xl:rounded-lg xl:text-xs"
+            className="btn-outline min-h-11 rounded-xl px-3 text-sm font-semibold sm:min-h-9"
           >
             Nhắn thương lượng
           </Link>
@@ -1673,7 +1799,7 @@ function PartnerDetail({
 
       <div className="mt-3 border-t border-line-soft pt-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-xs font-bold tracking-wide text-ink uppercase">
+          <h3 className="text-sm font-bold tracking-wide text-ink uppercase">
             Đánh giá từ người dân (U-10)
           </h3>
           <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800">
@@ -1683,7 +1809,7 @@ function PartnerDetail({
         </div>
 
         {reportFlash && (
-          <p role="status" className="mt-2 rounded-lg bg-surface px-2.5 py-1.5 text-[11px] font-medium text-brand-deep">
+          <p role="status" className="mt-2 rounded-lg bg-surface px-2.5 py-1.5 text-sm leading-6 font-medium text-brand-deep">
             {reportFlash}
           </p>
         )}
@@ -1691,7 +1817,7 @@ function PartnerDetail({
         {reviewsSummary && reviewsSummary.reviews.items.length > 0 ? (
           <ul className="mt-2 flex flex-col gap-1.5">
             {reviewsSummary.reviews.items.map((rv) => (
-              <li key={rv.reviewId} className="rounded-lg border border-line-soft bg-white p-2.5 text-xs">
+              <li key={rv.reviewId} className="rounded-lg border border-line-soft bg-white p-2.5 text-sm leading-6">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-semibold text-ink">
                     {rv.reviewerDisplayName} ·{" "}
@@ -1701,7 +1827,7 @@ function PartnerDetail({
                     type="button"
                     disabled={reportBusyId === rv.reviewId}
                     onClick={() => openReportForm(rv.reviewId)}
-                    className="inline-flex min-h-8 items-center rounded-md px-2 text-[11px] text-muted hover:text-warn hover:underline xl:min-h-0 xl:px-0"
+                    className="inline-flex min-h-10 items-center rounded-md px-2 text-[13px] font-semibold text-muted hover:text-warn hover:underline sm:min-h-9"
                   >
                     {reportingReviewId === rv.reviewId ? "Đóng" : "Báo cáo vi phạm"}
                   </button>
@@ -1721,10 +1847,10 @@ function PartnerDetail({
                         setReportErr("")
                       }}
                       placeholder="Nhập lý do báo cáo đánh giá vi phạm (5–500 ký tự)..."
-                      className="input h-auto py-1.5 text-base sm:text-xs"
+                      className="input min-h-12 h-auto py-2.5 text-base sm:text-[15px]"
                     />
                     {reportErr && (
-                      <p role="alert" className="text-[11px] font-medium text-warn">
+                      <p role="alert" className="text-sm leading-6 font-medium text-warn">
                         {reportErr}
                       </p>
                     )}
@@ -1732,7 +1858,7 @@ function PartnerDetail({
                       <button
                         type="submit"
                         disabled={reportBusyId === rv.reviewId}
-                        className="btn-primary h-10 px-3 text-xs sm:h-7 sm:text-[11px]"
+                        className="btn-primary min-h-10 px-3.5 text-sm font-semibold sm:min-h-9"
                       >
                         {reportBusyId === rv.reviewId ? "Đang gửi..." : "Gửi báo cáo"}
                       </button>
@@ -1742,7 +1868,7 @@ function PartnerDetail({
                           setReportingReviewId(null)
                           setReportErr("")
                         }}
-                        className="btn-ghost h-10 px-3 text-xs sm:h-7 sm:px-2.5 sm:text-[11px]"
+                        className="btn-ghost min-h-10 px-3.5 text-sm font-semibold sm:min-h-9"
                       >
                         Hủy
                       </button>
@@ -1753,7 +1879,7 @@ function PartnerDetail({
             ))}
           </ul>
         ) : (
-          <p className="mt-1.5 text-[11px] text-muted">
+          <p className="mt-1.5 text-sm leading-6 text-muted">
             Chưa có nhận xét nào hiển thị cho cơ sở này.
           </p>
         )}
@@ -1804,8 +1930,8 @@ function LocationPickerBody({
 
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <p className="text-[13px] font-medium text-ink">Tra cứu theo khu vực</p>
-          <p className="mt-0.5 text-xs text-muted">
+          <p className="text-sm font-semibold text-ink">Tra cứu theo khu vực</p>
+          <p className="mt-0.5 text-sm leading-6 text-muted">
             Gõ tên Quận/Phường để chọn ngay, hoặc nhấn Enter để tìm chợ, đường
           </p>
         </div>
@@ -1813,7 +1939,7 @@ function LocationPickerBody({
           type="button"
           onClick={onRequestGps}
           disabled={locatingGps}
-          className="btn-primary h-10 w-full px-3 text-xs sm:w-auto xl:h-8"
+          className="btn-primary min-h-10 w-full px-3.5 text-[13px] font-semibold sm:min-h-9 sm:w-auto"
         >
           {locatingGps ? "Đang lấy GPS..." : "Dùng GPS hiện tại"}
         </button>
@@ -1823,7 +1949,7 @@ function LocationPickerBody({
       <form noValidate onSubmit={onPlaceSubmit} className="mt-3 flex gap-2">
         <div className="relative min-w-0 flex-1">
           <Search
-            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted xl:left-2.5 xl:size-3.5"
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted"
             strokeWidth={1.5}
           />
           <input
@@ -1832,13 +1958,13 @@ function LocationPickerBody({
             onChange={(e) => onPlaceQueryChange(e.target.value)}
             placeholder="Phường, Quận, Chợ hoặc Ngã tư"
             aria-label="Nhập tên phường, quận, chợ hoặc ngã tư"
-            className="h-11 w-full rounded-xl border border-sage-line bg-surface pr-3 pl-9 text-base text-ink placeholder:text-muted focus:border-brand focus:outline-none sm:text-sm xl:h-9 xl:rounded-lg xl:pl-8 xl:text-xs"
+            className="min-h-11 w-full rounded-xl border border-sage-line bg-surface pr-3 pl-9 text-base text-ink placeholder:text-muted focus:border-brand focus:outline-none sm:text-[15px]"
           />
         </div>
         <button
           type="submit"
           disabled={searchingPlaces}
-          className="btn-outline h-11 shrink-0 rounded-xl px-3.5 text-xs xl:h-9 xl:rounded-lg xl:px-3"
+          className="btn-outline min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold sm:min-h-9"
         >
           {searchingPlaces ? "Đang tìm..." : "Tìm địa danh"}
         </button>
@@ -1847,7 +1973,7 @@ function LocationPickerBody({
       {placeSearchNotice && (
         <p
           role="alert"
-          className="mt-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs font-medium text-warn"
+          className="mt-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-sm leading-6 font-medium text-warn"
         >
           {placeSearchNotice}
         </p>
@@ -1857,9 +1983,9 @@ function LocationPickerBody({
       {remoteSuggestions.length > 0 && (
         <div className="mt-3">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-ink">Kết quả tra cứu</span>
+            <span className="text-sm font-semibold text-ink">Kết quả tra cứu</span>
             {placeAttribution && (
-              <span className="text-[11px] text-muted">{placeAttribution}</span>
+              <span className="text-xs text-muted">{placeAttribution}</span>
             )}
           </div>
           <div className="mt-1.5 divide-y divide-line-soft rounded-lg border border-line">
@@ -1875,12 +2001,12 @@ function LocationPickerBody({
                     "search",
                   )
                 }
-                className="block min-h-11 w-full px-3 py-2.5 text-left transition-colors hover:bg-surface-2 xl:min-h-0 xl:py-2"
+                className="block min-h-11 w-full px-3 py-2.5 text-left transition-colors hover:bg-surface-2"
               >
-                <span className="block text-xs font-medium text-ink">
+                <span className="block text-sm font-medium text-ink">
                   {item.shortLabel}
                 </span>
-                <span className="block truncate text-[11px] text-muted">
+                <span className="block truncate text-[13px] text-muted">
                   {item.displayName}
                 </span>
               </button>
@@ -1891,13 +2017,13 @@ function LocationPickerBody({
 
       {/* Tầng 1: Gợi ý khu vực tức thì (0 HTTP request) */}
       <div className="mt-3">
-        <span className="text-xs text-muted">
+        <span className="text-sm font-medium text-muted">
           {placeQuery.trim()
             ? `Khu vực gợi ý (${instantPresets.length})`
             : "Khu vực phổ biến"}
         </span>
         {instantPresets.length === 0 ? (
-          <p className="mt-1.5 rounded-lg border border-dashed border-line px-3 py-2 text-xs text-muted">
+          <p className="mt-1.5 rounded-lg border border-dashed border-line px-3 py-2 text-sm leading-6 text-muted">
             Không khớp khu vực có sẵn. Nhấn Enter để tra cứu trên toàn quốc.
           </p>
         ) : (
@@ -1913,14 +2039,14 @@ function LocationPickerBody({
                   onClick={() =>
                     onSelectLocation(preset.lat, preset.lng, preset.address, "preset")
                   }
-                  className={`min-h-11 rounded-lg border px-3 py-2.5 text-left text-xs transition-colors xl:min-h-0 xl:py-2 ${
+                  className={`min-h-11 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
                     active
                       ? "border-brand/40 bg-brand/10 text-brand-deep"
                       : "border-line-soft bg-surface hover:bg-surface-2"
                   }`}
                 >
-                  <span className="block truncate font-medium">{preset.label}</span>
-                  <span className="block truncate text-[11px] text-muted">
+                  <span className="block truncate font-semibold">{preset.label}</span>
+                  <span className="block truncate text-xs text-muted">
                     {preset.address}
                   </span>
                 </button>
@@ -1964,10 +2090,10 @@ function FallbackPanel({
       className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4"
     >
       <div>
-        <p className="text-sm font-medium text-ink">
+        <p className="text-sm font-semibold text-ink">
           Không có cơ sở trong {radiusKm} km
         </p>
-        <p className="mt-1 text-xs leading-5 text-body">
+        <p className="mt-1 text-sm leading-6 text-body">
           {fallback?.guidanceMessage ||
             "Không tìm thấy cơ sở thu mua rác gần bạn trong bán kính hiện tại. Bạn có thể mở rộng bán kính tìm kiếm hoặc xem hướng dẫn xử lý bên dưới."}
         </p>
@@ -1978,7 +2104,7 @@ function FallbackPanel({
           <button
             type="button"
             onClick={() => onExpandRadius(expanded)}
-            className="btn-primary h-9 px-3.5 text-xs"
+            className="btn-primary min-h-10 px-4 text-sm font-semibold sm:min-h-9"
           >
             Mở rộng lên {expanded} km
           </button>
@@ -1987,7 +2113,7 @@ function FallbackPanel({
           <button
             type="button"
             onClick={onClearFilters}
-            className="btn-ghost h-9 px-3.5 text-xs"
+            className="btn-ghost min-h-10 px-4 text-sm font-semibold sm:min-h-9"
           >
             Xem tất cả loại phế liệu
           </button>
@@ -1995,7 +2121,7 @@ function FallbackPanel({
       </div>
 
       {guide && (
-        <div className="rounded-lg bg-surface-2 p-3.5 text-xs leading-5">
+        <div className="rounded-lg bg-surface-2 p-3.5 text-sm leading-6">
           <p className="font-medium text-ink">
             Thùng rác công cộng cho {guide.categoryName}
           </p>
@@ -2017,20 +2143,20 @@ function FallbackPanel({
       )}
 
       {(fallback?.allowCommunityPickupPost ?? true) && (
-        <div className="rounded-lg border border-line p-3.5 text-xs">
+        <div className="rounded-lg border border-line p-3.5 text-sm leading-6">
           <p className="font-medium text-ink">Đăng yêu cầu chờ đối tác nhận đơn</p>
           <p className="mt-0.5 text-body">
             Bạn vẫn có thể tạo lịch hẹn trước; cơ sở quanh khu vực sẽ nhận thông báo khi mở cửa.
           </p>
           <Link
-            to="/user/handover"
+            to="/chat?newHandover=1"
             onClick={(e) => {
               if (isGuest) {
                 e.preventDefault()
                 openAuthPopup("login")
               }
             }}
-            className="btn-outline mt-2.5 h-9 px-3.5 text-xs"
+            className="btn-outline mt-2.5 min-h-10 px-4 text-sm font-semibold sm:min-h-9"
           >
             Tạo yêu cầu thu gom trước
           </Link>

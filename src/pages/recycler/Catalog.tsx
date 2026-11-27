@@ -279,7 +279,7 @@ export default function Catalog() {
           <button
             type="submit"
             disabled={!dirty || saving}
-            className="btn-primary h-11 shrink-0 px-5"
+            className="btn-primary min-h-11 shrink-0 px-5 text-sm font-semibold"
           >
             {saving ? "Đang lưu..." : "Lưu thay đổi"}
           </button>
@@ -336,7 +336,7 @@ export default function Catalog() {
                   setActiveFilter(e.target.value as "all" | "on" | "off")
                   setPage(1)
                 }}
-                className="input h-10 text-xs"
+                className="input min-h-11 text-base sm:text-[15px]"
               >
                 <option value="all">Tất cả</option>
                 <option value="on">Đang thu mua</option>
@@ -351,7 +351,7 @@ export default function Catalog() {
             <Table head={["Danh mục phế liệu", "Thu mua", "Đơn giá (đ/kg)", "Tối thiểu (kg)", "Điều kiện thu mua"]}>
               {pagedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-xs text-muted">
+                  <td colSpan={5} className="px-4 py-6 text-center text-sm text-muted">
                     Không có danh mục phế liệu nào khớp bộ lọc hiện tại.
                   </td>
                 </tr>
@@ -360,26 +360,26 @@ export default function Catalog() {
                   <tr key={r.wasteCategoryId} className={!r.on ? "opacity-75" : undefined}>
                     <Td>
                       <p className="font-semibold text-ink">{r.name}</p>
-                      <p className="mt-0.5 text-[11px] text-muted">
+                      <p className="mt-0.5 text-xs text-muted">
                         Mã: <code>{r.code}</code> · Thùng {r.standardBinColor}
                       </p>
                     </Td>
                     <Td>
-                      <label className="flex items-center gap-2">
+                      <label className="flex min-h-10 items-center gap-2">
                         <input
                           type="checkbox"
                           className="size-4 accent-brand"
                           checked={r.on}
                           onChange={(e) => set(r.wasteCategoryId, { on: e.target.checked })}
                         />
-                        <span className="text-[13px] text-body">
+                        <span className="text-sm font-medium text-body">
                           {r.on ? "Đang mua" : "Tạm ngưng"}
                         </span>
                       </label>
                     </Td>
                     <Td>
                       <input
-                        className="input h-9 w-28 tabular-nums"
+                        className="input min-h-11 w-32 text-base sm:text-[15px] tabular-nums"
                         type="number"
                         min={100}
                         step={100}
@@ -393,7 +393,7 @@ export default function Catalog() {
                     </Td>
                     <Td>
                       <input
-                        className="input h-9 w-24 tabular-nums"
+                        className="input min-h-11 w-28 text-base sm:text-[15px] tabular-nums"
                         type="number"
                         min={0.1}
                         step={0.5}
@@ -407,7 +407,7 @@ export default function Catalog() {
                     </Td>
                     <Td>
                       <input
-                        className="input h-9 min-w-[200px] text-[13px]"
+                        className="input min-h-11 min-w-[220px] text-base sm:text-[15px]"
                         type="text"
                         maxLength={200}
                         disabled={!r.on}

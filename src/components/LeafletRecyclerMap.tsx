@@ -8,6 +8,7 @@ export type SearchCoordinateSource = "preset" | "search" | "gps" | "pin"
 
 /** Màu tương ứng token brand trong index.css; Leaflet nhận màu qua SVG attribute. */
 const MAP_BRAND = "#278733"
+const MAP_BRAND_DEEP = "#006516"
 
 interface LeafletRecyclerMapProps {
   centerLat: number
@@ -17,7 +18,6 @@ interface LeafletRecyclerMapProps {
   partners: CollectionPartnerDto[]
   selectedPartnerId: string | null
   locatingGps: boolean
-  mobileLiftControls?: boolean
   onSelectPartner: (partnerId: string) => void
   onMapPinClick: (rawLat: number, rawLng: number) => void
   onRequestGps: () => void
@@ -54,7 +54,6 @@ export default function LeafletRecyclerMap({
   partners,
   selectedPartnerId,
   locatingGps,
-  mobileLiftControls = false,
   onSelectPartner,
   onMapPinClick,
   onRequestGps,
@@ -69,6 +68,8 @@ export default function LeafletRecyclerMap({
   const onMapPinClickRef = useRef(onMapPinClick)
   const latestViewRef = useRef({ centerLat, centerLng, radiusKm })
   latestViewRef.current = { centerLat, centerLng, radiusKm }
+  const latestSelectionRef = useRef({ partners, selectedPartnerId })
+  latestSelectionRef.current = { partners, selectedPartnerId }
 
   useEffect(() => {
     onSelectPartnerRef.current = onSelectPartner
@@ -76,6 +77,38 @@ export default function LeafletRecyclerMap({
   useEffect(() => {
     onMapPinClickRef.current = onMapPinClick
   }, [onMapPinClick])
+
+  const focusSelectedPartner = (
+    map: LeafletTypes.Map,
+    L: typeof LeafletTypes,
+    list: CollectionPartnerDto[],
+    partnerId: string | null,
+    animate: boolean,
+  ) => {
+    if (!partnerId) return
+    const sz = map.getSize()
+    if (sz.x === 0 || sz.y === 0) return
+
+    const target = list.find((p) => p.id === partnerId)
+    if (!target) return
+
+    const pt = L.latLng(target.latitude, target.longitude)
+    if (typeof window !== "undefined" && window.innerWidth < 1280) {
+      // Trên mobile có thẻ xem nhanh ở đáy (~180px), giữ ghim ở nửa trên thoáng của bản đồ
+      const px = map.latLngToContainerPoint(pt)
+      const safeBottom = Math.max(140, sz.y - 195)
+      if (px.x < 48 || px.x > sz.x - 48 || px.y < 56 || px.y > safeBottom) {
+        const projected = map.project(pt)
+        projected.y += 72
+        map.panTo(map.unproject(projected), { animate })
+      }
+      return
+    }
+
+    if (!map.getBounds().pad(-0.14).contains(pt)) {
+      map.panTo(pt, { animate })
+    }
+  }
 
   // 1. Khởi tạo thực thể bản đồ Leaflet phía trình duyệt
   useEffect(() => {
@@ -132,6 +165,8 @@ export default function LeafletRecyclerMap({
           if (sz.x === 0 || sz.y === 0) {
             const { centerLat: lat, centerLng: lng, radiusKm: r } = latestViewRef.current
             map.setView([lat, lng], radiusToZoom(r), { animate: false })
+            const sel = latestSelectionRef.current
+            focusSelectedPartner(map, L, sel.partners, sel.selectedPartnerId, false)
           }
         })
       }
@@ -179,30 +214,8 @@ export default function LeafletRecyclerMap({
   useEffect(() => {
     const map = mapRef.current
     const L = leafletModRef.current
-    if (!map || !L || !mapReady || !selectedPartnerId) return
-
-    const sz = map.getSize()
-    if (sz.x === 0 || sz.y === 0) return
-
-    const target = partners.find((p) => p.id === selectedPartnerId)
-    if (!target) return
-
-    const pt = L.latLng(target.latitude, target.longitude)
-    if (typeof window !== "undefined" && window.innerWidth < 1280) {
-      // Trên mobile có thẻ xem nhanh ở đáy (~170px), giữ ghim ở nửa trên thoáng của bản đồ
-      const px = map.latLngToContainerPoint(pt)
-      const safeBottom = Math.max(140, sz.y - 185)
-      if (px.x < 36 || px.x > sz.x - 36 || px.y < 48 || px.y > safeBottom) {
-        const projected = map.project(pt)
-        projected.y += 68
-        map.panTo(map.unproject(projected), { animate: true })
-      }
-      return
-    }
-
-    if (!map.getBounds().pad(-0.14).contains(pt)) {
-      map.panTo(pt, { animate: true })
-    }
+    if (!map || !L || !mapReady) return
+    focusSelectedPartner(map, L, partners, selectedPartnerId, true)
   }, [selectedPartnerId, partners, mapReady])
 
   // 4. Vẽ lại vòng bán kính quét và các ghim cơ sở thu mua
@@ -224,23 +237,22 @@ export default function LeafletRecyclerMap({
       interactive: false,
     }).addTo(group)
 
-    const centerBadgeText =
-      source === "gps"
-        ? "Vị trí hiện tại của bạn"
-        : source === "pin"
-          ? "Tâm vị trí đã chọn"
-          : "Tâm khu vực tra cứu"
+    const isGps = source === "gps"
+    const dotBg = isGps ? "#2563eb" : MAP_BRAND_DEEP
+    const haloBg = isGps ? "rgba(37, 99, 235, 0.2)" : "rgba(39, 135, 51, 0.18)"
+    const pingBg = "rgba(37, 99, 235, 0.28)"
+    const dotShadow = isGps ? "rgba(37, 99, 235, 0.45)" : "rgba(0, 101, 22, 0.4)"
 
+    // Hiển thị điểm tâm bằng chấm tròn đồng tâm đặt chính xác tại [centerLat, centerLng], không kèm chữ che khuất vị trí
     const centerIcon = L.divIcon({
       className: "ecolink-leaflet-div-icon",
-      iconSize: [0, 0],
-      iconAnchor: [0, 0],
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
       html: `
-        <div style="transform: translate(-50%, -50%); pointer-events: none;" class="flex flex-col items-center">
-          <span class="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#cdded3] bg-white/95 px-2.5 py-1 text-[11px] font-medium text-[#404b44] shadow-[0_2px_6px_rgba(15,31,21,0.12)]">
-            <span class="inline-block size-1.5 rounded-full bg-[#278733]"></span>
-            ${escapeHtml(centerBadgeText)}
-          </span>
+        <div style="position:relative;width:28px;height:28px;display:grid;place-items:center;pointer-events:none;">
+          ${isGps ? `<span class="animate-ping" style="position:absolute;inset:4px;border-radius:9999px;background:${pingBg};"></span>` : ""}
+          <span style="position:absolute;inset:2px;border-radius:9999px;background:${haloBg};"></span>
+          <span style="position:relative;display:block;width:14px;height:14px;border-radius:9999px;background:${dotBg};border:2.5px solid #ffffff;box-shadow:0 2px 6px ${dotShadow};"></span>
         </div>
       `,
     })
@@ -248,6 +260,7 @@ export default function LeafletRecyclerMap({
     L.marker([centerLat, centerLng], {
       icon: centerIcon,
       interactive: false,
+      keyboard: false,
       zIndexOffset: 150,
     }).addTo(group)
 
@@ -322,12 +335,8 @@ export default function LeafletRecyclerMap({
         </div>
       )}
 
-      {/* Cụm điều khiển Phóng to / Thu nhỏ / Về tâm / Định vị GPS ở góc dưới phải */}
-      <div
-        className={`absolute right-3 z-20 flex flex-col gap-2 transition-[bottom] duration-200 sm:right-4 ${
-          mobileLiftControls ? "bottom-[198px] xl:bottom-8" : "bottom-7 xl:bottom-8"
-        }`}
-      >
+      {/* Cụm điều khiển Phóng to / Thu nhỏ / Về tâm / Định vị GPS: trên phải ở mobile để tránh MobileNav/TreeFab, dưới phải ở Desktop */}
+      <div className="absolute top-3 right-3 z-20 flex flex-col gap-2 sm:right-4 xl:top-auto xl:bottom-8">
         <div className="flex flex-col overflow-hidden rounded-xl border border-line bg-surface/95 shadow-sm backdrop-blur-md xl:rounded-lg">
           <button
             type="button"
@@ -367,7 +376,7 @@ export default function LeafletRecyclerMap({
           aria-label="Lấy vị trí GPS hiện tại"
           className="grid size-10 place-items-center rounded-xl border border-line bg-surface/95 text-brand-deep shadow-sm backdrop-blur-md transition-colors hover:bg-surface-2 active:scale-95 disabled:opacity-60 xl:size-9 xl:rounded-lg"
         >
-          <LocateFixed className="size-4" strokeWidth={1.5} />
+          <LocateFixed className={`size-4 ${locatingGps ? "animate-pulse" : ""}`} strokeWidth={1.5} />
         </button>
       </div>
 

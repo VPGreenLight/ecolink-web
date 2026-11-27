@@ -14,6 +14,7 @@ coverage/
 # --- cache ---
 .vite/
 .vite-inspect/
+.certs/
 
 # --- biến môi trường, KHÔNG BAO GIỜ commit ---
 # chỉ file .env.example được commit, để người khác biết cần đặt biến gì

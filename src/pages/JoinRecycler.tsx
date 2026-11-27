@@ -336,7 +336,7 @@ export default function JoinRecycler() {
       />
 
       {session && hasLiveBackendAuth() && (
-        <div className="rounded-xl border border-brand/25 bg-brand/6 px-4 py-3 text-[13px] text-brand-deep">
+        <div className="rounded-xl border border-brand/25 bg-brand/6 px-4 py-3 text-sm leading-6 text-brand-deep">
           Đang nộp hồ sơ nâng cấp cho tài khoản{" "}
           <strong>
             {session.name}
@@ -362,7 +362,7 @@ export default function JoinRecycler() {
               )}
             </div>
             <p className="mt-2 font-bold text-ink">{existingApp.facilityName}</p>
-            <p className="mt-0.5 text-[13px] text-muted">
+            <p className="mt-0.5 text-sm leading-6 text-muted">
               {existingApp.businessAddress} · GPS ({Number(existingApp.latitude).toFixed(4)},{" "}
               {Number(existingApp.longitude).toFixed(4)})
             </p>
@@ -379,7 +379,7 @@ export default function JoinRecycler() {
                 userId: existingApp.userId,
               })
             }}
-            className="btn-outline h-10 px-4 text-xs"
+            className="btn-outline min-h-11 px-4 text-sm"
           >
             Xem biên nhận hồ sơ
           </button>
@@ -399,7 +399,7 @@ export default function JoinRecycler() {
               {existingApp.rejectionReason || "Thông tin hoặc chứng từ chưa đạt yêu cầu."}
             </span>
           </p>
-          <p className="text-[13px] text-muted">
+          <p className="text-sm leading-6 text-muted">
             Vui lòng cập nhật lại thông tin, tải chứng từ mới rõ nét ở biểu mẫu bên dưới và bấm
             &quot;Gửi lại hồ sơ thẩm định&quot;.
           </p>
@@ -412,7 +412,7 @@ export default function JoinRecycler() {
             <p className="font-bold text-brand-deep">
               Hồ sơ {existingApp.facilityName} ({existingCode}) đã được phê duyệt!
             </p>
-            <p className="mt-0.5 text-[13px] text-body">
+            <p className="mt-0.5 text-sm leading-6 text-body">
               Tài khoản của bạn đã đủ điều kiện hoạt động và hiển thị ghim thu mua trên bản đồ EcoLink.
             </p>
           </div>
@@ -421,11 +421,11 @@ export default function JoinRecycler() {
               type="button"
               disabled={openingPortal}
               onClick={() => void handleOpenRecyclerPortal()}
-              className="btn-primary h-9 px-4 text-xs"
+              className="btn-primary min-h-11 px-4 text-sm"
             >
               {openingPortal ? "Đang đồng bộ quyền..." : "Mở cổng Cơ sở thu mua"}
             </button>
-            <Link to="/map" className="btn-outline h-9 px-4 text-xs">
+            <Link to="/map" className="btn-outline min-h-11 px-4 text-sm">
               Xem trên Bản đồ
             </Link>
           </div>
@@ -498,37 +498,37 @@ export default function JoinRecycler() {
         </fieldset>
 
         <div className="grid gap-5 sm:grid-cols-2">
-          <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+          <label className="flex flex-col gap-2 text-sm font-semibold text-ink">
             <span>
               {isIndividual ? "Tên hiển thị thu mua" : "Tên cơ sở"}
               <RequiredMark />
             </span>
             <input
-              className={`input ${err.startsWith("Cần tên") ? "border-warn" : ""}`}
+              className={`input min-h-11 h-12 text-base sm:text-[15px] ${err.startsWith("Cần tên") ? "border-warn" : ""}`}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={isIndividual ? "Anh Tuấn - Thu gom lưu động Hòa Lạc" : "Vựa Minh Khai"}
             />
           </label>
-          <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+          <label className="flex flex-col gap-2 text-sm font-semibold text-ink">
             <span>
               {isIndividual ? "Họ và tên theo CCCD" : "Người đại diện"}
               <RequiredMark />
             </span>
             <input
-              className="input"
+              className="input min-h-11 h-12 text-base sm:text-[15px]"
               value={owner}
               onChange={(e) => setOwner(e.target.value)}
               placeholder="Nguyễn Văn A"
             />
           </label>
-          <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+          <label className="flex flex-col gap-2 text-sm font-semibold text-ink">
             <span>
               Số điện thoại
               <RequiredMark />
             </span>
             <input
-              className={`input tabular-nums ${
+              className={`input min-h-11 h-12 text-base sm:text-[15px] tabular-nums ${
                 err.startsWith("Số điện thoại") ? "border-warn" : ""
               }`}
               inputMode="tel"
@@ -537,13 +537,13 @@ export default function JoinRecycler() {
               placeholder="0901 234 567"
             />
           </label>
-          <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+          <label className="flex flex-col gap-2 text-sm font-semibold text-ink">
             <span>
               Email nhận kết quả thẩm định
               <RequiredMark />
             </span>
             <input
-              className="input"
+              className="input min-h-11 h-12 text-base sm:text-[15px]"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -552,7 +552,7 @@ export default function JoinRecycler() {
           </label>
         </div>
 
-        <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+        <label className="flex flex-col gap-2 text-sm font-semibold text-ink">
           <span>
             {isIndividual
               ? "Khu vực hoạt động chính / Điểm xuất phát"
@@ -560,7 +560,7 @@ export default function JoinRecycler() {
             <RequiredMark />
           </span>
           <input
-            className={`input ${err.startsWith("Cần địa chỉ") || err.startsWith("Cần nhập khu vực") ? "border-warn" : ""}`}
+            className={`input min-h-11 h-12 text-base sm:text-[15px] ${err.startsWith("Cần địa chỉ") || err.startsWith("Cần nhập khu vực") ? "border-warn" : ""}`}
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             placeholder={
@@ -572,13 +572,13 @@ export default function JoinRecycler() {
         </label>
 
         <div className="flex flex-col gap-2">
-          <span className="text-[13px] font-semibold text-ink">
+          <span className="text-sm font-semibold text-ink">
             {isIndividual
               ? "Ghim khu vực hoạt động thường xuyên trên bản đồ"
               : "Ghim vị trí kho bãi trên bản đồ"}
             <RequiredMark />
           </span>
-          <span className="text-[12px] text-muted">
+          <span className="text-sm leading-6 text-muted">
             {isIndividual
               ? "Hệ thống sử dụng tọa độ này để người dân trong bán kính gần bạn tìm thấy và đặt lịch thu gom tận nơi."
               : "Nhân viên thẩm định sẽ đối chiếu ghim này với địa chỉ trên giấy phép kinh doanh. Sau khi duyệt, đây là toạ độ hiển thị cho người dân trên trang Bản đồ."}
@@ -606,7 +606,7 @@ export default function JoinRecycler() {
         </div>
 
         <fieldset>
-          <legend className="text-[13px] font-semibold text-ink">
+          <legend className="text-sm font-semibold text-ink">
             Loại rác bạn thu mua
             <RequiredMark />
           </legend>
@@ -616,7 +616,7 @@ export default function JoinRecycler() {
               return (
                 <label
                   key={m}
-                  className={`cursor-pointer rounded-full border px-3.5 py-2 text-[13px] font-medium transition-colors ${
+                  className={`inline-flex min-h-11 cursor-pointer items-center rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
                     on
                       ? "border-brand bg-brand text-white"
                       : "border-line bg-surface text-body hover:bg-surface-2"
@@ -646,10 +646,10 @@ export default function JoinRecycler() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
-                <span className="text-[13px] font-semibold text-ink">
+                <span className="text-sm font-semibold text-ink">
                   1. Ảnh mặt trước Căn cước công dân (CCCD) <span className="text-warn">*</span>
                 </span>
-                <span className="text-[12px] text-muted">
+                <span className="text-sm leading-6 text-muted">
                   Chụp rõ ảnh chân dung, số CCCD và họ tên (JPG, PNG, WEBP, tối đa 10 MB).
                 </span>
                 <label className="mt-1 flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-sage-line bg-surface-2 px-4 py-5 text-center transition-colors hover:bg-surface-3">
@@ -668,7 +668,7 @@ export default function JoinRecycler() {
                   <span className="break-all text-sm font-semibold text-brand">
                     {cccdFrontFile ? cccdFrontFile.name : "Chọn ảnh mặt trước CCCD (.jpg, .png)"}
                   </span>
-                  <span className="text-[11px] text-muted">
+                  <span className="text-xs sm:text-sm text-muted">
                     {cccdFrontFile
                       ? `${(cccdFrontFile.size / 1024).toFixed(0)} KB · Bấm để đổi ảnh`
                       : "Bắt buộc 1 ảnh rõ nét, không chói sáng"}
@@ -677,10 +677,10 @@ export default function JoinRecycler() {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <span className="text-[13px] font-semibold text-ink">
+                <span className="text-sm font-semibold text-ink">
                   2. Ảnh mặt sau Căn cước công dân (CCCD) <span className="text-warn">*</span>
                 </span>
-                <span className="text-[12px] text-muted">
+                <span className="text-sm leading-6 text-muted">
                   Chụp rõ đặc điểm nhận dạng, ngày cấp và mã QR mặt sau (JPG, PNG, WEBP).
                 </span>
                 <label className="mt-1 flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-sage-line bg-surface-2 px-4 py-5 text-center transition-colors hover:bg-surface-3">
@@ -699,7 +699,7 @@ export default function JoinRecycler() {
                   <span className="break-all text-sm font-semibold text-brand">
                     {cccdBackFile ? cccdBackFile.name : "Chọn ảnh mặt sau CCCD (.jpg, .png)"}
                   </span>
-                  <span className="text-[11px] text-muted">
+                  <span className="text-xs sm:text-sm text-muted">
                     {cccdBackFile
                       ? `${(cccdBackFile.size / 1024).toFixed(0)} KB · Bấm để đổi ảnh`
                       : "Bắt buộc 1 ảnh rõ nét, không mất góc"}
@@ -830,7 +830,7 @@ export default function JoinRecycler() {
         {err && (
           <p
             role="alert"
-            className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+            className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm leading-6 font-medium text-warn"
           >
             {err}
           </p>
@@ -840,7 +840,7 @@ export default function JoinRecycler() {
           <button
             type="submit"
             disabled={submitting || isAlreadyLockedStatus || !hasRequiredDocs}
-            className="btn-primary h-11 px-6 disabled:cursor-not-allowed disabled:opacity-55"
+            className="btn-primary min-h-11 h-12 px-6 text-sm sm:text-[15px] disabled:cursor-not-allowed disabled:opacity-55"
           >
             {submitting
               ? "Đang gửi hồ sơ..."
@@ -852,7 +852,7 @@ export default function JoinRecycler() {
                     ? "Hồ sơ đã được phê duyệt"
                     : "Gửi hồ sơ thẩm định"}
           </button>
-          <p className="text-[13px] text-muted">
+          <p className="text-sm leading-6 text-muted">
             {!hasRequiredDocs && !isAlreadyLockedStatus
               ? isIndividual
                 ? "Cần tải đủ 2 ảnh CCCD (mặt trước & mặt sau) để bật nút gửi hồ sơ."
@@ -935,14 +935,14 @@ function Done({
             </span>
             <div>
               <p className="text-sm font-semibold text-ink">{t}</p>
-              <p className="mt-0.5 text-[13px] leading-5 text-muted">{b}</p>
+              <p className="mt-0.5 text-sm leading-6 text-muted">{b}</p>
             </div>
           </li>
         ))}
       </ol>
 
       <div>
-        <Link to="/map" className="btn-outline h-10 px-4 text-xs">
+        <Link to="/map" className="btn-outline min-h-11 px-4 text-sm">
           Quay về trang Bản đồ điểm thu mua
         </Link>
       </div>

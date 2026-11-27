@@ -21,11 +21,9 @@ import {
   fetchAvailableGifts,
   fetchMyRedemptions,
   fetchMyVirtualTree,
-  fetchPointLedger,
   fetchPointWallet,
   redeemGift,
   type GiftItemDto,
-  type PointTransactionDto,
   type RedemptionDto,
   type VirtualTreeDto,
 } from "@/lib/gamificationApi"
@@ -156,11 +154,6 @@ export default function Rewards() {
   const [redPage, setRedPage] = useState(1)
   const redPageSize = 10
 
-  const [ledgerItems, setLedgerItems] = useState<PointTransactionDto[]>([])
-  const [ledgerTotal, setLedgerTotal] = useState(0)
-  const [ledgerPage, setLedgerPage] = useState(1)
-  const [ledgerActionFilter, setLedgerActionFilter] = useState("")
-
   const [tree, setTree] = useState<VirtualTreeDto | null>(null)
   const [loading, setLoading] = useState(liveRewardsUser || isGuest)
   const [redeemingId, setRedeemingId] = useState<string | null>(null)
@@ -171,15 +164,10 @@ export default function Rewards() {
   const loadLiveData = async () => {
     setLoading(true)
     try {
-      const [walletRes, giftRes, redRes, ledgerRes] = await Promise.all([
+      const [walletRes, giftRes, redRes] = await Promise.all([
         fetchPointWallet(),
         fetchAvailableGifts({ sort: giftSort }),
         fetchMyRedemptions({ page: redPage, pageSize: redPageSize }),
-        fetchPointLedger({
-          actionType: ledgerActionFilter || undefined,
-          page: ledgerPage,
-          pageSize: 10,
-        }),
       ])
       if (walletRes.data) {
         setSpend(walletRes.data.balance)
@@ -193,10 +181,6 @@ export default function Rewards() {
       if (redRes.data?.items) {
         setRedemptions(redRes.data.items)
         setRedTotal(redRes.data.totalCount ?? redRes.data.items.length)
-      }
-      if (ledgerRes.data?.items) {
-        setLedgerItems(ledgerRes.data.items)
-        setLedgerTotal(ledgerRes.data.totalCount ?? ledgerRes.data.items.length)
       }
       if (session?.role === "user") {
         fetchMyVirtualTree()
@@ -240,7 +224,7 @@ export default function Rewards() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveRewardsUser, isGuest, giftSort, redPage, redPageSize, ledgerPage, ledgerActionFilter])
+  }, [liveRewardsUser, isGuest, giftSort, redPage, redPageSize])
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -801,95 +785,6 @@ export default function Rewards() {
             onPageChange={setRedPage}
             itemLabel="đơn đổi quà"
           />
-        </section>
-      )}
-
-      {/* Lịch sử biến động Điểm Xanh cá nhân (GET /api/v1/gamification/points/ledger) */}
-      {liveRewardsUser && (
-        <section className="mt-10">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg leading-7 font-bold tracking-tight text-ink">
-                Lịch sử biến động Điểm Xanh
-              </h2>
-              <p className="text-xs text-muted">
-                Sổ cái cộng điểm bàn giao, điểm danh, nâng cấp cây ảo và trừ điểm đổi quà.
-              </p>
-            </div>
-            <select
-              aria-label="Lọc loại giao dịch điểm"
-              className="input h-9 w-56 text-xs"
-              value={ledgerActionFilter}
-              onChange={(e) => {
-                setLedgerActionFilter(e.target.value)
-                setLedgerPage(1)
-              }}
-            >
-              <option value="">Tất cả loại hoạt động</option>
-              <option value="HANDOVER_REWARD">Thưởng bàn giao phế liệu</option>
-              <option value="DAILY_CHECKIN">Điểm danh hằng ngày</option>
-              <option value="TREE_UPGRADE">Nâng cấp cây ảo</option>
-              <option value="GIFT_REDEEM">Đổi quà / E-Voucher</option>
-              <option value="GIFT_REFUND">Hoàn điểm hủy quà</option>
-              <option value="LEADERBOARD_BONUS">Thưởng đua Top BXH</option>
-              <option value="COMPLAINT_CLAWBACK">Thu hồi điểm xử lý khiếu nại</option>
-            </select>
-          </div>
-          {ledgerItems.length === 0 ? (
-            <p className="card mt-4 px-5 py-6 text-center text-sm text-muted">
-              Chưa có biến động Điểm Xanh nào khớp bộ lọc.
-            </p>
-          ) : (
-            <>
-              <div className="mt-4 overflow-x-auto rounded-xl border border-line bg-surface">
-                <table className="w-full min-w-[640px] border-collapse text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-line bg-surface-2">
-                      <th className="px-4 py-2.5 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
-                        Thời gian
-                      </th>
-                      <th className="px-4 py-2.5 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
-                        Loại hoạt động
-                      </th>
-                      <th className="px-4 py-2.5 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
-                        Chi tiết
-                      </th>
-                      <th className="px-4 py-2.5 text-right text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
-                        Biến động điểm
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line-soft">
-                    {ledgerItems.map((tx) => (
-                      <tr key={tx.id}>
-                        <td className="px-4 py-3 text-xs tabular-nums text-muted whitespace-nowrap">
-                          {new Date(tx.createdAt).toLocaleString("vi-VN")}
-                        </td>
-                        <td className="px-4 py-3 text-xs font-semibold text-ink whitespace-nowrap">
-                          {tx.actionType}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-body">{tx.description || "—"}</td>
-                        <td
-                          className={`px-4 py-3 text-right text-sm font-bold tabular-nums whitespace-nowrap ${
-                            tx.points >= 0 ? "text-brand-deep" : "text-warn"
-                          }`}
-                        >
-                          {tx.points >= 0 ? `+${fmt(tx.points)}` : fmt(tx.points)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <PaginationBar
-                page={ledgerPage}
-                pageSize={10}
-                totalCount={ledgerTotal}
-                onPageChange={setLedgerPage}
-                itemLabel="giao dịch điểm"
-              />
-            </>
-          )}
         </section>
       )}
 

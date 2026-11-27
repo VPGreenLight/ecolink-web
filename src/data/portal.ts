@@ -2,50 +2,17 @@ import type { Role } from "@/lib/session"
 
 /** Menu của từng vai trò. Đường dẫn trùng `App.tsx` là cố ý: menu là nơi
  *  duy nhất liệt kê các màn hình, thêm route mà quên thêm ở đây thì người
- *  dùng không có đường vào.
- *
- *  "Thông báo" (SU-03) nằm trong trang hồ sơ cá nhân, không phải mục riêng —
- *  cả hai đều là việc của tài khoản này và tách ra thì người dùng phải biết
- *  cái nào ở đâu. */
+ *  dùng không có đường vào. */
 export type PortalItem = { to: string; label: string }
 export type PortalSection = { title: string; items: PortalItem[] }
 
 const ACCOUNT: PortalItem[] = [
-  { to: "/account/profile", label: "Hồ sơ và thông báo" },
+  { to: "/account/profile", label: "Hồ sơ cá nhân" },
   { to: "/account/password", label: "Đổi mật khẩu" },
 ]
 
 export const PORTAL_NAV: Record<Role, PortalSection[]> = {
-  user: [
-    {
-      title: "Tài khoản",
-      items: [
-        { to: "/user", label: "Tổng quan" },
-        { to: "/user/handover", label: "Yêu cầu bàn giao" },
-        { to: "/user/receipt", label: "Biên nhận & Đánh giá" },
-        { to: "/user/payout", label: "Gói dịch vụ & Tắt quảng cáo" },
-        { to: "/user/transactions", label: "Lịch sử biên nhận" },
-      ],
-    },
-    {
-      title: "Phân loại rác",
-      items: [
-        { to: "/scanner", label: "Nhận diện bằng AI" },
-        { to: "/guidance", label: "Hướng dẫn phân loại" },
-        { to: "/waste", label: "Tra cứu loại rác" },
-        { to: "/rewards", label: "Đổi thưởng và điểm danh" },
-        { to: "/user/gamification", label: "Eco Fact" },
-      ],
-    },
-    {
-      title: "Khác",
-      items: [
-        { to: "/chat", label: "Chatbox thương lượng" },
-        { to: "/feedback", label: "Khiếu nại và góp ý" },
-        ...ACCOUNT,
-      ],
-    },
-  ],
+  user: [],
   recycler: [
     {
       title: "Vận hành",

@@ -2,6 +2,7 @@ import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import type * as LeafletTypes from "leaflet"
 import {
   filterAreaPresets,
+  requestBrowserGeolocation,
   searchPlacesOnSubmit,
   type GeocodingSuggestionDto,
 } from "@/lib/geocodingApi"
@@ -218,24 +219,16 @@ export default function LocationPinPickerMap({
     }
   }
 
-  function requestGps() {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setNotice("Trình duyệt không hỗ trợ định vị GPS. Hãy bấm trực tiếp lên bản đồ để ghim.")
-      return
-    }
+  async function requestGps() {
     setLocatingGps(true)
     setNotice("")
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        emitCoordinates(pos.coords.latitude, pos.coords.longitude)
-        setLocatingGps(false)
-      },
-      () => {
-        setLocatingGps(false)
-        setNotice("Không lấy được quyền GPS. Bạn hãy gõ tên khu vực hoặc bấm lên bản đồ để ghim.")
-      },
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60_000 },
-    )
+    const res = await requestBrowserGeolocation()
+    setLocatingGps(false)
+    if (res.ok) {
+      emitCoordinates(res.lat, res.lng)
+      return
+    }
+    setNotice(res.message)
   }
 
   const osmInspectUrl = `https://www.openstreetmap.org/?mlat=${lat.toFixed(5)}&mlon=${lng.toFixed(5)}#map=17/${lat.toFixed(5)}/${lng.toFixed(5)}`

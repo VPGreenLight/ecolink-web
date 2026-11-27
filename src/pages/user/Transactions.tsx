@@ -55,7 +55,7 @@ export default function Transactions() {
   const totalWeight = liveData ? liveData.totalWeightKg : 0
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="page flex flex-col gap-6 py-6 lg:py-8">
       <PageHead
         eyebrow="BIÊN NHẬN & GIAO DỊCH"
         title="Lịch sử biên nhận bàn giao"
@@ -116,7 +116,7 @@ export default function Transactions() {
                 <Table head={["Ngày", "Mã đơn", "Đối tác", "Khối lượng", "Số tiền nhận", "Thao tác"]}>
                   {pagedLive.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-6 text-center text-xs text-muted">
+                      <td colSpan={6} className="px-4 py-6 text-center text-sm text-muted">
                         Không có giao dịch nào khớp từ khóa tìm kiếm.
                       </td>
                     </tr>
@@ -137,7 +137,7 @@ export default function Transactions() {
                           {fmtVnd(item.totalAmountCash)}
                         </Td>
                         <Td className="whitespace-nowrap">
-                          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                          <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                             <Link
                               to={`/user/receipt?orderId=${encodeURIComponent(item.requestId)}`}
                               className="text-brand-deep hover:underline"
@@ -196,7 +196,7 @@ export default function Transactions() {
                       <Td className="whitespace-nowrap">{f.party}</Td>
                       <Td>{f.note}</Td>
                       <Td className="whitespace-nowrap">
-                        <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                        <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                           <Link
                             to={`/user/receipt?orderId=${encodeURIComponent(f.handoverId)}`}
                             className="text-brand-deep hover:underline"

@@ -19,7 +19,6 @@ import LeaderboardPage from "@/pages/Leaderboard"
 import Home from "@/pages/Home"
 import Scanner from "@/pages/Scanner"
 import MapPage from "@/pages/MapPage"
-import Partners from "@/pages/Partners"
 import Feedback from "@/pages/Feedback"
 import Login from "@/pages/Login"
 import Register from "@/pages/Register"
@@ -33,11 +32,8 @@ import ResetPassword from "@/pages/ResetPassword"
 import Terms from "@/pages/Terms"
 import EcoFactsPage from "@/pages/EcoFactsPage"
 import Profile from "@/pages/account/Profile"
-import Notifications from "@/pages/account/Notifications"
 import Password from "@/pages/account/Password"
 
-import UserHome from "@/pages/user/Home"
-import Handover from "@/pages/user/Handover"
 import Receipt from "@/pages/user/Receipt"
 import Payout from "@/pages/user/Payout"
 import Transactions from "@/pages/user/Transactions"
@@ -75,7 +71,7 @@ import AccountPassword from "@/pages/admin/AccountPassword"
 
 /** name, component, substring that must survive tag-stripping */
 const CASES = [
-  ["Navbar", Navbar, "Điểm thu gom"],
+  ["Navbar", Navbar, "Điểm thu mua"],
   ["MobileNav", MobileNav, "Đổi thưởng"],
   ["Footer", Footer, "TRUNG TÂM HỖ TRỢ"],
   ["Blog", Blog, "Bài viết về rác thải"],
@@ -85,7 +81,6 @@ const CASES = [
   // assert the idle state: result copy is only rendered after a scan
   ["Scanner", Scanner, "Dùng trang này thế nào"],
   ["MapPage", MapPage, "Cơ sở thu mua gần bạn"],
-  ["Partners", Partners, "Duy Tân"],
   ["Feedback", Feedback, "Khiếu nại và góp ý"],
   ["Login", Login, "Đăng nhập"],
   ["Register", Register, "Tạo tài khoản"],
@@ -96,7 +91,7 @@ const CASES = [
   // ---- công khai: U-02, U-03, U-04, U-05, U-09/R-05, U-18/R-07 ----
   ["Guidance", Guidance, "Phân loại rác đúng cách"],
   ["Waste", Waste, "Loại rác và cách xử lý"],
-  ["Chat", Chat, "Tạo yêu cầu bàn giao"],
+  ["Chat", Chat, "Tạo yêu cầu"],
   ["JoinRecycler", JoinRecycler, "Đăng ký cơ sở thu mua"],
   ["ResetPassword", ResetPassword, "Đặt lại mật khẩu"],
   ["Terms", Terms, "Điều khoản dịch vụ"],
@@ -104,12 +99,9 @@ const CASES = [
 
   // ---- SU-01..SU-03 ----
   ["Profile", Profile, "Hồ sơ cá nhân"],
-  ["Notifications", Notifications, "Thông báo hệ thống"],
   ["Password", Password, "Đổi mật khẩu"],
 
   // ---- phân hệ USER ----
-  ["user/Home", UserHome, "Xin chào"],
-  ["user/Handover", Handover, "Yêu cầu thu gom rác"],
   ["user/Receipt", Receipt, "Xác nhận bàn giao rác"],
   ["user/Payout", Payout, "Quy chuẩn thanh toán tiền phế liệu trực tiếp"],
   ["user/Transactions", Transactions, "Lịch sử biên nhận bàn giao"],

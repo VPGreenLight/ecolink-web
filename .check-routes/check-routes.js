@@ -1,24 +1,26 @@
-import { C as signIn, O as useSession, T as syncSessionState, d as ROLE_LABEL, g as hasLiveBackendAuth, h as getSession, i as ensureActiveAuthSession, u as ROLE_HOME, w as signOut } from "./assets/api-s1n261eu.js";
+import { C as signIn, O as useSession, T as syncSessionState, c as rotateRefreshTokenSingleFlight, d as ROLE_LABEL, f as getAccessToken, g as hasLiveBackendAuth, h as getSession, i as ensureActiveAuthSession, m as getRefreshToken, n as apiRequest, o as getResolvedApiHost, u as ROLE_HOME, v as isRealJwt, w as signOut, y as isStoredAccessTokenExpired } from "./assets/api-DugEVURJ.js";
 import { r as isSsrSmokeTest } from "./assets/hydration-DFDh5R3l.js";
-import { r as openAuthPopup } from "./assets/popupAuth-CbEcM25r.js";
-import { a as markNotificationRead, i as markAllNotificationsRead, n as createNotificationHubConnection, r as fetchMyNotifications, t as NOTIFICATIONS_UPDATED_EVENT } from "./assets/notificationsApi-blefiHjL.js";
-import { o as getAdminReconciliationLedger, v as useEntitlements } from "./assets/servicePackageApi-l8q88aSB.js";
-import { m as ConfirmLogoutDialog, o as Portal, p as PORTAL_NAV } from "./assets/Portal-D5YI2d8r.js";
-import { h as fetchMyVirtualTree } from "./assets/gamificationApi-oNhUqEyX.js";
+import { r as openAuthPopup } from "./assets/popupAuth-DsLXz59A.js";
+import { _ as useEntitlements, o as getAdminReconciliationLedger } from "./assets/servicePackageApi-0F9pRk8a.js";
+import { m as ConfirmLogoutDialog, o as Portal, p as PORTAL_NAV } from "./assets/Portal-BtwqE-1T.js";
+import { t as UserAvatar } from "./assets/UserAvatar-Dhp9LzfI.js";
+import { m as fetchMyVirtualTree } from "./assets/gamificationApi-Cr7We2Nz.js";
 import { c as getTreeAvatarImgClass, d as saveLiveTreePreview, i as getDefaultFrameForStage, l as readLiveTreePreview, o as getFrameSrc, r as clearLiveTreePreview, s as getStageName, u as readStoredTreePreview } from "./assets/virtualTree-mfjB_c6E.js";
-import { a as fetchCurrentUserProfile } from "./assets/authApi-B_RZeGQf.js";
+import { a as fetchCurrentUserProfile } from "./assets/authApi-Bt--rqZo.js";
 import { t as AI_AVATAR } from "./assets/scanner-DJC07y4s.js";
 import { d as POSTS, f as STAFF, h as fmtVnd, i as COMPLAINTS, m as fmtInt, n as AI_CASES, o as DATASET, p as STATS, r as APPLICATIONS } from "./assets/ops-DEQYZm4o.js";
 import { t as FLOWS } from "./assets/cashflow-B8HhmFRJ.js";
-import { a as fetchAiDatasetDashboard, l as fetchStaffAiFeedbackQueue } from "./assets/aiCurationApi-CKzkMDeL.js";
-import { l as fetchStaffBlogs } from "./assets/blogApi-y9RkAsWE.js";
-import { c as getAdminKpiSummary, o as getAdminAnalyticsCharts, u as getAdminStaffList } from "./assets/governanceApi-BMnRND9a.js";
-import { h as fetchStaffApplications } from "./assets/recyclerWorkflowApi-BhpZpzMw.js";
-import { l as fetchStaffComplaints } from "./assets/reviewComplaintApi-BPqoqhtM.js";
+import { a as fetchAiDatasetDashboard, l as fetchStaffAiFeedbackQueue } from "./assets/aiCurationApi-Dcf6Pebm.js";
+import { l as fetchStaffBlogs } from "./assets/blogApi-DdtVag6m.js";
+import { c as getAdminKpiSummary, o as getAdminAnalyticsCharts, u as getAdminStaffList } from "./assets/governanceApi-BnzFUcCR.js";
+import { h as fetchStaffApplications } from "./assets/recyclerWorkflowApi-B2T4Yj2F.js";
+import { l as fetchStaffComplaints } from "./assets/reviewComplaintApi-dWIZF0FK.js";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Link, MemoryRouter, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+import * as signalR from "@microsoft/signalr";
+import { BookOpen, Gift, Home, MapPin, ScanLine } from "lucide-react";
 //#region src/components/AuthLayout.tsx
 /** Khung trang riêng cho Đăng nhập / Đăng ký.
 *
@@ -135,6 +137,61 @@ function AuthLayout() {
 	});
 }
 //#endregion
+//#region src/lib/notificationsApi.ts
+/** [STT 169] Lấy danh sách thông báo hệ thống & bộ đếm chưa đọc (GET /api/v1/notifications). */
+async function fetchMyNotifications(params) {
+	const qs = new URLSearchParams();
+	if (typeof params?.isRead === "boolean") qs.set("isRead", String(params.isRead));
+	if (params?.notificationType) qs.set("notificationType", params.notificationType);
+	qs.set("pageNumber", String(params?.pageNumber ?? 1));
+	qs.set("pageSize", String(params?.pageSize ?? 20));
+	return apiRequest(`/api/v1/notifications?${qs.toString()}`, { method: "GET" });
+}
+var NOTIFICATIONS_UPDATED_EVENT = "ecolink:notifications-updated";
+function emitNotificationsUpdated(detail) {
+	if (typeof window === "undefined") return;
+	window.dispatchEvent(new CustomEvent(NOTIFICATIONS_UPDATED_EVENT, { detail }));
+}
+/** [STT 170] Đánh dấu một thông báo là đã đọc (PATCH /api/v1/notifications/{notificationId}/read). */
+async function markNotificationRead(notificationId) {
+	const res = await apiRequest(`/api/v1/notifications/${notificationId}/read`, { method: "PATCH" });
+	if (res.success) emitNotificationsUpdated({ delta: -1 });
+	return res;
+}
+/** [STT 171] Đánh dấu toàn bộ thông báo chưa đọc của tài khoản là đã xem (PUT /api/v1/notifications/read-all). */
+async function markAllNotificationsRead() {
+	const res = await apiRequest("/api/v1/notifications/read-all", { method: "PUT" });
+	if (res.success) emitNotificationsUpdated({ unreadCount: 0 });
+	return res;
+}
+async function resolveSignalRToken() {
+	let token = getAccessToken();
+	if (token && !isRealJwt(token) && getRefreshToken()) token = await rotateRefreshTokenSingleFlight();
+	else if (token && isRealJwt(token) && isStoredAccessTokenExpired(10) && getRefreshToken()) token = await rotateRefreshTokenSingleFlight();
+	return isRealJwt(token) ? token : "";
+}
+/**
+* [STT 172] Kết nối SignalR Real-Time Notification Hub (`/hubs/notifications`).
+* Trả về `null` khi chạy trên SSR Node.js.
+*/
+function createNotificationHubConnection(handlers) {
+	if (typeof window === "undefined") return null;
+	const resolvedBase = "".trim().replace(/\/+$/, "") || getResolvedApiHost();
+	const hubUrl = resolvedBase ? `${resolvedBase}/hubs/notifications` : "/hubs/notifications";
+	const connection = new signalR.HubConnectionBuilder().withUrl(hubUrl, {
+		accessTokenFactory: resolveSignalRToken,
+		transport: signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.LongPolling
+	}).withAutomaticReconnect([
+		0,
+		2e3,
+		5e3,
+		1e4
+	]).configureLogging(signalR.LogLevel.Warning).build();
+	if (handlers.onReceiveNotification) connection.on("ReceiveNotification", handlers.onReceiveNotification);
+	if (handlers.onUnreadCountUpdated) connection.on("UnreadCountUpdated", handlers.onUnreadCountUpdated);
+	return connection;
+}
+//#endregion
 //#region src/data/nav.ts
 var NAV_LINKS = [
 	{
@@ -143,11 +200,12 @@ var NAV_LINKS = [
 	},
 	{
 		to: "/scanner",
-		label: "Nhận diện AI"
+		label: "AI phân loại rác",
+		mobileLabel: "AI phân loại"
 	},
 	{
 		to: "/map",
-		label: "Điểm thu gom"
+		label: "Điểm thu mua"
 	},
 	{
 		to: "/rewards",
@@ -156,24 +214,6 @@ var NAV_LINKS = [
 	{
 		to: "/blog",
 		label: "Blog"
-	}
-];
-var MOBILE_LINKS = [
-	{
-		to: "/",
-		label: "Tổng quan"
-	},
-	{
-		to: "/scanner",
-		label: "Nhận diện"
-	},
-	{
-		to: "/map",
-		label: "Thu gom"
-	},
-	{
-		to: "/rewards",
-		label: "Đổi thưởng"
 	}
 ];
 var FOOTER_COLUMNS = [{
@@ -186,10 +226,6 @@ var FOOTER_COLUMNS = [{
 		{
 			label: "Sàn giao dịch phế liệu GPS",
 			to: "/map"
-		},
-		{
-			label: "Cổng liên kết nhà máy tái chế",
-			to: "/partners"
 		},
 		"Chứng chỉ tín chỉ tuần hoàn EPR"
 	]
@@ -205,7 +241,7 @@ var FOOTER_COLUMNS = [{
 			to: "/guidance"
 		},
 		{
-			label: "Quy chuẩn vật liệu tái chế",
+			label: "Tra cứu & Quy chuẩn vật liệu",
 			to: "/waste"
 		},
 		{
@@ -225,24 +261,6 @@ var SUPPORT = {
 };
 //#endregion
 //#region src/components/Navbar.tsx
-function initialsOf$1(name) {
-	return name.split(" ").slice(-2).map((part) => part[0]).join("").toUpperCase();
-}
-/** Icon người dùng: viewBox cố định nên tỉ lệ đúng ở mọi size, khác với
-*  hình tròn + thang vẽ bằng phần trăm trước đây. */
-function UserGlyph({ className }) {
-	return /* @__PURE__ */ jsxs("svg", {
-		viewBox: "0 0 24 24",
-		fill: "currentColor",
-		"aria-hidden": "true",
-		className,
-		children: [/* @__PURE__ */ jsx("circle", {
-			cx: "12",
-			cy: "8",
-			r: "4.25"
-		}), /* @__PURE__ */ jsx("path", { d: "M12 13.75c-4.28 0-7.75 2.7-7.75 6.03V21h15.5v-1.22c0-3.33-3.47-6.03-7.75-6.03Z" })]
-	});
-}
 function Chevron({ open }) {
 	return /* @__PURE__ */ jsx("svg", {
 		viewBox: "0 0 16 16",
@@ -256,26 +274,6 @@ function Chevron({ open }) {
 			strokeLinecap: "round",
 			strokeLinejoin: "round"
 		})
-	});
-}
-function Avatar({ user, avatarUrl, size = "size-9" }) {
-	const [imgFailed, setImgFailed] = useState(false);
-	useEffect(() => {
-		setImgFailed(false);
-	}, [avatarUrl]);
-	if (avatarUrl && !imgFailed) return /* @__PURE__ */ jsx("img", {
-		src: avatarUrl,
-		alt: user || "Ảnh đại diện",
-		onError: () => setImgFailed(true),
-		className: `${size} shrink-0 rounded-full border border-line-soft object-cover`
-	});
-	if (user) return /* @__PURE__ */ jsx("span", {
-		className: `grid ${size} shrink-0 place-items-center rounded-full bg-[linear-gradient(145deg,#00874a,#004826)] text-[13px] leading-none font-bold tracking-wide text-white`,
-		children: initialsOf$1(user)
-	});
-	return /* @__PURE__ */ jsx("span", {
-		className: `grid ${size} shrink-0 place-items-center rounded-full bg-surface-2`,
-		children: /* @__PURE__ */ jsx(UserGlyph, { className: "size-1/2 text-sage-line" })
 	});
 }
 /** Menu tài khoản: các mục dùng chung cho cả 4 vai trò sau đăng nhập. */
@@ -323,9 +321,8 @@ var ACCOUNT_ITEMS$1 = [{
 *  hiện khi đã đăng nhập — U-05 là bước nâng cấp từ tài khoản người dân lên
 *  cơ sở thu mua, người chưa có tài khoản thì chưa ở trong hệ sinh thái. */
 var EXPLORE = [
-	["/terms", "Điều khoản"],
+	["/feedback", "Khiếu nại và góp ý"],
 	["/ecofacts", "Eco Facts"],
-	["/partners", "Đối tác tái chế"],
 	["/leaderboard", "Xếp hạng người dùng"]
 ];
 function ExploreList({ close, withRegister }) {
@@ -400,11 +397,11 @@ function AccountMenu$1() {
 				"aria-haspopup": "menu",
 				"aria-expanded": open,
 				onClick: () => setOpen((v) => !v),
-				className: "flex h-10 items-center gap-1 rounded-full border border-line bg-white px-1 shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-colors hover:border-sage-line hover:bg-surface-2",
-				children: [/* @__PURE__ */ jsx(Avatar, {
-					user,
+				className: "flex h-10 items-center gap-1.5 rounded-full border border-line bg-white py-1 pr-2 pl-1 shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-colors hover:border-sage-line hover:bg-surface-2",
+				children: [/* @__PURE__ */ jsx(UserAvatar, {
+					name: user,
 					avatarUrl: session?.avatarUrl,
-					size: "size-8"
+					size: "sm"
 				}), /* @__PURE__ */ jsx(Chevron, { open })]
 			}),
 			open && /* @__PURE__ */ jsx("div", {
@@ -413,10 +410,10 @@ function AccountMenu$1() {
 				children: user ? /* @__PURE__ */ jsxs(Fragment, { children: [
 					/* @__PURE__ */ jsxs("div", {
 						className: "flex items-center gap-3.5 border-b border-line-soft bg-surface-2/60 px-4 py-3.5",
-						children: [/* @__PURE__ */ jsx(Avatar, {
-							user,
+						children: [/* @__PURE__ */ jsx(UserAvatar, {
+							name: user,
 							avatarUrl: session?.avatarUrl,
-							size: "size-11"
+							size: "md"
 						}), /* @__PURE__ */ jsxs("div", {
 							className: "min-w-0",
 							children: [/* @__PURE__ */ jsx("p", {
@@ -441,15 +438,67 @@ function AccountMenu$1() {
 								className: "flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink",
 								children: [item.icon, item.label]
 							}, item.to)),
-							session.role === "user" && /* @__PURE__ */ jsxs(Link, {
-								to: "/user/payout#citizen-packages",
-								onClick: () => setOpen(false),
-								className: "flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink",
-								children: [/* @__PURE__ */ jsx("span", { children: "Gói dịch vụ & Tắt quảng cáo" }), /* @__PURE__ */ jsx("span", {
-									className: "rounded-full bg-brand/12 px-2 py-0.5 text-[11px] font-bold text-brand-deep",
-									children: entitlements.currentTier
-								})]
-							}),
+							session.role === "user" && /* @__PURE__ */ jsxs(Fragment, { children: [
+								/* @__PURE__ */ jsxs(Link, {
+									to: "/user/gamification",
+									onClick: () => setOpen(false),
+									className: "flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink",
+									children: [/* @__PURE__ */ jsxs("svg", {
+										viewBox: "0 0 24 24",
+										fill: "none",
+										stroke: "currentColor",
+										strokeWidth: "1.8",
+										strokeLinecap: "round",
+										strokeLinejoin: "round",
+										"aria-hidden": "true",
+										className: "size-4 text-muted",
+										children: [
+											/* @__PURE__ */ jsx("path", { d: "M12 22v-9" }),
+											/* @__PURE__ */ jsx("path", { d: "M15.14 8.86a4 4 0 0 0-6.28 0C7.5 10.6 8 14 12 14s4.5-3.4 3.14-5.14Z" }),
+											/* @__PURE__ */ jsx("path", { d: "M8 14c-2.5 0-4-1.5-4-4 2.5 0 4 1.5 4 4Z" }),
+											/* @__PURE__ */ jsx("path", { d: "M16 14c2.5 0 4-1.5 4-4-2.5 0-4 1.5-4 4Z" })
+										]
+									}), "Cây ảo & Eco Fact"]
+								}),
+								/* @__PURE__ */ jsxs(Link, {
+									to: "/user/transactions",
+									onClick: () => setOpen(false),
+									className: "flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink",
+									children: [/* @__PURE__ */ jsxs("svg", {
+										viewBox: "0 0 24 24",
+										fill: "none",
+										stroke: "currentColor",
+										strokeWidth: "1.8",
+										strokeLinecap: "round",
+										strokeLinejoin: "round",
+										"aria-hidden": "true",
+										className: "size-4 text-muted",
+										children: [/* @__PURE__ */ jsx("path", { d: "M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" }), /* @__PURE__ */ jsx("path", { d: "M8 7h8M8 11h8M8 15h5" })]
+									}), "Lịch sử biên nhận"]
+								}),
+								/* @__PURE__ */ jsxs(Link, {
+									to: "/user/payout#citizen-packages",
+									onClick: () => setOpen(false),
+									className: "flex items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink",
+									children: [/* @__PURE__ */ jsxs("span", {
+										className: "flex items-center gap-3",
+										children: [/* @__PURE__ */ jsxs("svg", {
+											viewBox: "0 0 24 24",
+											fill: "none",
+											stroke: "currentColor",
+											strokeWidth: "1.8",
+											strokeLinecap: "round",
+											strokeLinejoin: "round",
+											"aria-hidden": "true",
+											className: "size-4 text-muted",
+											children: [/* @__PURE__ */ jsx("path", { d: "M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z" }), /* @__PURE__ */ jsx("path", { d: "M5 21h14" })]
+										}), "Gói dịch vụ"]
+									}), /* @__PURE__ */ jsx("span", {
+										className: "rounded-full bg-brand/12 px-2 py-0.5 text-[11px] font-bold text-brand-deep",
+										children: entitlements.currentTier
+									})]
+								})
+							] }),
 							session.role === "recycler" && /* @__PURE__ */ jsxs(Link, {
 								to: "/recycler#recycler-packages",
 								onClick: () => setOpen(false),
@@ -459,7 +508,7 @@ function AccountMenu$1() {
 									children: entitlements.currentTier
 								})]
 							}),
-							/* @__PURE__ */ jsxs(Link, {
+							session.role !== "user" && /* @__PURE__ */ jsxs(Link, {
 								to: ROLE_HOME[session.role],
 								onClick: () => setOpen(false),
 								className: "flex items-center justify-between rounded-xl bg-brand/10 px-3.5 py-2.5 text-sm font-semibold text-brand-deep transition-colors hover:bg-brand/16",
@@ -590,7 +639,7 @@ function Navbar() {
 					}, link.to))
 				}),
 				/* @__PURE__ */ jsxs("div", {
-					className: "ml-auto flex items-center gap-3",
+					className: "ml-auto flex items-center gap-2 sm:gap-3",
 					children: [
 						!session && /* @__PURE__ */ jsx("button", {
 							type: "button",
@@ -598,7 +647,24 @@ function Navbar() {
 							className: "hidden h-10 items-center rounded-full bg-brand px-4 text-sm font-semibold whitespace-nowrap text-white shadow-[0_5px_14px_rgba(0,112,61,0.22)] transition-colors hover:bg-brand-deep sm:inline-flex",
 							children: "Đăng nhập"
 						}),
-						session && /* @__PURE__ */ jsx(NotificationBellLink, { isLoggedIn: Boolean(session) }),
+						session && (session.role === "user" || session.role === "recycler") && /* @__PURE__ */ jsx(NavLink, {
+							to: "/chat",
+							title: "Chatbox thương lượng",
+							"aria-label": "Chatbox thương lượng",
+							className: ({ isActive }) => `group relative flex size-10 items-center justify-center rounded-full border shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-[color,border-color,background-color,transform] duration-200 ease-out active:scale-[0.96] ${isActive ? "border-brand/35 bg-brand/10 text-brand-deep" : "border-line bg-white text-muted hover:border-sage-line hover:bg-surface-2 hover:text-ink"}`,
+							children: /* @__PURE__ */ jsx("svg", {
+								viewBox: "0 0 24 24",
+								fill: "none",
+								stroke: "currentColor",
+								strokeWidth: "1.8",
+								strokeLinecap: "round",
+								strokeLinejoin: "round",
+								"aria-hidden": "true",
+								className: "size-[18px] transition-transform duration-200 group-hover:scale-105",
+								children: /* @__PURE__ */ jsx("path", { d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" })
+							})
+						}),
+						session && /* @__PURE__ */ jsx(NotificationBellMenu, { isLoggedIn: Boolean(session) }),
 						/* @__PURE__ */ jsx(AccountMenu$1, {})
 					]
 				})
@@ -606,40 +672,119 @@ function Navbar() {
 		})
 	});
 }
-function NotificationBellLink({ isLoggedIn }) {
+var FALLBACK_NOTES = [
+	{
+		id: "n1",
+		title: "Lịch thu gom đã được xác nhận",
+		message: "Cô Ba Thu Gom đã nhận yêu cầu của bạn và chốt khung giờ 10:00 - 12:00.",
+		time: "Hôm nay, 09:34",
+		isRead: false,
+		isBackend: false
+	},
+	{
+		id: "n2",
+		title: "Biên nhận hoàn tất",
+		message: "Tiền giao dịch BH-2609-0184 đã chuyển về tài khoản của bạn.",
+		time: "Hôm nay, 11:02",
+		isRead: false,
+		isBackend: false
+	},
+	{
+		id: "n3",
+		title: "Nhắc nhở điểm danh",
+		message: "Bạn bỏ lỡ điểm danh hôm qua, chuỗi đã tính lại từ đầu.",
+		time: "Hôm qua, 20:00",
+		isRead: true,
+		isBackend: false
+	}
+];
+function mapNotificationDto(n) {
+	return {
+		id: n.id,
+		title: n.title || "Thông báo hệ thống",
+		message: n.message,
+		time: new Date(n.createdAt).toLocaleString("vi-VN"),
+		isRead: n.isRead,
+		isBackend: true
+	};
+}
+function NotificationBellMenu({ isLoggedIn }) {
+	const [open, setOpen] = useState(false);
+	const [filter, setFilter] = useState("all");
+	const [items, setItems] = useState([]);
 	const [unreadCount, setUnreadCount] = useState(0);
+	const [loading, setLoading] = useState(false);
+	const [busyAll, setBusyAll] = useState(false);
+	const [err, setErr] = useState("");
+	const ref = useRef(null);
 	const live = isLoggedIn && !isSsrSmokeTest() && hasLiveBackendAuth();
 	useEffect(() => {
-		if (!live) {
+		if (!open) return;
+		const onDocClick = (e) => {
+			if (!ref.current?.contains(e.target)) setOpen(false);
+		};
+		const onKey = (e) => {
+			if (e.key === "Escape") setOpen(false);
+		};
+		document.addEventListener("mousedown", onDocClick);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("mousedown", onDocClick);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [open]);
+	useEffect(() => {
+		if (!isLoggedIn || isSsrSmokeTest()) {
+			setItems([]);
 			setUnreadCount(0);
 			return;
 		}
+		if (!live) {
+			setItems(FALLBACK_NOTES);
+			setUnreadCount(FALLBACK_NOTES.filter((n) => !n.isRead).length);
+			return;
+		}
 		let active = true;
-		const syncUnread = () => {
+		const syncNotifications = () => {
+			setLoading(true);
 			fetchMyNotifications({
 				pageNumber: 1,
-				pageSize: 1
+				pageSize: 20
 			}).then((res) => {
-				if (active && res.success && res.data) setUnreadCount(res.data.unreadCount);
-			}).catch(() => {});
+				if (!active || !res.success || !res.data) return;
+				setItems((res.data.items ?? []).map(mapNotificationDto));
+				setUnreadCount(res.data.unreadCount ?? 0);
+				setErr("");
+			}).catch((error) => {
+				if (active) setErr(error instanceof Error ? error.message : "Không tải được thông báo.");
+			}).finally(() => {
+				if (active) setLoading(false);
+			});
 		};
-		syncUnread();
+		syncNotifications();
 		const onUpdated = (e) => {
 			const detail = e.detail;
 			if (typeof detail?.unreadCount === "number") {
 				setUnreadCount(Math.max(0, detail.unreadCount));
+				if (detail.unreadCount === 0) setItems((prev) => prev.map((it) => ({
+					...it,
+					isRead: true
+				})));
 				return;
 			}
 			if (typeof detail?.delta === "number") {
 				setUnreadCount((c) => Math.max(0, c + detail.delta));
 				return;
 			}
-			syncUnread();
+			syncNotifications();
 		};
 		window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, onUpdated);
 		const connection = createNotificationHubConnection({
-			onReceiveNotification: () => {
-				if (active) setUnreadCount((c) => c + 1);
+			onReceiveNotification: (incoming) => {
+				if (!active) return;
+				const mapped = mapNotificationDto(incoming);
+				setItems((prev) => [mapped, ...prev.filter((x) => x.id !== mapped.id)].slice(0, 20));
+				if (!mapped.isRead) setUnreadCount((c) => c + 1);
 			},
 			onUnreadCountUpdated: (payload) => {
 				if (active && typeof payload?.unreadCount === "number") setUnreadCount(Math.max(0, payload.unreadCount));
@@ -651,40 +796,178 @@ function NotificationBellLink({ isLoggedIn }) {
 			window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, onUpdated);
 			if (connection) connection.stop().catch(() => {});
 		};
-	}, [live]);
-	return /* @__PURE__ */ jsxs(Link, {
-		to: "/account/notifications",
-		"aria-label": unreadCount > 0 ? `Thông báo (${unreadCount} chưa đọc)` : "Thông báo",
-		className: "group relative flex size-10 items-center justify-center rounded-full border border-line bg-white text-muted shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-[color,border-color,background-color,transform] duration-200 ease-out hover:border-sage-line hover:bg-surface-2 hover:text-ink active:scale-[0.96]",
-		children: [/* @__PURE__ */ jsxs("svg", {
-			viewBox: "0 0 24 24",
-			fill: "none",
-			stroke: "currentColor",
-			strokeWidth: "1.8",
-			strokeLinecap: "round",
-			strokeLinejoin: "round",
-			"aria-hidden": "true",
-			className: "size-[18px] transition-transform duration-200 group-hover:scale-105",
-			children: [/* @__PURE__ */ jsx("path", { d: "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" }), /* @__PURE__ */ jsx("path", { d: "M10.3 21a1.94 1.94 0 0 0 3.4 0" })]
-		}), unreadCount > 0 && /* @__PURE__ */ jsx("span", {
-			className: "absolute -top-1 -right-1 inline-flex min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-brand px-1 text-[10px] leading-[14px] font-bold text-white tabular-nums",
-			children: unreadCount > 99 ? "99+" : unreadCount
+	}, [isLoggedIn, live]);
+	const handleMarkOne = async (note) => {
+		if (note.isRead) return;
+		setItems((prev) => prev.map((x) => x.id === note.id ? {
+			...x,
+			isRead: true
+		} : x));
+		setUnreadCount((c) => Math.max(0, c - 1));
+		if (note.isBackend && live) try {
+			await markNotificationRead(note.id);
+		} catch {}
+	};
+	const handleMarkAll = async () => {
+		if (busyAll || unreadCount === 0) return;
+		if (!live) {
+			setItems((prev) => prev.map((x) => ({
+				...x,
+				isRead: true
+			})));
+			setUnreadCount(0);
+			return;
+		}
+		setBusyAll(true);
+		try {
+			await markAllNotificationsRead();
+			setItems((prev) => prev.map((x) => ({
+				...x,
+				isRead: true
+			})));
+			setUnreadCount(0);
+		} catch (error) {
+			setErr(error instanceof Error ? error.message : "Không thể đánh dấu đã đọc tất cả.");
+		} finally {
+			setBusyAll(false);
+		}
+	};
+	const visibleItems = filter === "unread" ? items.filter((n) => !n.isRead) : items;
+	return /* @__PURE__ */ jsxs("div", {
+		className: "relative",
+		ref,
+		children: [/* @__PURE__ */ jsxs("button", {
+			type: "button",
+			"aria-label": unreadCount > 0 ? `Thông báo (${unreadCount} chưa đọc)` : "Thông báo",
+			"aria-haspopup": "menu",
+			"aria-expanded": open,
+			onClick: () => setOpen((v) => !v),
+			className: "group relative flex size-10 items-center justify-center rounded-full border border-line bg-white text-muted shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-[color,border-color,background-color,transform] duration-200 ease-out hover:border-sage-line hover:bg-surface-2 hover:text-ink active:scale-[0.96]",
+			children: [/* @__PURE__ */ jsxs("svg", {
+				viewBox: "0 0 24 24",
+				fill: "none",
+				stroke: "currentColor",
+				strokeWidth: "1.8",
+				strokeLinecap: "round",
+				strokeLinejoin: "round",
+				"aria-hidden": "true",
+				className: "size-[18px] transition-transform duration-200 group-hover:scale-105",
+				children: [/* @__PURE__ */ jsx("path", { d: "M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" }), /* @__PURE__ */ jsx("path", { d: "M10.3 21a1.94 1.94 0 0 0 3.4 0" })]
+			}), unreadCount > 0 && /* @__PURE__ */ jsx("span", {
+				className: "absolute -top-1 -right-1 inline-flex min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-brand px-1 text-[10px] leading-[14px] font-bold text-white tabular-nums",
+				children: unreadCount > 99 ? "99+" : unreadCount
+			})]
+		}), open && /* @__PURE__ */ jsxs("div", {
+			role: "menu",
+			"aria-label": "Danh sách thông báo",
+			className: "absolute top-full right-0 mt-2.5 flex max-h-[calc(100dvh-5.75rem)] w-[min(360px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)]",
+			children: [
+				/* @__PURE__ */ jsxs("div", {
+					className: "flex items-center justify-between gap-2 border-b border-line-soft bg-surface-2/60 px-4 py-3",
+					children: [/* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx("p", {
+						className: "text-base font-bold text-ink",
+						children: "Thông báo"
+					}), /* @__PURE__ */ jsx("p", {
+						className: "text-xs text-muted",
+						children: unreadCount > 0 ? `${unreadCount} chưa đọc` : "Đã đọc tất cả"
+					})] }), unreadCount > 0 && /* @__PURE__ */ jsx("button", {
+						type: "button",
+						disabled: busyAll,
+						onClick: () => void handleMarkAll(),
+						className: "min-h-9 rounded-lg px-2.5 text-xs font-semibold text-brand-deep transition-colors hover:bg-surface-2 hover:underline disabled:opacity-50",
+						children: busyAll ? "Đang xử lý..." : "Đọc tất cả"
+					})]
+				}),
+				/* @__PURE__ */ jsx("div", {
+					className: "flex items-center gap-1.5 border-b border-line-soft px-4 py-2",
+					children: [["all", `Tất cả (${items.length})`], ["unread", `Chưa đọc (${unreadCount})`]].map(([key, label]) => /* @__PURE__ */ jsx("button", {
+						type: "button",
+						onClick: () => setFilter(key),
+						className: `min-h-8 rounded-full px-3 text-xs font-semibold transition-colors ${filter === key ? "bg-brand/12 text-brand-deep" : "text-muted hover:bg-surface-2 hover:text-ink"}`,
+						children: label
+					}, key))
+				}),
+				/* @__PURE__ */ jsxs("div", {
+					className: "flex-1 divide-y divide-line-soft overflow-y-auto overscroll-contain",
+					children: [err && /* @__PURE__ */ jsx("p", {
+						role: "alert",
+						className: "px-4 py-2.5 text-xs font-medium text-warn",
+						children: err
+					}), loading && items.length === 0 ? /* @__PURE__ */ jsx("p", {
+						className: "px-4 py-6 text-center text-sm text-muted",
+						children: "Đang tải thông báo..."
+					}) : visibleItems.length === 0 ? /* @__PURE__ */ jsx("p", {
+						className: "px-4 py-6 text-center text-sm text-muted",
+						children: filter === "unread" ? "Không có thông báo chưa đọc." : "Chưa có thông báo nào."
+					}) : visibleItems.map((note) => /* @__PURE__ */ jsxs("button", {
+						type: "button",
+						role: "menuitem",
+						onClick: () => void handleMarkOne(note),
+						className: `flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-surface-2 ${note.isRead ? "bg-white" : "bg-brand/[0.04]"}`,
+						children: [
+							/* @__PURE__ */ jsxs("div", {
+								className: "flex items-start justify-between gap-2",
+								children: [/* @__PURE__ */ jsx("span", {
+									className: "text-sm font-bold text-ink",
+									children: note.title
+								}), !note.isRead && /* @__PURE__ */ jsx("span", {
+									className: "mt-1.5 size-2 shrink-0 rounded-full bg-brand",
+									"aria-hidden": "true"
+								})]
+							}),
+							/* @__PURE__ */ jsx("p", {
+								className: "text-sm leading-5 text-body",
+								children: note.message
+							}),
+							/* @__PURE__ */ jsx("span", {
+								className: "text-xs text-muted tabular-nums",
+								children: note.time
+							})
+						]
+					}, note.id))]
+				}),
+				/* @__PURE__ */ jsx("div", {
+					className: "border-t border-line-soft bg-surface-2/40 px-4 py-2 text-right",
+					children: /* @__PURE__ */ jsx(Link, {
+						to: "/account/profile",
+						onClick: () => setOpen(false),
+						className: "inline-flex min-h-9 items-center text-xs font-semibold text-brand-deep hover:underline",
+						children: "Hồ sơ cá nhân →"
+					})
+				})
+			]
 		})]
 	});
 }
 //#endregion
 //#region src/components/MobileNav.tsx
+var TAB_ICON = {
+	"/": Home,
+	"/scanner": ScanLine,
+	"/map": MapPin,
+	"/rewards": Gift,
+	"/blog": BookOpen
+};
 /** Bottom tab bar, only visible below the `lg` breakpoint. */
 function MobileNav() {
 	return /* @__PURE__ */ jsx("nav", {
-		"aria-label": "Điều hướng chính",
-		className: "fixed right-3 bottom-3 left-3 z-40 grid grid-cols-4 overflow-hidden rounded-[14px] border border-line/80 bg-white/94 shadow-[0_8px_28px_rgba(15,31,21,0.14)] backdrop-blur-xl lg:hidden",
-		children: MOBILE_LINKS.map((link) => /* @__PURE__ */ jsx(NavLink, {
-			to: link.to,
-			end: link.to === "/",
-			className: ({ isActive }) => `grid min-h-12 place-items-center border-0 border-r border-line/60 px-1 text-xs font-semibold last:border-r-0 ${isActive ? "bg-surface-2 text-brand-deep" : "text-body"}`,
-			children: link.label
-		}, link.to))
+		"aria-label": "Điều hướng chính (di động)",
+		className: "fixed right-2 bottom-2.5 left-2 z-40 grid grid-cols-5 overflow-hidden rounded-[14px] border border-line/80 bg-white/94 shadow-[0_8px_28px_rgba(15,31,21,0.14)] backdrop-blur-xl min-[360px]:right-2.5 min-[360px]:left-2.5 lg:hidden",
+		children: NAV_LINKS.map((link) => {
+			const Icon = TAB_ICON[link.to];
+			return /* @__PURE__ */ jsx(NavLink, {
+				to: link.to,
+				end: link.to === "/",
+				title: link.label,
+				"aria-label": link.label,
+				className: ({ isActive }) => `flex min-h-[54px] flex-col items-center justify-start gap-1 border-0 border-r border-line/60 px-0.5 pt-2 pb-1.5 text-center text-[10px] leading-[1.15] font-semibold tracking-[-0.015em] transition-colors last:border-r-0 min-[412px]:text-[11px] sm:px-1 sm:text-xs sm:tracking-normal ${isActive ? "bg-surface-2 text-brand-deep" : "text-body"}`,
+				children: ({ isActive }) => /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Icon, {
+					"aria-hidden": "true",
+					strokeWidth: isActive ? 2.15 : 1.75,
+					className: "size-[17px] shrink-0 sm:size-[18px]"
+				}), /* @__PURE__ */ jsx("span", { children: "mobileLabel" in link ? link.mobileLabel : link.label })] })
+			}, link.to);
+		})
 	});
 }
 //#endregion
@@ -862,7 +1145,7 @@ function getSafeBounds(w, h) {
 		minX,
 		maxX,
 		minY,
-		maxY: Math.max(minY, h - size - (desktop ? 24 : 80)),
+		maxY: Math.max(minY, h - size - (desktop ? 24 : 90)),
 		size
 	};
 }
@@ -1091,12 +1374,13 @@ var TREE_FAB_ROUTES = /* @__PURE__ */ new Set([
 function Layout() {
 	const { pathname } = useLocation();
 	const showTreeFab = TREE_FAB_ROUTES.has(pathname);
+	const isChatPage = pathname === "/chat";
 	useEffect(() => {
 		window.scrollTo({ top: 0 });
 		ensureActiveAuthSession();
 	}, [pathname]);
 	return /* @__PURE__ */ jsxs("div", {
-		className: "min-h-dvh bg-page pb-20 lg:pb-0",
+		className: `min-h-dvh bg-page ${isChatPage ? "pb-[68px] lg:pb-0" : "pb-20 lg:pb-0"}`,
 		children: [
 			/* @__PURE__ */ jsx(Navbar, {}),
 			/* @__PURE__ */ jsx("main", {
@@ -1106,7 +1390,7 @@ function Layout() {
 					children: /* @__PURE__ */ jsx(Outlet, {})
 				})
 			}),
-			/* @__PURE__ */ jsx(Footer, {}),
+			!isChatPage && /* @__PURE__ */ jsx(Footer, {}),
 			showTreeFab && /* @__PURE__ */ jsx(VirtualTreeFab, {}),
 			/* @__PURE__ */ jsx(MobileNav, {})
 		]
@@ -1673,7 +1957,7 @@ function AdminShell({ role }) {
 							onClick: () => setOpen((v) => !v),
 							"aria-expanded": open,
 							"aria-controls": "admin-nav",
-							className: "grid size-9 place-items-center rounded-lg text-ink transition-colors hover:bg-surface-2 lg:hidden",
+							className: "grid size-10 place-items-center rounded-lg text-ink transition-colors hover:bg-surface-2 lg:hidden",
 							children: [/* @__PURE__ */ jsx("svg", {
 								viewBox: "0 0 24 24",
 								className: "size-5",
@@ -1701,6 +1985,7 @@ function AdminShell({ role }) {
 							className: "ml-auto flex items-center gap-2.5",
 							children: [/* @__PURE__ */ jsx(NotificationBellPopover, { role }), /* @__PURE__ */ jsx(AccountMenu, {
 								name: session?.name ?? "",
+								avatarUrl: session?.avatarUrl,
 								label: ROLE_LABEL[role],
 								items: ACCOUNT_ITEMS[role]
 							})]
@@ -1726,7 +2011,7 @@ function AdminShell({ role }) {
 								children: sec.items.map((item) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsx(NavLink, {
 									to: item.to,
 									end: item.to.split("/").length <= 2,
-									className: ({ isActive }) => `block rounded-md px-3 py-2 text-[13px] leading-5 font-medium transition-colors ${isActive ? "bg-brand text-white" : "text-body hover:bg-surface-2 hover:text-ink"}`,
+									className: ({ isActive }) => `flex min-h-10 items-center rounded-md px-3 py-2 text-sm leading-5 font-medium transition-colors ${isActive ? "bg-brand text-white" : "text-body hover:bg-surface-2 hover:text-ink"}`,
 									children: item.label
 								}) }, item.to))
 							})]
@@ -1734,7 +2019,7 @@ function AdminShell({ role }) {
 					}), /* @__PURE__ */ jsx("button", {
 						type: "button",
 						onClick: logout,
-						className: "mx-4 mb-4 w-[calc(100%-2rem)] shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-semibold text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 hover:text-red-800 lg:mt-auto",
+						className: "mx-4 mb-4 min-h-11 w-[calc(100%-2rem)] shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 hover:text-red-800 lg:mt-auto",
 						children: "Đăng xuất"
 					})]
 				}), /* @__PURE__ */ jsx("main", {
@@ -1763,7 +2048,7 @@ function AdminShell({ role }) {
 								className: "mt-4",
 								children: /* @__PURE__ */ jsx(Link, {
 									to: "/staff",
-									className: "btn-primary inline-flex h-10 items-center px-4 text-xs font-semibold",
+									className: "btn-primary inline-flex min-h-10 items-center px-4 text-sm font-semibold",
 									children: "Quay về tổng quan Nhân viên"
 								})
 							})
@@ -1784,16 +2069,13 @@ function AdminShell({ role }) {
 		]
 	});
 }
-function initialsOf(name) {
-	return name.split(" ").slice(-2).map((part) => part[0]).join("").toUpperCase();
-}
 /** Avatar + menu tài khoản ở thanh trên.
 *
 *  Menu tài khoản KHÔNG nằm trong sidebar: sidebar là danh sách màn hình của
 *  khu vực làm việc, trộn 2 mục tài khoản dùng chung vào đó thì không phân biệt
 *  được đâu là việc công việc, đâu là việc của chính mình. Ở đây nó nằm sau
 *  avatar, đúng chỗ của nó ở mọi app khác. */
-function AccountMenu({ name, label, items }) {
+function AccountMenu({ name, avatarUrl, label, items }) {
 	const [open, setOpen] = useState(false);
 	const ref = useRef(null);
 	useEffect(() => {
@@ -1820,14 +2102,15 @@ function AccountMenu({ name, label, items }) {
 			"aria-haspopup": "menu",
 			"aria-expanded": open,
 			onClick: () => setOpen((v) => !v),
-			className: "flex items-center gap-1.5 rounded-full border border-line bg-white py-1 pr-2 pl-1 transition-colors hover:border-sage-line hover:bg-surface-2",
+			className: "flex min-h-10 items-center gap-1.5 rounded-full border border-line bg-white py-1 pr-2.5 pl-1 transition-colors hover:border-sage-line hover:bg-surface-2",
 			children: [
-				/* @__PURE__ */ jsx("span", {
-					className: "grid size-8 place-items-center rounded-full bg-[linear-gradient(145deg,#00874a,#004826)] text-[12px] leading-none font-bold tracking-wide text-white",
-					children: initialsOf(name)
+				/* @__PURE__ */ jsx(UserAvatar, {
+					name,
+					avatarUrl,
+					size: "sm"
 				}),
 				/* @__PURE__ */ jsx("span", {
-					className: "hidden text-[13px] text-muted sm:block",
+					className: "hidden text-sm font-medium text-muted sm:block",
 					children: name
 				}),
 				/* @__PURE__ */ jsx("svg", {
@@ -1849,16 +2132,17 @@ function AccountMenu({ name, label, items }) {
 			className: "absolute top-full right-0 mt-2 w-64 overflow-hidden rounded-2xl border border-line bg-white shadow-[0_18px_44px_-8px_rgba(15,31,21,0.16)]",
 			children: [/* @__PURE__ */ jsxs("div", {
 				className: "flex items-center gap-3 border-b border-line-soft bg-surface-2/60 p-4",
-				children: [/* @__PURE__ */ jsx("span", {
-					className: "grid size-11 shrink-0 place-items-center rounded-full bg-[linear-gradient(145deg,#00874a,#004826)] text-sm leading-none font-bold tracking-wide text-white",
-					children: initialsOf(name)
+				children: [/* @__PURE__ */ jsx(UserAvatar, {
+					name,
+					avatarUrl,
+					size: "md"
 				}), /* @__PURE__ */ jsxs("div", {
 					className: "min-w-0",
 					children: [/* @__PURE__ */ jsx("p", {
 						className: "truncate text-sm font-bold text-ink",
 						children: name
 					}), /* @__PURE__ */ jsx("p", {
-						className: "text-xs text-muted",
+						className: "text-sm text-muted",
 						children: label
 					})]
 				})]
@@ -1867,10 +2151,14 @@ function AccountMenu({ name, label, items }) {
 				children: [items.map(([to, item]) => /* @__PURE__ */ jsxs(Link, {
 					to,
 					onClick: () => setOpen(false),
-					className: "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink",
+					className: "flex min-h-10 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-body transition-colors hover:bg-surface-2 hover:text-ink",
 					children: [/* @__PURE__ */ jsxs("svg", {
 						viewBox: "0 0 24 24",
 						fill: "none",
+						stroke: "currentColor",
+						strokeWidth: "1.8",
+						strokeLinecap: "round",
+						strokeLinejoin: "round",
 						"aria-hidden": "true",
 						className: "size-4 text-muted",
 						children: [/* @__PURE__ */ jsx("circle", {
@@ -1886,7 +2174,7 @@ function AccountMenu({ name, label, items }) {
 						signOut();
 						openAuthPopup("login");
 					},
-					className: "mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 hover:text-red-800",
+					className: "mt-1 flex min-h-10 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50 hover:text-red-800",
 					children: [/* @__PURE__ */ jsx("svg", {
 						viewBox: "0 0 24 24",
 						fill: "none",
@@ -2022,7 +2310,7 @@ function NotificationBellPopover({ role }) {
 			onClick: () => setOpen((v) => !v),
 			"aria-label": unreadCount > 0 ? `Thông báo (${unreadCount} chưa đọc)` : "Thông báo",
 			"aria-expanded": open,
-			className: "relative grid size-9 place-items-center rounded-full border border-line bg-white text-muted transition-colors hover:border-sage-line hover:bg-surface-2 hover:text-ink",
+			className: "relative grid size-10 place-items-center rounded-full border border-line bg-white text-muted transition-colors hover:border-sage-line hover:bg-surface-2 hover:text-ink",
 			children: [/* @__PURE__ */ jsxs("svg", {
 				viewBox: "0 0 24 24",
 				fill: "none",
@@ -2048,13 +2336,13 @@ function NotificationBellPopover({ role }) {
 						className: "text-sm font-bold text-ink",
 						children: "Thông báo hệ thống"
 					}), /* @__PURE__ */ jsx("p", {
-						className: "text-[11px] text-muted",
+						className: "text-xs text-muted",
 						children: unreadCount > 0 ? `${unreadCount} thông báo chưa đọc` : "Đã đọc tất cả"
 					})] }), live && unreadCount > 0 && /* @__PURE__ */ jsx("button", {
 						type: "button",
 						disabled: busyAll,
 						onClick: () => void handleMarkAll(),
-						className: "text-xs font-semibold text-brand-deep hover:underline disabled:opacity-50",
+						className: "min-h-10 px-2 text-sm font-semibold text-brand-deep hover:underline disabled:opacity-50",
 						children: busyAll ? "Đang xử lý..." : "Đọc tất cả"
 					})]
 				}),
@@ -2062,16 +2350,16 @@ function NotificationBellPopover({ role }) {
 					className: "max-h-80 overflow-y-auto divide-y divide-line-soft",
 					children: [err && /* @__PURE__ */ jsx("p", {
 						role: "alert",
-						className: "px-4 py-2.5 text-xs font-medium text-warn",
+						className: "px-4 py-2.5 text-sm font-medium text-warn",
 						children: err
 					}), !live ? /* @__PURE__ */ jsx("p", {
-						className: "px-4 py-6 text-center text-xs text-muted",
+						className: "px-4 py-6 text-center text-sm leading-6 text-muted",
 						children: "Kết nối tài khoản Backend để nhận thông báo thời gian thực."
 					}) : loading && items.length === 0 ? /* @__PURE__ */ jsx("p", {
-						className: "px-4 py-6 text-center text-xs text-muted",
+						className: "px-4 py-6 text-center text-sm leading-6 text-muted",
 						children: "Đang tải thông báo..."
 					}) : items.length === 0 ? /* @__PURE__ */ jsx("p", {
-						className: "px-4 py-6 text-center text-xs text-muted",
+						className: "px-4 py-6 text-center text-sm leading-6 text-muted",
 						children: "Chưa có thông báo nào."
 					}) : items.map((n) => /* @__PURE__ */ jsxs("button", {
 						type: "button",
@@ -2081,7 +2369,7 @@ function NotificationBellPopover({ role }) {
 							/* @__PURE__ */ jsxs("div", {
 								className: "flex items-start justify-between gap-2",
 								children: [/* @__PURE__ */ jsx("span", {
-									className: "text-xs font-bold text-ink",
+									className: "text-sm font-bold text-ink",
 									children: n.title
 								}), !n.isRead && /* @__PURE__ */ jsx("span", {
 									className: "mt-1 size-2 shrink-0 rounded-full bg-brand",
@@ -2089,11 +2377,11 @@ function NotificationBellPopover({ role }) {
 								})]
 							}),
 							/* @__PURE__ */ jsx("p", {
-								className: "text-xs leading-5 text-body",
+								className: "text-sm leading-6 text-body",
 								children: n.message
 							}),
 							/* @__PURE__ */ jsx("span", {
-								className: "text-[11px] text-muted tabular-nums",
+								className: "text-xs text-muted tabular-nums",
 								children: new Date(n.createdAt).toLocaleString("vi-VN")
 							})
 						]
@@ -2104,7 +2392,7 @@ function NotificationBellPopover({ role }) {
 					children: /* @__PURE__ */ jsx(Link, {
 						to: `/${role}/account`,
 						onClick: () => setOpen(false),
-						className: "text-xs font-semibold text-brand-deep hover:underline",
+						className: "inline-flex min-h-10 items-center text-sm font-semibold text-brand-deep hover:underline",
 						children: "Mở trang Hồ sơ & Thông báo →"
 					})
 				})
@@ -2149,61 +2437,57 @@ function RequireRole({ roles, children }) {
 *  đồng bộ, `lazy` chưa resolve sẽ render ra fallback nên phải nạp trước. */
 var loaders = {
 	Home: () => import("./assets/Home-BkvgQn6v.js"),
-	Blog: () => import("./assets/Blog-DAmbu5nB.js"),
-	BlogDetail: () => import("./assets/BlogDetail-BMwW6G0K.js"),
-	Rewards: () => import("./assets/Rewards-CHgQMsyX.js"),
-	LeaderboardPage: () => import("./assets/Leaderboard-DG6rGJmz.js"),
-	Scanner: () => import("./assets/Scanner-D1oYBZmK.js"),
-	MapPage: () => import("./assets/MapPage-DJ521Y2U.js"),
-	Partners: () => import("./assets/Partners-DDc0tboD.js"),
-	Feedback: () => import("./assets/Feedback-BddLpcBW.js"),
-	Guidance: () => import("./assets/Guidance-Dw1mMNVq.js"),
-	Waste: () => import("./assets/Waste-BzBjKNsv.js"),
-	Chat: () => import("./assets/Chat-BNQ4XPRY.js"),
-	JoinRecycler: () => import("./assets/JoinRecycler-CtjnJo5C.js"),
-	ResetPassword: () => import("./assets/ResetPassword-CaGPa8lK.js"),
-	Terms: () => import("./assets/Terms-BtGCtFSe.js"),
-	EcoFactsPage: () => import("./assets/EcoFactsPage-DTZ7nDR-.js"),
-	Login: () => import("./assets/Login-DZBXboIG.js"),
-	Register: () => import("./assets/Register-BGU-5WwP.js"),
-	Logout: () => import("./assets/Logout-rhaiOvHH.js"),
+	Blog: () => import("./assets/Blog-CCejAX3v.js"),
+	BlogDetail: () => import("./assets/BlogDetail-ZPKCHK1s.js"),
+	Rewards: () => import("./assets/Rewards-CL179Djv.js"),
+	LeaderboardPage: () => import("./assets/Leaderboard-CkXj9sbN.js"),
+	Scanner: () => import("./assets/Scanner-C236eAni.js"),
+	MapPage: () => import("./assets/MapPage-CHlHxBOY.js"),
+	Feedback: () => import("./assets/Feedback-yfOQbco4.js"),
+	Guidance: () => import("./assets/Guidance-CN-0SYCX.js"),
+	Waste: () => import("./assets/Waste-Di22999D.js"),
+	Chat: () => import("./assets/Chat-DkdIhGfB.js"),
+	JoinRecycler: () => import("./assets/JoinRecycler-Ch5hjSkS.js"),
+	ResetPassword: () => import("./assets/ResetPassword-BkRukC1c.js"),
+	Terms: () => import("./assets/Terms-DsGraY4o.js"),
+	EcoFactsPage: () => import("./assets/EcoFactsPage-d6Bklq7M.js"),
+	Login: () => import("./assets/Login-BHrR6JlD.js"),
+	Register: () => import("./assets/Register-DRFngj4q.js"),
+	Logout: () => import("./assets/Logout-DxmH3lJD.js"),
 	NotFound: () => import("./assets/NotFound-Cuzh8QZo.js"),
-	Profile: () => import("./assets/Profile-BJ5xu7NZ.js"),
-	Notifications: () => import("./assets/Notifications-7JpDogEq.js"),
-	Password: () => import("./assets/Password-CS45Qbos.js"),
-	UserHome: () => import("./assets/Home-DG2A8o9j.js"),
-	Handover: () => import("./assets/Handover-CHaYHs7N.js"),
-	Receipt: () => import("./assets/Receipt-CqiY4ywj.js"),
-	Payout: () => import("./assets/Payout-C-TZiOGQ.js"),
-	Transactions: () => import("./assets/Transactions-D6AQ6M23.js"),
-	Gamification: () => import("./assets/Gamification-D31OKpdP.js"),
-	RecyclerHome: () => import("./assets/Home-Bi2xjWLZ.js"),
-	Requests: () => import("./assets/Requests-BOm0AJhA.js"),
-	Catalog: () => import("./assets/Catalog-BrCWg211.js"),
-	RecyclerReceipt: () => import("./assets/Receipt-eiOTTxQf.js"),
-	StaffHome: () => import("./assets/Home-0r7zASwp.js"),
-	AiReview: () => import("./assets/AiReview-BRbLj3tj.js"),
-	Dataset: () => import("./assets/Dataset-CxkjUPov.js"),
-	Applications: () => import("./assets/Applications-BD1nQphN.js"),
-	Complaints: () => import("./assets/Complaints-D9qipZmK.js"),
-	Accounts: () => import("./assets/Accounts-BVFOQax_.js"),
-	BlogEditor: () => import("./assets/BlogEditor-DamD5S6s.js"),
-	EcoFacts: () => import("./assets/EcoFacts-CpiYWn78.js"),
-	Gifts: () => import("./assets/Gifts-Bmn_Ywhl.js"),
-	StaffCheckIn: () => import("./assets/CheckIn-BbALxNZj.js"),
-	AdminHome: () => import("./assets/Home-hl3j4qUK.js"),
-	Reports: () => import("./assets/Reports-5rwfrv9a.js"),
-	StaffAccounts: () => import("./assets/StaffAccounts-B14WXELa.js"),
-	Permissions: () => import("./assets/Permissions-BKnoyY5X.js"),
-	BlogReview: () => import("./assets/BlogReview-B5bZfrqy.js"),
-	Categories: () => import("./assets/Categories-CTK5j1f-.js"),
-	Policy: () => import("./assets/Policy-CrolMlMo.js"),
-	GamificationConfig: () => import("./assets/Gamification-C2tPL2M_.js"),
-	LeaderboardConfig: () => import("./assets/Leaderboard-BcHy73WL.js"),
-	Fees: () => import("./assets/Fees-BqchdO3v.js"),
-	Reconciliation: () => import("./assets/Reconciliation-Di-M7C2g.js"),
-	AccountProfile: () => import("./assets/AccountProfile-9UypDouE.js"),
-	AccountPassword: () => import("./assets/AccountPassword-DZlQkZSj.js")
+	Profile: () => import("./assets/Profile-Dew-13cO.js"),
+	Password: () => import("./assets/Password-ruTkm9Vi.js"),
+	Receipt: () => import("./assets/Receipt-DV7rmi7F.js"),
+	Payout: () => import("./assets/Payout-BextYZzi.js"),
+	Transactions: () => import("./assets/Transactions-C3lnnlxN.js"),
+	Gamification: () => import("./assets/Gamification-DqbN3I2q.js"),
+	RecyclerHome: () => import("./assets/Home-Djprglvk.js"),
+	Requests: () => import("./assets/Requests-D5gmY4pX.js"),
+	Catalog: () => import("./assets/Catalog-CMJ6ewKe.js"),
+	RecyclerReceipt: () => import("./assets/Receipt-C1qa_U0p.js"),
+	StaffHome: () => import("./assets/Home-BJwdtSwq.js"),
+	AiReview: () => import("./assets/AiReview-UHbPt07A.js"),
+	Dataset: () => import("./assets/Dataset-ABscQxS5.js"),
+	Applications: () => import("./assets/Applications-j5X2ZSRm.js"),
+	Complaints: () => import("./assets/Complaints-DzdKCW52.js"),
+	Accounts: () => import("./assets/Accounts-m6Gv930J.js"),
+	BlogEditor: () => import("./assets/BlogEditor-C3a4LlsU.js"),
+	EcoFacts: () => import("./assets/EcoFacts-Ilppogoq.js"),
+	Gifts: () => import("./assets/Gifts-BqPqsVEe.js"),
+	StaffCheckIn: () => import("./assets/CheckIn-BYa85FNz.js"),
+	AdminHome: () => import("./assets/Home-DdpAj0Mw.js"),
+	Reports: () => import("./assets/Reports-UR_TTTpU.js"),
+	StaffAccounts: () => import("./assets/StaffAccounts-DB1Q2Eb7.js"),
+	Permissions: () => import("./assets/Permissions-MC9hyGaO.js"),
+	BlogReview: () => import("./assets/BlogReview-BrBI2Mza.js"),
+	Categories: () => import("./assets/Categories-BWG47Zen.js"),
+	Policy: () => import("./assets/Policy-BCnLKKXv.js"),
+	GamificationConfig: () => import("./assets/Gamification-DH52peWh.js"),
+	LeaderboardConfig: () => import("./assets/Leaderboard-Bk0BoaKr.js"),
+	Fees: () => import("./assets/Fees-CGFAyS5r.js"),
+	Reconciliation: () => import("./assets/Reconciliation-D7uJE93j.js"),
+	AccountProfile: () => import("./assets/AccountProfile-JIKh_ctK.js"),
+	AccountPassword: () => import("./assets/AccountPassword-C7NfhGPq.js")
 };
 var PAGES = Object.fromEntries(Object.keys(loaders).map((name) => [name, lazy(loaders[name])]));
 function preloadPages() {
@@ -2213,7 +2497,7 @@ function preloadPages() {
 //#region src/App.tsx
 /** Trang nạp theo route (xem `src/lazyPages.ts`) - không import tĩnh ở đây
 *  nữa, để bundle không kéo toàn bộ project vào lần mở đầu tiên. */
-var { Home, Blog, BlogDetail, Rewards, LeaderboardPage, Scanner, MapPage, Partners, Feedback, Guidance, Waste, Chat, JoinRecycler, ResetPassword, Terms, EcoFactsPage, Login, Register, Logout, NotFound, Profile, Notifications, Password, UserHome, Handover, Receipt, Payout, Transactions, Gamification, RecyclerHome, Requests, Catalog, RecyclerReceipt, StaffHome, AiReview, Dataset, Applications, Complaints, Accounts, BlogEditor, EcoFacts, Gifts, StaffCheckIn, AdminHome, Reports, StaffAccounts, Permissions, BlogReview, Categories, Policy, GamificationConfig, LeaderboardConfig, Fees, Reconciliation, AccountProfile, AccountPassword } = PAGES;
+var { Home: Home$1, Blog, BlogDetail, Rewards, LeaderboardPage, Scanner, MapPage, Feedback, Guidance, Waste, Chat, JoinRecycler, ResetPassword, Terms, EcoFactsPage, Login, Register, Logout, NotFound, Profile, Password, Receipt, Payout, Transactions, Gamification, RecyclerHome, Requests, Catalog, RecyclerReceipt, StaffHome, AiReview, Dataset, Applications, Complaints, Accounts, BlogEditor, EcoFacts, Gifts, StaffCheckIn, AdminHome, Reports, StaffAccounts, Permissions, BlogReview, Categories, Policy, GamificationConfig, LeaderboardConfig, Fees, Reconciliation, AccountProfile, AccountPassword } = PAGES;
 /** Mọi route sau đăng nhập đều khai báo vai trò được vào. Không có route nào
 *  "ai cũng vào được": mọi chức năng đều thuộc đúng một vai trò trong tài
 *  liệu use case.
@@ -2222,10 +2506,6 @@ var { Home, Blog, BlogDetail, Rewards, LeaderboardPage, Scanner, MapPage, Partne
 *  thật với `MemoryRouter`, nếu không thì mọi route đều chỉ được test bằng
 *  cách render lẻ từng component — hỏng phần ghép route (RequireRole, Portal,
 *  Layout) thì test vẫn xanh. */
-function RolePortal() {
-	const session = useSession();
-	return /* @__PURE__ */ jsx(Portal, { role: session?.role === "recycler" ? "recycler" : "user" });
-}
 function StaffWorkspaceShell() {
 	const session = useSession();
 	return /* @__PURE__ */ jsx(AdminShell, { role: session?.role === "admin" ? "admin" : "staff" });
@@ -2275,7 +2555,7 @@ function AppRoutes() {
 				children: [
 					/* @__PURE__ */ jsx(Route, {
 						index: true,
-						element: /* @__PURE__ */ jsx(Home, {})
+						element: /* @__PURE__ */ jsx(Home$1, {})
 					}),
 					/* @__PURE__ */ jsx(Route, {
 						path: "blog",
@@ -2300,10 +2580,6 @@ function AppRoutes() {
 					/* @__PURE__ */ jsx(Route, {
 						path: "map",
 						element: /* @__PURE__ */ jsx(MapPage, {})
-					}),
-					/* @__PURE__ */ jsx(Route, {
-						path: "partners",
-						element: /* @__PURE__ */ jsx(Partners, {})
 					}),
 					/* @__PURE__ */ jsx(Route, {
 						path: "feedback",
@@ -2347,7 +2623,10 @@ function AppRoutes() {
 							}),
 							/* @__PURE__ */ jsx(Route, {
 								path: "notifications",
-								element: /* @__PURE__ */ jsx(Notifications, {})
+								element: /* @__PURE__ */ jsx(Navigate, {
+									to: "/account/profile",
+									replace: true
+								})
 							}),
 							/* @__PURE__ */ jsx(Route, {
 								path: "password",
@@ -2358,51 +2637,47 @@ function AppRoutes() {
 					/* @__PURE__ */ jsx(Route, {
 						element: /* @__PURE__ */ jsx(RequireRole, {
 							roles: ["user", "recycler"],
-							children: /* @__PURE__ */ jsx(RolePortal, {})
+							children: /* @__PURE__ */ jsx(Outlet, {})
 						}),
 						children: /* @__PURE__ */ jsx(Route, {
 							path: "chat",
 							element: /* @__PURE__ */ jsx(Chat, {})
 						})
 					}),
-					/* @__PURE__ */ jsx(Route, {
+					/* @__PURE__ */ jsxs(Route, {
 						element: /* @__PURE__ */ jsx(RequireRole, {
 							roles: ["user"],
-							children: /* @__PURE__ */ jsx(Portal, { role: "user" })
+							children: /* @__PURE__ */ jsx(Outlet, {})
 						}),
-						children: /* @__PURE__ */ jsxs(Route, {
-							path: "user",
-							children: [
-								/* @__PURE__ */ jsx(Route, {
-									index: true,
-									element: /* @__PURE__ */ jsx(UserHome, {})
-								}),
-								/* @__PURE__ */ jsx(Route, {
-									path: "handover",
-									element: /* @__PURE__ */ jsx(Handover, {})
-								}),
-								/* @__PURE__ */ jsx(Route, {
-									path: "receipt",
-									element: /* @__PURE__ */ jsx(Receipt, {})
-								}),
-								/* @__PURE__ */ jsx(Route, {
-									path: "payout",
-									element: /* @__PURE__ */ jsx(Payout, {})
-								}),
-								/* @__PURE__ */ jsx(Route, {
-									path: "subscription",
-									element: /* @__PURE__ */ jsx(Payout, {})
-								}),
-								/* @__PURE__ */ jsx(Route, {
-									path: "transactions",
-									element: /* @__PURE__ */ jsx(Transactions, {})
-								}),
-								/* @__PURE__ */ jsx(Route, {
-									path: "gamification",
-									element: /* @__PURE__ */ jsx(Gamification, {})
+						children: [
+							/* @__PURE__ */ jsx(Route, {
+								path: "user/handover",
+								element: /* @__PURE__ */ jsx(Navigate, {
+									to: "/chat?newHandover=1",
+									replace: true
 								})
-							]
-						})
+							}),
+							/* @__PURE__ */ jsx(Route, {
+								path: "user/receipt",
+								element: /* @__PURE__ */ jsx(Receipt, {})
+							}),
+							/* @__PURE__ */ jsx(Route, {
+								path: "user/payout",
+								element: /* @__PURE__ */ jsx(Payout, {})
+							}),
+							/* @__PURE__ */ jsx(Route, {
+								path: "user/subscription",
+								element: /* @__PURE__ */ jsx(Payout, {})
+							}),
+							/* @__PURE__ */ jsx(Route, {
+								path: "user/transactions",
+								element: /* @__PURE__ */ jsx(Transactions, {})
+							}),
+							/* @__PURE__ */ jsx(Route, {
+								path: "user/gamification",
+								element: /* @__PURE__ */ jsx(Gamification, {})
+							})
+						]
 					}),
 					/* @__PURE__ */ jsx(Route, {
 						element: /* @__PURE__ */ jsx(RequireRole, {
@@ -2583,13 +2858,11 @@ globalThis.localStorage = {
 /** URL nào kiểm bằng vai trò nào — ở đây chỉ vào các route có RequireRole. */
 var BY_ROLE = {
 	user: [
-		["/user", "Xin chào"],
-		["/user/handover", "Yêu cầu thu gom rác"],
 		["/user/receipt", "Xác nhận bàn giao rác"],
 		["/user/payout", "Quy chuẩn thanh toán tiền phế liệu trực tiếp"],
 		["/user/transactions", "Lịch sử biên nhận bàn giao"],
 		["/user/gamification", "Cây ảo của bạn"],
-		["/chat", "Tạo yêu cầu bàn giao"]
+		["/chat", "Tạo yêu cầu"]
 	],
 	recycler: [
 		["/recycler", "Trạng thái hoạt động"],

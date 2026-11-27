@@ -63,6 +63,7 @@
     background: var(--color-page);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    @apply text-[15px] leading-relaxed md:text-base;
   }
 
   button,
@@ -90,7 +91,7 @@
   }
 
   .eyebrow {
-    @apply text-xs font-semibold tracking-[0.2em] text-brand uppercase;
+    @apply text-[13px] font-semibold tracking-[0.2em] text-brand uppercase;
   }
 
   /* tiêu đề hiển thị dùng CHUNG màu brand với nút bấm, để cả giao diện
@@ -104,8 +105,9 @@
   .btn-primary,
   .btn-outline,
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
-      text-sm font-semibold whitespace-nowrap transition-colors;
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg
+      px-4.5 py-2.5 text-[15px] font-semibold whitespace-nowrap transition-colors
+      sm:min-h-[42px] sm:text-sm;
   }
 
   /* Một sắc xanh cho mọi thứ tô đậm: brand (#00703d). Trước nút chính dùng
@@ -320,14 +322,15 @@
 
   /* ponytail: sage-line not sage/40 -> 3.0:1 border, WCAG 1.4.11 */
   .input {
-    @apply h-12 w-full rounded-lg border border-sage-line bg-white px-3.5
-      text-sm text-ink transition-shadow outline-none placeholder:text-muted
-      focus:border-brand focus:shadow-[0_0_0_3px_rgba(0,112,61,0.14)];
+    @apply min-h-12 w-full rounded-lg border border-sage-line bg-white px-4 py-2.5
+      text-base text-ink transition-shadow outline-none placeholder:text-muted
+      focus:border-brand focus:shadow-[0_0_0_3px_rgba(0,112,61,0.14)]
+      sm:text-[15px];
   }
 
   .chip {
     @apply inline-flex items-center gap-2 rounded-full px-3.5 py-1.5
-      text-xs font-medium;
+      text-[13px] font-medium;
   }
 
   .link-underline {

@@ -116,3 +116,142 @@ export async function searchPlacesOnSubmit(
   }
 }
 
+export type BrowserGeolocationResult =
+  | { ok: true; lat: number; lng: number }
+  | { ok: false; message: string }
+
+async function queryGeolocationPermissionState(): Promise<PermissionState | "unknown"> {
+  if (typeof navigator === "undefined" || !("permissions" in navigator)) return "unknown"
+  try {
+    const status = await navigator.permissions.query({ name: "geolocation" })
+    return status.state
+  } catch {
+    return "unknown"
+  }
+}
+
+function tryWatchFixOnce(enableHighAccuracy: boolean, timeoutMs = 3500): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const timer = window.setTimeout(() => {
+      if (settled) return
+      settled = true
+      navigator.geolocation.clearWatch(watchId)
+      reject({ code: 3, message: "Timeout" } as GeolocationPositionError)
+    }, timeoutMs)
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timer)
+        navigator.geolocation.clearWatch(watchId)
+        resolve(pos)
+      },
+      (err) => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timer)
+        navigator.geolocation.clearWatch(watchId)
+        reject(err)
+      },
+      { enableHighAccuracy, timeout: timeoutMs, maximumAge: 300_000 },
+    )
+  })
+}
+
+/**
+ * Lấy toạ độ GPS hiện tại ngay trong sự kiện chạm của người dùng (không `await permissions.query`
+ * trước khi gọi fallback để tránh Safari/WebKit mất user-gesture activation).
+ */
+export async function requestBrowserGeolocation(
+  preferHighAccuracy: boolean = false,
+): Promise<BrowserGeolocationResult> {
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    return {
+      ok: false,
+      message:
+        "Trình duyệt không hỗ trợ định vị GPS. Bạn có thể chọn khu vực hoặc bấm trực tiếp lên bản đồ.",
+    }
+  }
+
+  const firstOpts: PositionOptions = preferHighAccuracy
+    ? { enableHighAccuracy: true, timeout: 4500, maximumAge: 60_000 }
+    : { enableHighAccuracy: false, timeout: 8000, maximumAge: 300_000 }
+
+  const fallbackOpts: PositionOptions = preferHighAccuracy
+    ? { enableHighAccuracy: false, timeout: 10_000, maximumAge: 300_000 }
+    : { enableHighAccuracy: true, timeout: 7000, maximumAge: 60_000 }
+
+  try {
+    const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        resolve,
+        (firstErr) => {
+          // Gọi ngay lớp dự phòng đồng bộ trong error callback (giữ nguyên user gesture;
+          // thử luôn chế độ thô nếu độ chính xác cao bị WebView từ chối riêng)
+          if (firstErr?.code === 1 && !preferHighAccuracy) {
+            reject(firstErr)
+            return
+          }
+          navigator.geolocation.getCurrentPosition(resolve, reject, fallbackOpts)
+        },
+        firstOpts,
+      )
+    })
+
+    return {
+      ok: true,
+      lat: Number(pos.coords.latitude.toFixed(6)),
+      lng: Number(pos.coords.longitude.toFixed(6)),
+    }
+  } catch (err) {
+    const geoErr = err as GeolocationPositionError | undefined
+    const code = geoErr?.code
+
+    // Trên một số máy Android/iOS, single-shot getCurrentPosition báo code 2/3 lúc chip GPS mới khởi động;
+    // thử nhanh watchPosition 3.5s để đánh thức FusedLocation trước khi kết luận lỗi.
+    if (code === 2 || code === 3) {
+      try {
+        const watched = await tryWatchFixOnce(false, 3500)
+        return {
+          ok: true,
+          lat: Number(watched.coords.latitude.toFixed(6)),
+          lng: Number(watched.coords.longitude.toFixed(6)),
+        }
+      } catch {
+        // Giữ nguyên mã lỗi ban đầu để phân loại thông báo chính xác bên dưới
+      }
+    }
+
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      return {
+        ok: false,
+        message:
+          "Trình duyệt chỉ cho phép định vị GPS qua HTTPS. Hãy truy cập qua https:// hoặc bấm chọn trực tiếp trên bản đồ.",
+      }
+    }
+
+    const permState = await queryGeolocationPermissionState()
+    if (code === 3) {
+      return {
+        ok: false,
+        message:
+          "Định vị GPS phản hồi quá lâu. Bạn hãy thử bấm lại nút GPS hoặc chạm chọn điểm trên bản đồ.",
+      }
+    }
+    if (code === 2 || permState === "granted") {
+      return {
+        ok: false,
+        message:
+          "Trình duyệt đã cấp quyền, nhưng máy/Wi-Fi chưa trả về tọa độ (máy tính bàn không có chip GPS hoặc bộ phát Wi-Fi chưa có dữ liệu vị trí). Hãy nhập tên khu vực hoặc bấm trực tiếp lên bản đồ.",
+      }
+    }
+
+    return {
+      ok: false,
+      message:
+        "Chưa cấp quyền vị trí GPS. Bạn có thể nhập tên Phường/Quận/Chợ hoặc bấm chọn điểm trên bản đồ.",
+    }
+  }
+}

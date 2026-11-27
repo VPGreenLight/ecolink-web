@@ -1,22 +1,9 @@
 export const NAV_LINKS = [
   { to: "/", label: "Tổng quan" },
-  { to: "/scanner", label: "Nhận diện AI" },
-  { to: "/map", label: "Điểm thu gom" },
-  // { to: "/partners", label: "Đối tác tái chế" },
+  { to: "/scanner", label: "AI phân loại rác", mobileLabel: "AI phân loại" },
+  { to: "/map", label: "Điểm thu mua" },
   { to: "/rewards", label: "Đổi thưởng" },
   { to: "/blog", label: "Blog" },
-] as const
-
-// Blog không có ở thanh dưới: 5 tab trên màn 320px sẽ chật, và blog là nội
-// dung đọc thêm chứ không phải chức năng chính.
-// Đổi thưởng thì có: đó là điểm đóng lại vòng lặp giao rác -> tích điểm, thiếu
-// nó thì người dùng mobile không tới được nơi tiêu điểm. Đổi "Đối tác" (chỉ để
-// xem danh bạ, có trong footer) ra cho "Đổi thưởng".
-export const MOBILE_LINKS = [
-  { to: "/", label: "Tổng quan" },
-  { to: "/scanner", label: "Nhận diện" },
-  { to: "/map", label: "Thu gom" },
-  { to: "/rewards", label: "Đổi thưởng" },
 ] as const
 
 export const FOOTER_COLUMNS = [
@@ -25,7 +12,6 @@ export const FOOTER_COLUMNS = [
     links: [
       { label: "Nhận diện tự động qua Camera", to: "/scanner" },
       { label: "Sàn giao dịch phế liệu GPS", to: "/map" },
-      { label: "Cổng liên kết nhà máy tái chế", to: "/partners" },
       "Chứng chỉ tín chỉ tuần hoàn EPR",
     ],
   },
@@ -34,7 +20,7 @@ export const FOOTER_COLUMNS = [
     links: [
       { label: "Khiếu nại và góp ý", to: "/feedback" },
       { label: "Hướng dẫn phân loại rác nguồn", to: "/guidance" },
-      { label: "Quy chuẩn vật liệu tái chế", to: "/waste" },
+      { label: "Tra cứu & Quy chuẩn vật liệu", to: "/waste" },
       { label: "Chính sách quyền riêng tư", to: "/terms?category=PRIVACY" },
       { label: "Điều khoản dịch vụ môi trường", to: "/terms" },
     ],

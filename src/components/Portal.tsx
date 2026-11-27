@@ -65,13 +65,15 @@ export default function Portal({ role }: { role: Role }) {
                 <Section key={sec.title} title={sec.title} role={role} />
               ))}
             </nav>
-            <button
-              type="button"
-              onClick={logout}
-              className="mt-6 w-full rounded-lg border border-sage-line px-3 py-2 text-[13px] font-semibold text-body transition-colors hover:bg-surface-2"
-            >
-              Đăng xuất
-            </button>
+            {role !== "user" && (
+              <button
+                type="button"
+                onClick={logout}
+                className="mt-6 w-full rounded-lg border border-sage-line px-3 py-2 text-[13px] font-semibold text-body transition-colors hover:bg-surface-2"
+              >
+                Đăng xuất
+              </button>
+            )}
           </div>
         </aside>
 
@@ -107,7 +109,7 @@ function Section({ title, role }: { title: string; role: Role }) {
               to={item.to}
               end={item.to.split("/").length <= 2}
               className={({ isActive }) =>
-                `block rounded-lg px-3 py-2 text-[13px] leading-5 font-medium transition-colors ${
+                `block rounded-lg px-3 py-2.5 text-[14px] leading-5 font-medium transition-colors ${
                   isActive
                     ? "bg-brand/10 text-brand-deep"
                     : "text-body hover:bg-surface-2 hover:text-ink"
@@ -143,7 +145,7 @@ export function PageHead({
         <h1 className="display mt-1.5 text-[24px] leading-8 md:text-[28px] md:leading-9">
           {title}
         </h1>
-        {body && <p className="mt-2 max-w-[68ch] text-sm leading-6 text-body">{body}</p>}
+        {body && <p className="mt-2 max-w-[68ch] text-[15px] leading-6 text-body">{body}</p>}
       </div>
       {action}
     </header>
@@ -194,7 +196,7 @@ export function Stat({
   return (
     <div className="min-w-0">
       <p
-        className={`text-[11px] font-semibold tracking-[0.1em] uppercase ${
+        className={`text-xs font-semibold tracking-[0.1em] uppercase ${
           onBrand ? "text-brand" : "text-muted"
         }`}
       >
@@ -216,7 +218,7 @@ export function Stat({
           </span>
         )}
       </p>
-      {note && <p className="mt-1 text-[13px] leading-5 text-muted">{note}</p>}
+      {note && <p className="mt-1 text-sm leading-5 text-muted">{note}</p>}
     </div>
   )
 }
@@ -274,7 +276,7 @@ export function Table({
               <th
                 key={h}
                 scope="col"
-                className="px-4 py-2.5 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase"
+                className="px-4 py-2.5 text-xs font-semibold tracking-[0.08em] text-muted uppercase sm:text-[13px]"
               >
                 {h}
               </th>
@@ -294,7 +296,7 @@ export function Td({
   children: React.ReactNode
   className?: string
 }) {
-  return <td className={`px-4 py-3 align-top text-body ${className}`}>{children}</td>
+  return <td className={`px-4 py-3 align-top text-sm text-body ${className}`}>{children}</td>
 }
 
 /** Nhãn trạng thái. Chỉ một hệ màu xanh như phần còn lại của app: mức độ

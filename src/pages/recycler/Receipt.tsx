@@ -424,11 +424,11 @@ export default function Receipt() {
 
       {eligibleOrders.length > 1 && (
         <div className="card flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-          <span className="text-xs font-semibold text-ink">
+          <span className="text-sm font-semibold text-ink">
             Chọn đơn cần lập / xem biên nhận ({eligibleOrders.length} đơn):
           </span>
           <select
-            className="input h-9 max-w-md text-xs"
+            className="input min-h-11 max-w-md text-base sm:text-[15px]"
             value={h?.id ?? ""}
             onChange={(e) => {
               const nextId = e.target.value
@@ -457,11 +457,11 @@ export default function Receipt() {
           <p className="text-sm font-semibold text-ink">
             Chưa có lịch hẹn nào đã chốt để lập biên nhận.
           </p>
-          <p className="max-w-[52ch] text-xs text-muted">
+          <p className="max-w-[52ch] text-sm leading-6 text-muted">
             Hãy tiếp nhận đơn hoặc chốt điều khoản trong Chat trước khi đến điểm hẹn cân thực tế
             và phát hành biên nhận.
           </p>
-          <Link to="/recycler/requests" className="btn-primary h-10 px-5 text-xs font-semibold">
+          <Link to="/recycler/requests" className="btn-primary min-h-11 px-5 text-sm font-semibold">
             Quay lại Tiếp nhận yêu cầu
           </Link>
         </div>
@@ -470,7 +470,7 @@ export default function Receipt() {
         <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-line-soft pb-4">
           <div>
             <p className="font-bold text-ink">{h.address}</p>
-            <p className="mt-0.5 text-[13px] text-muted">
+            <p className="mt-0.5 text-sm text-muted">
               {h.displayCode || h.id} · {h.date} · {h.slot}
             </p>
           </div>
@@ -490,7 +490,7 @@ export default function Receipt() {
                 <Td className="tabular-nums text-muted">{r.estimatedKg} kg</Td>
                 <Td>
                   <input
-                    className="input h-9 w-28 tabular-nums"
+                    className="input min-h-11 w-32 text-base sm:text-[15px] tabular-nums"
                     type="number"
                     min="0.01"
                     step="0.01"
@@ -526,12 +526,12 @@ export default function Receipt() {
           })}
         </Table>
 
-        <label className="flex cursor-pointer flex-col gap-2 text-[13px] font-semibold text-ink">
+        <label className="flex cursor-pointer flex-col gap-2 text-sm font-semibold text-ink">
           <span>
             Ảnh bàn giao &amp; bằng chứng cân {liveAuth ? "(Bắt buộc tối thiểu 1 ảnh)" : ""}
             <RequiredMark />
           </span>
-          <span className="rounded-lg border border-dashed border-sage-line bg-surface-2 px-4 py-6 text-center text-[13px] font-normal text-muted">
+          <span className="rounded-lg border border-dashed border-sage-line bg-surface-2 px-4 py-6 text-center text-sm leading-6 font-normal text-muted">
             {files.length > 0
               ? files.map((f) => f.name).join(" · ")
               : existingProofUrls.length > 0
@@ -574,7 +574,7 @@ export default function Receipt() {
             Tổng tiền ước tính thanh toán{" "}
             <b className="tabular-nums text-brand">{VND(effectiveTotalCash)}</b>
           </p>
-          <span className="text-xs text-muted">
+          <span className="text-sm leading-6 text-muted">
             {previewLoading
               ? "Đang kiểm tra biên nhận từ máy chủ..."
               : "Hệ thống lưu trữ biên nhận để hai bên đối chiếu minh bạch, không thu phí giao dịch."}
@@ -584,7 +584,7 @@ export default function Receipt() {
         {effectiveDeviationWarning && (
           <div
             role="status"
-            className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[13px] font-medium text-amber-950"
+            className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 font-medium text-amber-950"
           >
             <b>Cảnh báo lệch khối lượng ({effectiveDeviationPercent > 0 ? `+${effectiveDeviationPercent}` : effectiveDeviationPercent}%):</b>{" "}
             {previewData?.deviationMessage ||
@@ -593,17 +593,17 @@ export default function Receipt() {
         )}
 
         {errorMessage && (
-          <p role="alert" className="rounded-xl border border-warn/40 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn">
+          <p role="alert" className="rounded-xl border border-warn/40 bg-warn/10 px-4 py-2.5 text-sm font-medium text-warn">
             {errorMessage}
           </p>
         )}
 
         <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
-          <button type="submit" disabled={sent || submitting} className="btn-primary h-11 px-6">
+          <button type="submit" disabled={sent || submitting} className="btn-primary min-h-11 px-6 text-sm font-semibold">
             {submitting ? "Đang tải ảnh & gửi..." : sent ? "Đã gửi biên nhận" : "Gửi biên nhận"}
           </button>
           {statusMessage && (
-            <p role="status" className="text-[13px] font-semibold text-brand">
+            <p role="status" className="text-sm font-semibold text-brand">
               {statusMessage}
             </p>
           )}

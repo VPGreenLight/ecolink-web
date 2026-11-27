@@ -127,7 +127,7 @@ function getSafeBounds(w: number, h: number) {
   const maxX = Math.max(minX, w - size - marginX)
   const minY = desktop ? 88 : 80
   // Dành khoảng trống bên dưới cho nhãn % đứng gọn phía trên MobileNav
-  const maxY = Math.max(minY, h - size - (desktop ? 24 : 80))
+  const maxY = Math.max(minY, h - size - (desktop ? 24 : 90))
   return { minX, maxX, minY, maxY, size }
 }
 

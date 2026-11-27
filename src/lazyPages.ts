@@ -17,7 +17,6 @@ const loaders = {
   LeaderboardPage: () => import("@/pages/Leaderboard"),
   Scanner: () => import("@/pages/Scanner"),
   MapPage: () => import("@/pages/MapPage"),
-  Partners: () => import("@/pages/Partners"),
   Feedback: () => import("@/pages/Feedback"),
   Guidance: () => import("@/pages/Guidance"),
   Waste: () => import("@/pages/Waste"),
@@ -32,11 +31,8 @@ const loaders = {
   NotFound: () => import("@/pages/NotFound"),
 
   Profile: () => import("@/pages/account/Profile"),
-  Notifications: () => import("@/pages/account/Notifications"),
   Password: () => import("@/pages/account/Password"),
 
-  UserHome: () => import("@/pages/user/Home"),
-  Handover: () => import("@/pages/user/Handover"),
   Receipt: () => import("@/pages/user/Receipt"),
   Payout: () => import("@/pages/user/Payout"),
   Transactions: () => import("@/pages/user/Transactions"),

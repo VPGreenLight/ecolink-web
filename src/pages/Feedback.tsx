@@ -402,14 +402,14 @@ export default function Feedback() {
         <div className="card flex flex-wrap items-center justify-between gap-4 border-brand/25 bg-brand/5 p-5">
           <div>
             <p className="text-sm font-bold text-ink">Đăng nhập để tải danh sách đơn đã hoàn tất</p>
-            <p className="mt-0.5 text-[13px] text-muted">
+            <p className="mt-0.5 text-sm leading-6 text-muted">
               Khiếu nại giao dịch và đánh giá chỉ áp dụng cho đơn bàn giao có thực trên hệ thống.
             </p>
           </div>
           <button
             type="button"
             onClick={() => openAuthPopup("login")}
-            className="btn-primary h-10 px-5 text-sm"
+            className="btn-primary min-h-11 px-5 text-sm"
           >
             Đăng nhập ngay
           </button>
@@ -417,7 +417,7 @@ export default function Feedback() {
       )}
 
       <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
-        <div className="flex flex-col gap-6">
+        <div className="flex min-w-0 flex-col gap-6">
           {/* Chọn loại tác vụ */}
           <div className={`grid gap-3 ${visibleCategories.length > 1 ? "sm:grid-cols-2" : ""}`}>
             {visibleCategories.map((c) => {
@@ -434,14 +434,14 @@ export default function Feedback() {
                     setReviewErr("")
                     setReviewOk("")
                   }}
-                  className={`flex flex-col items-start rounded-2xl border p-4 text-left transition-colors ${
+                  className={`flex min-h-11 flex-col items-start rounded-2xl border p-4 text-left transition-colors ${
                     active
                       ? "border-brand bg-brand/8 text-ink"
                       : "border-line bg-surface text-body hover:bg-surface-2"
                   }`}
                 >
                   <span className="text-[15px] font-bold text-ink">{c.label}</span>
-                  <span className="mt-1 text-[13px] leading-5 text-muted">{c.blurb}</span>
+                  <span className="mt-1 text-sm leading-6 text-muted">{c.blurb}</span>
                 </button>
               )
             })}
@@ -453,7 +453,7 @@ export default function Feedback() {
                 <h2 className="font-display text-xl font-bold text-ink">
                   Gửi khiếu nại giao dịch (sau xác nhận biên nhận)
                 </h2>
-                <p className="mt-1 text-[13px] leading-5 text-muted">
+                <p className="mt-1 text-sm leading-6 text-muted">
                   Áp dụng hai chiều cho Người dân và Cơ sở thu mua trong vòng 7 ngày sau khi biên
                   nhận hoàn tất (Completed). Nếu Người dân đang ở bước xác nhận cân đo và phát
                   hiện sai số, vui lòng dùng nút <b>Sai rồi, tôi muốn khiếu nại</b> ngay tại{" "}
@@ -477,12 +477,12 @@ export default function Feedback() {
                 <FormRequiredLegend />
 
                 <div>
-                  <label className="label" htmlFor="complaint-order">
+                  <label className="block text-sm font-semibold text-ink" htmlFor="complaint-order">
                     Đơn bàn giao đã hoàn tất <RequiredMark />
                   </label>
                   <select
                     id="complaint-order"
-                    className="input mt-1.5"
+                    className="input mt-1.5 min-h-11 h-12 text-base sm:text-[15px]"
                     value={complaintOrderId}
                     onChange={(e) => {
                       setComplaintOrderId(e.target.value)
@@ -506,12 +506,12 @@ export default function Feedback() {
                 </div>
 
                 <div>
-                  <label className="label" htmlFor="complaint-category">
+                  <label className="block text-sm font-semibold text-ink" htmlFor="complaint-category">
                     Nhóm vấn đề <RequiredMark />
                   </label>
                   <select
                     id="complaint-category"
-                    className="input mt-1.5"
+                    className="input mt-1.5 min-h-11 h-12 text-base sm:text-[15px]"
                     value={complaintCategory}
                     onChange={(e) => {
                       setComplaintCategory(e.target.value as ComplaintCategoryCode)
@@ -528,17 +528,17 @@ export default function Feedback() {
 
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <label className="label" htmlFor="complaint-desc">
+                    <label className="block text-sm font-semibold text-ink" htmlFor="complaint-desc">
                       Nội dung chi tiết <RequiredMark />
                     </label>
-                    <span className="text-xs text-muted">
+                    <span className="text-xs sm:text-sm text-muted">
                       {desc.trim().length}/{DESC_MAX} ký tự (tối thiểu {DESC_MIN})
                     </span>
                   </div>
                   <textarea
                     id="complaint-desc"
                     rows={4}
-                    className="input mt-1.5 min-h-[112px] py-2.5"
+                    className="input mt-1.5 h-auto min-h-[112px] py-2.5 text-base sm:text-[15px] leading-6"
                     value={desc}
                     onChange={(e) => {
                       setDesc(e.target.value)
@@ -549,7 +549,7 @@ export default function Feedback() {
                 </div>
 
                 <div>
-                  <label className="label" htmlFor="complaint-photos">
+                  <label className="block text-sm font-semibold text-ink" htmlFor="complaint-photos">
                     Ảnh minh chứng (tối đa {MAX_PHOTOS} ảnh JPG/PNG/WEBP, mỗi ảnh ≤ {MAX_PHOTO_MB} MB)
                   </label>
                   <input
@@ -558,7 +558,7 @@ export default function Feedback() {
                     multiple
                     accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
                     onChange={handlePhotoChange}
-                    className="mt-1.5 block w-full text-sm text-body file:mr-3 file:rounded-lg file:border file:border-line file:bg-surface-2 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-ink hover:file:bg-surface"
+                    className="mt-1.5 block w-full text-sm text-body file:mr-3 file:min-h-11 file:rounded-lg file:border file:border-line file:bg-surface-2 file:px-3.5 file:py-2 file:text-sm file:font-semibold file:text-ink hover:file:bg-surface"
                   />
                   {photos.length > 0 && (
                     <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
@@ -589,7 +589,7 @@ export default function Feedback() {
                 {complaintErr && (
                   <p
                     role="alert"
-                    className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+                    className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm leading-6 font-medium text-warn"
                   >
                     {complaintErr}
                   </p>
@@ -599,7 +599,7 @@ export default function Feedback() {
                   <button
                     type="submit"
                     disabled={complaintSubmitting}
-                    className="btn-primary h-11 px-6"
+                    className="btn-primary min-h-11 h-12 px-6 text-sm sm:text-[15px]"
                   >
                     {complaintSubmitting ? "Đang gửi khiếu nại..." : "Gửi khiếu nại"}
                   </button>
@@ -612,7 +612,7 @@ export default function Feedback() {
                 <h2 className="font-display text-xl font-bold text-ink">
                   Đánh giá & Góp ý cơ sở thu mua
                 </h2>
-                <p className="mt-1 text-[13px] leading-5 text-muted">
+                <p className="mt-1 text-sm leading-6 text-muted">
                   Chỉ dành cho Người dân đánh giá cơ sở thu mua trong vòng 14 ngày sau khi biên
                   nhận hoàn tất. Mỗi đơn giữ tối đa 1 đánh giá đang hiển thị; bạn có thể xóa đánh
                   giá cũ bên dưới để gửi đánh giá mới.
@@ -632,12 +632,12 @@ export default function Feedback() {
                 <FormRequiredLegend />
 
                 <div>
-                  <label className="label" htmlFor="review-order">
+                  <label className="block text-sm font-semibold text-ink" htmlFor="review-order">
                     Đơn bàn giao đã hoàn tất <RequiredMark />
                   </label>
                   <select
                     id="review-order"
-                    className="input mt-1.5"
+                    className="input mt-1.5 min-h-11 h-12 text-base sm:text-[15px]"
                     value={reviewOrderId}
                     onChange={(e) => {
                       setReviewOrderId(e.target.value)
@@ -665,7 +665,7 @@ export default function Feedback() {
                 </div>
 
                 <div>
-                  <span className="label">
+                  <span className="block text-sm font-semibold text-ink">
                     Chất lượng thu gom (1–5 sao) <RequiredMark />
                   </span>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -680,7 +680,7 @@ export default function Feedback() {
                             setReviewStars(star)
                             setReviewErr("")
                           }}
-                          className={`rounded-xl border px-3.5 py-2 text-sm font-bold transition-colors ${
+                          className={`min-h-11 rounded-xl border px-3.5 py-2 text-sm font-bold transition-colors ${
                             selected
                               ? "border-amber-400 bg-amber-50 text-amber-800"
                               : "border-line bg-surface-2 text-muted hover:bg-surface"
@@ -691,7 +691,7 @@ export default function Feedback() {
                       )
                     })}
                     {reviewStars > 0 && (
-                      <span className="ml-1 text-xs font-semibold text-ink">
+                      <span className="ml-1 text-sm font-semibold text-ink">
                         Đang chọn {reviewStars}/5 sao
                       </span>
                     )}
@@ -700,17 +700,17 @@ export default function Feedback() {
 
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <label className="label" htmlFor="review-comment">
+                    <label className="block text-sm font-semibold text-ink" htmlFor="review-comment">
                       Nhận xét / góp ý (không bắt buộc)
                     </label>
-                    <span className="text-xs text-muted">
+                    <span className="text-xs sm:text-sm text-muted">
                       {reviewComment.trim().length}/{REVIEW_COMMENT_MAX} ký tự
                     </span>
                   </div>
                   <textarea
                     id="review-comment"
                     rows={4}
-                    className="input mt-1.5 min-h-[104px] py-2.5"
+                    className="input mt-1.5 h-auto min-h-[112px] py-2.5 text-base sm:text-[15px] leading-6"
                     value={reviewComment}
                     onChange={(e) => {
                       setReviewComment(e.target.value)
@@ -723,7 +723,7 @@ export default function Feedback() {
                 {reviewErr && (
                   <p
                     role="alert"
-                    className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+                    className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm leading-6 font-medium text-warn"
                   >
                     {reviewErr}
                   </p>
@@ -733,7 +733,7 @@ export default function Feedback() {
                   <button
                     type="submit"
                     disabled={reviewSubmitting}
-                    className="btn-primary h-11 px-6"
+                    className="btn-primary min-h-11 h-12 px-6 text-sm sm:text-[15px]"
                   >
                     {reviewSubmitting ? "Đang gửi đánh giá..." : "Gửi đánh giá"}
                   </button>
@@ -749,7 +749,7 @@ export default function Feedback() {
                 <h2 className="font-display text-lg font-bold text-ink">
                   Đánh giá của bạn ({myReviews.length})
                 </h2>
-                <span className="text-xs text-muted">
+                <span className="text-sm text-muted">
                   Xóa đánh giá cũ nếu bạn muốn đánh giá lại đơn đó
                 </span>
               </div>
@@ -757,7 +757,7 @@ export default function Feedback() {
               {reviewListErr && (
                 <p
                   role="alert"
-                  className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+                  className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm leading-6 font-medium text-warn"
                 >
                   {reviewListErr}
                 </p>
@@ -795,7 +795,7 @@ export default function Feedback() {
                         type="button"
                         disabled={deletingReviewId === rev.reviewId}
                         onClick={() => void handleDeleteReview(rev.reviewId)}
-                        className="btn-ghost h-9 shrink-0 px-3.5 text-xs font-semibold text-warn hover:bg-warn/10"
+                        className="btn-ghost min-h-11 shrink-0 px-4 text-sm font-semibold text-warn hover:bg-warn/10"
                       >
                         {deletingReviewId === rev.reviewId ? "Đang xóa..." : "Xóa đánh giá"}
                       </button>
@@ -869,7 +869,7 @@ export default function Feedback() {
                   </span>
                   <div>
                     <p className="text-sm font-bold text-ink">{st.title}</p>
-                    <p className="mt-0.5 text-[13px] leading-5 text-muted">{st.body}</p>
+                    <p className="mt-0.5 text-sm leading-6 text-muted">{st.body}</p>
                   </div>
                 </li>
               ))}
@@ -884,7 +884,7 @@ export default function Feedback() {
                   <summary className="cursor-pointer list-none text-sm font-semibold text-ink marker:hidden">
                     {f.q}
                   </summary>
-                  <p className="mt-2 text-[13px] leading-5 text-muted">{f.a}</p>
+                  <p className="mt-2 text-sm leading-6 text-muted">{f.a}</p>
                 </details>
               ))}
             </div>
@@ -893,7 +893,7 @@ export default function Feedback() {
           <section className="card bg-surface-2 p-5">
             <p className="eyebrow">CẦN XỬ LÝ KHẨN</p>
             <p className="mt-2 text-sm font-bold text-ink">Tổng đài điều phối EcoLink</p>
-            <p className="mt-1 text-[13px] leading-5 text-muted">
+            <p className="mt-1 text-sm leading-6 text-muted">
               Hotline <b className="text-ink">1900 8828</b> (8:00 – 18:00 hằng ngày) hoặc{" "}
               <b className="text-ink">hotro@ecolink.vn</b>.
             </p>

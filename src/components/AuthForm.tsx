@@ -232,7 +232,7 @@ export default function AuthForm({
         type="button"
         onClick={handleClose}
         aria-label="Đóng cửa sổ đăng nhập"
-        className="absolute top-4 right-4 grid size-8 place-items-center rounded-full text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+        className="absolute top-3 right-3 grid size-11 place-items-center rounded-full text-muted transition-colors hover:bg-surface-2 hover:text-ink"
       >
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="size-4.5">
           <path
@@ -256,11 +256,11 @@ export default function AuthForm({
         </Link>
 
         {/* Thanh tab Compact: Tạo tài khoản trước, Đăng nhập sau (khớp menu user ở ngoài) */}
-        <div className="mb-6 grid grid-cols-2 rounded-xl bg-surface-2 p-1 text-sm font-semibold">
+        <div className="mb-6 grid grid-cols-2 rounded-xl bg-surface-2 p-1 text-[15px] font-semibold sm:text-sm">
           <button
             type="button"
             onClick={() => switchMode("register")}
-            className={`rounded-lg py-2 transition-[background-color,color,box-shadow] duration-150 ${
+            className={`min-h-11 rounded-lg py-2.5 transition-[background-color,color,box-shadow] duration-150 ${
               mode === "register"
                 ? "bg-white text-ink shadow-xs"
                 : "text-muted hover:text-ink"
@@ -271,7 +271,7 @@ export default function AuthForm({
           <button
             type="button"
             onClick={() => switchMode("login")}
-            className={`rounded-lg py-2 transition-[background-color,color,box-shadow] duration-150 ${
+            className={`min-h-11 rounded-lg py-2.5 transition-[background-color,color,box-shadow] duration-150 ${
               mode === "login"
                 ? "bg-white text-ink shadow-xs"
                 : "text-muted hover:text-ink"
@@ -345,7 +345,7 @@ export default function AuthForm({
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    className="absolute inset-y-0 right-0 my-auto h-7 rounded-md px-2.5 text-xs font-semibold text-brand transition-colors hover:text-brand-deep"
+                    className="absolute inset-y-0 right-0 my-auto min-h-11 rounded-md px-3 text-[15px] font-semibold text-brand transition-colors hover:text-brand-deep sm:text-sm"
                   >
                     {showPassword ? "Ẩn" : "Hiện"}
                   </button>
@@ -382,7 +382,7 @@ export default function AuthForm({
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    className="absolute inset-y-0 right-0 my-auto h-7 rounded-md px-2.5 text-xs font-semibold text-brand transition-colors hover:text-brand-deep"
+                    className="absolute inset-y-0 right-0 my-auto min-h-11 rounded-md px-3 text-[15px] font-semibold text-brand transition-colors hover:text-brand-deep sm:text-sm"
                   >
                     {showPassword ? "Ẩn" : "Hiện"}
                   </button>
@@ -394,14 +394,14 @@ export default function AuthForm({
           {err && (
             <p
               role="alert"
-              className="rounded-xl border border-warn/25 bg-warn/8 px-3.5 py-2.5 text-[13px] leading-5 text-warn"
+              className="rounded-xl border border-warn/25 bg-warn/8 px-3.5 py-2.5 text-sm leading-5 text-warn"
             >
               {err}
             </p>
           )}
 
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-[13px] text-muted">
+          <div className="flex items-center justify-between gap-3">
+            <label className="flex min-h-11 items-center gap-2.5 text-sm text-muted">
               <input type="checkbox" defaultChecked className="size-4 accent-brand" />
               Ghi nhớ đăng nhập
             </label>
@@ -409,7 +409,7 @@ export default function AuthForm({
               <Link
                 to="/reset-password"
                 onClick={dismissModal}
-                className="text-[13px] font-semibold text-brand transition-colors hover:text-brand-deep"
+                className="inline-flex min-h-11 items-center text-sm font-semibold text-brand transition-colors hover:text-brand-deep"
               >
                 Quên mật khẩu?
               </Link>
@@ -446,7 +446,7 @@ export default function AuthForm({
         </form>
 
         {/* Phân cách & Đăng nhập nhanh Google OAuth 2.0 (POST /api/v1/auth/google) */}
-        <div className="my-5 flex items-center gap-3 text-xs text-muted">
+        <div className="my-5 flex items-center gap-3 text-sm text-muted">
           <span className="h-px flex-1 bg-line" />
           <span>hoặc</span>
           <span className="h-px flex-1 bg-line" />
@@ -456,7 +456,7 @@ export default function AuthForm({
           type="button"
           disabled={submitting}
           onClick={handleGoogleButton}
-          className="flex h-11 w-full items-center justify-center gap-2.5 rounded-xl border border-line bg-white px-4 text-sm font-semibold text-ink transition-colors hover:bg-surface disabled:opacity-60"
+          className="flex min-h-11 w-full items-center justify-center gap-2.5 rounded-xl border border-line bg-white px-4 text-[15px] font-semibold text-ink transition-colors hover:bg-surface disabled:opacity-60 sm:text-sm"
         >
           <svg viewBox="0 0 24 24" className="size-4.5 shrink-0" aria-hidden="true">
             <path
@@ -481,22 +481,22 @@ export default function AuthForm({
 
         {showGooglePrompt && (
           <div className="mt-3 rounded-xl border border-brand/25 bg-surface p-3.5">
-            <p className="text-xs leading-5 text-body">
-              Xác thực tài khoản Google trực tiếp qua <code className="font-mono text-[11px]">POST /api/v1/auth/google</code>:
+            <p className="text-sm leading-5 text-body">
+              Xác thực tài khoản Google trực tiếp qua <code className="font-mono text-xs">POST /api/v1/auth/google</code>:
             </p>
-            <div className="mt-2 flex gap-2">
+            <div className="mt-2.5 flex gap-2">
               <input
                 type="email"
                 value={googleDemoEmail}
                 onChange={(e) => setGoogleDemoEmail(e.target.value)}
                 placeholder="tenban@gmail.com"
-                className="input h-9 flex-1 text-xs"
+                className="input min-h-12 flex-1 text-base sm:text-[15px]"
               />
               <button
                 type="button"
                 disabled={submitting}
                 onClick={handleGoogleDevHandshake}
-                className="btn-primary h-9 shrink-0 px-3.5 text-xs"
+                className="btn-primary min-h-11 shrink-0 px-4 text-[15px] sm:text-sm"
               >
                 Xác thực
               </button>
@@ -507,7 +507,7 @@ export default function AuthForm({
         {/* Bộ chọn nhanh tài khoản mẫu Demo đã seed trong PostgreSQL để giảng viên / hội đồng kiểm thử */}
         {mode === "login" && (
           <div className="mt-5 rounded-xl border border-line-soft bg-surface p-3">
-            <p className="text-[11px] font-semibold tracking-wide text-muted uppercase">
+            <p className="text-xs font-semibold tracking-wide text-muted uppercase">
               Điền nhanh tài khoản Demo (Hòa Lạc · Hội đồng)
             </p>
             <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
@@ -516,10 +516,10 @@ export default function AuthForm({
                   key={acc.username}
                   type="button"
                   onClick={() => fillDemoAccount(acc.username, acc.password)}
-                  className="flex items-center justify-between gap-1.5 rounded-lg border border-line bg-white px-2.5 py-1.5 text-left text-[11px] font-semibold text-body transition-colors hover:border-brand hover:text-brand-deep"
+                  className="flex min-h-11 items-center justify-between gap-1.5 rounded-lg border border-line bg-white px-3 py-2 text-left text-[15px] font-semibold text-body transition-colors hover:border-brand hover:text-brand-deep sm:text-sm"
                 >
                   <span className="truncate">{acc.label}</span>
-                  <span className="shrink-0 font-mono text-[10px] text-muted">{acc.username}</span>
+                  <span className="shrink-0 font-mono text-xs text-muted">{acc.username}</span>
                 </button>
               ))}
             </div>
@@ -527,7 +527,7 @@ export default function AuthForm({
         )}
 
         {mode === "register" && !isPopup && (
-          <p className="mt-4 text-center text-xs text-muted">
+          <p className="mt-4 text-center text-sm text-muted">
             Bạn là chủ vựa/trạm tái chế?{" "}
             <Link
               to="/join-recycler"
@@ -539,12 +539,12 @@ export default function AuthForm({
           </p>
         )}
 
-        <p className="mt-6 text-center text-[13px] text-muted">
+        <p className="mt-6 text-center text-sm text-muted">
           {copy.switchText}
           <button
             type="button"
             onClick={() => switchMode(copy.switchTo)}
-            className="ml-2 inline-flex h-9 items-center rounded-full bg-brand/10 px-3.5 font-semibold text-brand transition-[background-color,transform] duration-200 ease-out hover:bg-brand/18 active:scale-[0.97]"
+            className="ml-2 inline-flex min-h-11 items-center rounded-full bg-brand/10 px-4 text-[15px] font-semibold text-brand transition-[background-color,transform] duration-200 ease-out hover:bg-brand/18 active:scale-[0.97] sm:text-sm"
           >
             {copy.switchLink}
           </button>
@@ -556,7 +556,7 @@ export default function AuthForm({
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
+    <label className="flex flex-col gap-2 text-sm font-semibold text-ink">
       {label}
       {children}
     </label>

@@ -18,6 +18,7 @@ import {
   User as UserIcon,
   X,
 } from "lucide-react"
+import HandoverRequestModal, { type HandoverCreatedPayload } from "@/components/HandoverRequestModal"
 import { RequiredMark } from "@/components/Portal"
 import { ADDRESS } from "@/data/map"
 import {
@@ -87,11 +88,7 @@ interface ChatSessionItem {
 }
 
 const AVATAR_TONES = [
-  "bg-emerald-100 text-emerald-800 border-emerald-200",
-  "bg-teal-100 text-teal-800 border-teal-200",
-  "bg-sky-100 text-sky-800 border-sky-200",
-  "bg-amber-100 text-amber-800 border-amber-200",
-  "bg-lime-100 text-lime-800 border-lime-200",
+  "bg-surface-2 text-brand-deep border-line",
 ] as const
 
 const IGNORED_NAME_PREFIXES = new Set([
@@ -249,6 +246,8 @@ export default function Chat() {
   const partnerIdParam = searchParams.get("partnerId")
   const partnerFromMap = searchParams.get("partnerName")
   const addressFromMap = searchParams.get("partnerAddress")
+  const wasteFromParam = searchParams.get("waste") ?? ""
+  const wantsNewHandover = searchParams.get("newHandover") === "1"
 
   // Danh sách các phiên chat / đơn bàn giao (trình bày kiểu Messenger sidebar)
   const [availableOrders, setAvailableOrders] = useState<ChatSessionItem[]>([])
@@ -262,6 +261,21 @@ export default function Chat() {
   const [showInfoPanel, setShowInfoPanel] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [listFilter, setListFilter] = useState<"all" | "unread" | "active" | "closed">("all")
+
+  // Modal tạo yêu cầu bàn giao tích hợp trực tiếp trong /chat (thay thế trang /user/handover)
+  const [handoverModalOpen, setHandoverModalOpen] = useState(false)
+
+  useEffect(() => {
+    if (!wantsNewHandover || role === "recycler") return
+    setHandoverModalOpen(true)
+    setSearchParams(
+      (prev) => {
+        prev.delete("newHandover")
+        return prev
+      },
+      { replace: true },
+    )
+  }, [wantsNewHandover, role, setSearchParams])
 
   // Trạng thái đơn hiện tại
   const [currentOrderId, setCurrentOrderId] = useState<string>(orderIdParam || "")
@@ -1299,27 +1313,40 @@ export default function Chat() {
     : isInquiryOrder
       ? "Hỏi giá · Chưa lên đơn"
       : formatOrderDisplayCode(currentOrderId)
-  const createHandoverForPartnerUrl =
-    !isRecycler && (partnerIdParam || partnerFromMap)
-      ? `/user/handover?${new URLSearchParams({
-          ...(partnerIdParam ? { partnerId: partnerIdParam } : {}),
-          ...(partnerFromMap ? { partnerName: partnerFromMap } : {}),
-        }).toString()}`
-      : isRecycler
-        ? "/recycler/requests"
-        : "/user/handover"
+  const handleHandoverCreated = (created: HandoverCreatedPayload) => {
+    setHandoverModalOpen(false)
+    const item: ChatSessionItem = {
+      id: created.id,
+      displayCode: created.displayCode || formatOrderDisplayCode(created.id),
+      partner: created.partnerName || partnerFromMap || "Cơ sở thu mua",
+      partnerId: created.partnerId,
+      recyclerId: created.partnerId,
+      slot: `${created.dateVi} · ${created.slot}`,
+      status: "pending",
+      rawStatus: "Pending",
+      isInquiryOnly: false,
+      address: created.address,
+      categoryCode: created.categoryCode,
+      weightKg: created.weightKg,
+      pricePerKg: created.unitPricePerKg,
+      lastMessagePreview: `Yêu cầu mới · ${created.weightKg} kg (${created.dateVi} ${created.slot})`,
+      lastMessageAt: new Date().toISOString(),
+      unreadCount: 0,
+    }
+    setAvailableOrders((prev) => [item, ...prev.filter((o) => o.id !== item.id)])
+    selectOrderSession(created.id)
+  }
 
   // Tính tiền ước tính
   const activePrice = thread?.agreedPricePerKg || thread?.initialPricePerKg || 7000
   const activeWeight = thread?.estimatedWeightKg || 10
   const estimatedTotal = activePrice * activeWeight
   const statusLower = (thread?.orderStatus ?? "").toLowerCase()
-  const nextStepAction = (() => {
+  const nextStepAction: { to?: string; action?: () => void; label: string } = (() => {
     if (!currentOrderId) {
-      return {
-        to: createHandoverForPartnerUrl,
-        label: isRecycler ? "Xem đơn thu gom" : "Tạo yêu cầu bàn giao",
-      }
+      return isRecycler
+        ? { to: "/recycler/requests", label: "Xem đơn thu gom" }
+        : { action: () => setHandoverModalOpen(true), label: "Tạo yêu cầu bàn giao" }
     }
     if (statusLower === "accepted" || statusLower === "scheduled") {
       return isRecycler
@@ -1328,8 +1355,8 @@ export default function Chat() {
             label: "Cân & Lập biên nhận",
           }
         : {
-            to: "/user/handover",
-            label: "Theo dõi lịch thu gom",
+            action: () => setShowInfoPanel(true),
+            label: "Xem lịch thu gom",
           }
     }
     if (statusLower === "awaitingconfirmation" || statusLower === "collected") {
@@ -1351,10 +1378,9 @@ export default function Chat() {
             label: "Xem biên nhận & Đánh giá",
           }
     }
-    return {
-      to: createHandoverForPartnerUrl,
-      label: isRecycler ? "Xem đơn thu gom" : "Tạo yêu cầu bàn giao",
-    }
+    return isRecycler
+      ? { to: "/recycler/requests", label: "Xem đơn thu gom" }
+      : { action: () => setHandoverModalOpen(true), label: "Tạo yêu cầu mới" }
   })()
 
   // Bộ lọc & thống kê cho danh sách Messenger bên trái
@@ -1399,104 +1425,116 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex flex-col">
-      {/* Khung Messenger responsive (Danh sách chat bên trái + Hội thoại giữa + Chi tiết đơn phải) */}
-      <div className="relative -mx-3 sm:mx-0 flex h-[calc(100dvh-210px)] min-h-[480px] sm:h-[calc(100dvh-180px)] md:h-[calc(100dvh-140px)] md:min-h-[560px] md:max-h-[780px] overflow-hidden rounded-2xl border border-line bg-surface shadow-xs">
-        {/* CỘT TRÁI: DANH SÁCH ĐOẠN CHAT GIỐNG MESSENGER */}
-        <aside
-          aria-label="Danh sách cuộc trò chuyện"
-          className={`${
-            mobileView === "list" ? "flex" : "hidden md:flex"
-          } w-full md:w-[270px] lg:w-[290px] xl:w-[320px] shrink-0 flex-col border-line bg-surface md:border-r`}
-        >
-          {/* Header Sidebar */}
-          <div className="flex items-center justify-between gap-2 border-b border-line-soft px-4 py-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <h1 className="text-lg font-bold tracking-tight text-ink truncate">Đoạn chat</h1>
-              {totalUnreadAll > 0 && (
-                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-bold text-white tabular-nums">
-                  {totalUnreadAll}
-                </span>
-              )}
-              <span
-                title={
-                  connectionStatus === "connected"
-                    ? "Kết nối thời gian thực"
-                    : connectionStatus === "reconnecting"
-                      ? "Đang kết nối lại..."
-                      : "Ngoại tuyến"
-                }
-                className={`size-2 shrink-0 rounded-full ${
-                  connectionStatus === "connected"
-                    ? "bg-emerald-500"
-                    : connectionStatus === "reconnecting"
-                      ? "bg-amber-500 animate-ping"
-                      : "bg-gray-300"
-                }`}
-              />
-            </div>
+    <div className="mx-auto flex w-full max-w-[1360px] flex-col px-0 sm:px-5 sm:py-3 lg:px-6 lg:py-4">
+      {/* Khung Messenger tối ưu toàn khung nhìn (không Footer): Mobile khớp 100% giữa Navbar & MobileNav, PC thoáng rộng */}
+      <div className="relative flex h-[calc(100dvh-138px)] min-h-[460px] overflow-hidden border-y border-line bg-surface shadow-[0_18px_46px_-18px_rgba(15,31,21,0.12)] sm:h-[calc(100dvh-168px)] sm:rounded-[18px] sm:border lg:h-[calc(100dvh-112px)] lg:min-h-[580px]">
+          {/* CỘT TRÁI: DANH SÁCH ĐOẠN CHAT */}
+          <aside
+            aria-label="Danh sách cuộc trò chuyện"
+            className={`${
+              mobileView === "list" ? "flex" : "hidden md:flex"
+            } w-full md:w-[276px] lg:w-[296px] xl:w-[324px] shrink-0 flex-col border-line bg-surface md:border-r`}
+          >
+            {/* Header Sidebar */}
+            <div className="flex items-center justify-between gap-2 border-b border-line-soft px-4 py-3.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <h1 className="truncate text-lg font-bold tracking-tight text-ink">Thương lượng</h1>
+                {totalUnreadAll > 0 && (
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-xs font-bold text-white tabular-nums">
+                    {totalUnreadAll}
+                  </span>
+                )}
+                <span
+                  title={
+                    connectionStatus === "connected"
+                      ? "Kết nối thời gian thực"
+                      : connectionStatus === "reconnecting"
+                        ? "Đang kết nối lại..."
+                        : "Ngoại tuyến"
+                  }
+                  className={`size-2 shrink-0 rounded-full ${
+                    connectionStatus === "connected"
+                      ? "bg-emerald-500"
+                      : connectionStatus === "reconnecting"
+                        ? "bg-amber-500"
+                        : "bg-sage"
+                  }`}
+                />
+              </div>
 
-            <Link
-              to={createHandoverForPartnerUrl}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-brand/25 bg-brand/8 px-2.5 text-[11px] font-semibold text-brand-deep transition-colors hover:bg-brand/15"
-              title={isRecycler ? "Đi tới danh sách yêu cầu thu gom" : "Tạo yêu cầu bàn giao mới"}
-            >
-              <Plus className="size-3.5 shrink-0" />
-              <span>{isRecycler ? "Đơn thu gom" : "Tạo yêu cầu bàn giao"}</span>
-            </Link>
-          </div>
-
-          {/* Thanh tìm kiếm & bộ lọc trạng thái kiểu Messenger */}
-          <div className="flex flex-col gap-2.5 border-b border-line-soft px-3 py-2.5">
-            <div className="relative flex items-center">
-              <Search className="pointer-events-none absolute left-3 size-4 text-muted" />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Tìm đối tác, mã đơn BH-..."
-                aria-label="Tìm cuộc trò chuyện"
-                className="h-9 w-full rounded-full border border-line bg-surface-2 pl-9 pr-8 text-xs text-ink placeholder:text-muted focus:border-brand focus:bg-white focus:outline-none"
-              />
-              {searchQuery && (
+              {isRecycler ? (
+                <Link
+                  to="/recycler/requests"
+                  className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border border-brand/25 bg-brand/8 px-3 text-[13px] font-semibold text-brand-deep transition-colors hover:bg-brand/15 sm:min-h-9"
+                  title="Đi tới danh sách yêu cầu thu gom"
+                >
+                  <ClipboardList className="size-3.5 shrink-0" />
+                  <span>Đơn thu gom</span>
+                </Link>
+              ) : (
                 <button
                   type="button"
-                  onClick={() => setSearchQuery("")}
-                  aria-label="Xóa từ khóa tìm kiếm"
-                  className="absolute right-2 rounded-full p-1 text-muted hover:bg-surface-3 hover:text-ink"
+                  onClick={() => setHandoverModalOpen(true)}
+                  className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full bg-brand px-3.5 text-[13px] font-semibold text-white shadow-2xs transition-colors hover:bg-brand-deep sm:min-h-9"
+                  title="Tạo yêu cầu bàn giao mới"
                 >
-                  <X className="size-3.5" />
+                  <Plus className="size-3.5 shrink-0" />
+                  <span>Tạo yêu cầu</span>
                 </button>
               )}
             </div>
 
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[11px]">
-              {(
-                [
-                  { id: "all", label: "Tất cả" },
-                  { id: "unread", label: "Chưa đọc" },
-                  { id: "active", label: "Đang giao dịch" },
-                  { id: "closed", label: "Đã đóng" },
-                ] as const
-              ).map((tab) => {
-                const active = listFilter === tab.id
-                return (
+            {/* Thanh tìm kiếm & bộ lọc segmented */}
+            <div className="flex flex-col gap-2.5 border-b border-line-soft px-3 py-3">
+              <div className="relative flex items-center">
+                <Search className="pointer-events-none absolute left-3.5 size-4 text-muted" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Tìm cơ sở, mã đơn BH-..."
+                  aria-label="Tìm cuộc trò chuyện"
+                  className="min-h-11 w-full rounded-full border border-line bg-surface-2/80 pl-10 pr-9 text-base text-ink placeholder:text-muted focus:border-brand focus:bg-white focus:outline-none sm:text-[15px]"
+                />
+                {searchQuery && (
                   <button
-                    key={tab.id}
                     type="button"
-                    onClick={() => setListFilter(tab.id)}
-                    className={`shrink-0 rounded-full px-2.5 py-1 font-semibold transition-colors ${
-                      active
-                        ? "bg-brand text-white"
-                        : "bg-surface-2 text-body hover:bg-surface-3 hover:text-ink"
-                    }`}
+                    onClick={() => setSearchQuery("")}
+                    aria-label="Xóa từ khóa tìm kiếm"
+                    className="absolute right-2 rounded-full p-1.5 text-muted hover:bg-surface-3 hover:text-ink"
                   >
-                    {tab.label}
+                    <X className="size-3.5" />
                   </button>
-                )
-              })}
+                )}
+              </div>
+
+              <div className="flex items-center gap-1 rounded-xl border border-line-soft bg-surface-2/80 p-1 text-xs sm:text-[13px] overflow-x-auto no-scrollbar">
+                {(
+                  [
+                    { id: "all", label: "Tất cả" },
+                    { id: "unread", label: "Chưa đọc" },
+                    { id: "active", label: "Đang xử lý" },
+                    { id: "closed", label: "Đã đóng" },
+                  ] as const
+                ).map((tab) => {
+                  const active = listFilter === tab.id
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setListFilter(tab.id)}
+                      className={`min-h-9 shrink-0 flex-1 rounded-lg px-2.5 py-1 font-semibold whitespace-nowrap transition-all ${
+                        active
+                          ? "bg-white text-brand-deep shadow-2xs ring-1 ring-black/5"
+                          : "text-body hover:text-ink"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
 
           {/* Danh sách thẻ cuộc trò chuyện */}
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -1526,7 +1564,7 @@ export default function Chat() {
                       Hỏi giá mới
                     </span>
                   </div>
-                  <p className="mt-1 truncate text-xs text-muted">
+                  <p className="mt-1 truncate text-sm text-muted">
                     Nhắn tin hỏi giá hoặc lên đơn ngay...
                   </p>
                 </div>
@@ -1548,12 +1586,12 @@ export default function Chat() {
             ) : filteredOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
                 <MessageSquare className="size-8 text-muted/60" />
-                <p className="text-xs font-semibold text-ink">
+                <p className="text-sm font-semibold text-ink">
                   {availableOrders.length === 0
                     ? "Chưa có cuộc trò chuyện nào"
                     : "Không tìm thấy đoạn chat phù hợp"}
                 </p>
-                <p className="text-[11px] leading-relaxed text-muted">
+                <p className="text-sm leading-6 text-muted">
                   {availableOrders.length === 0
                     ? isRecycler
                       ? "Đơn và tin nhắn từ Người dân sẽ hiển thị tại đây."
@@ -1563,7 +1601,7 @@ export default function Chat() {
                 {availableOrders.length === 0 && (
                   <Link
                     to={isRecycler ? "/recycler/requests" : "/map"}
-                    className="btn-outline mt-1 h-8 px-3 text-xs"
+                    className="btn-outline mt-1 min-h-10 px-3.5 text-[13px] font-semibold sm:min-h-9"
                   >
                     {isRecycler ? "Xem yêu cầu đến" : "Tìm cơ sở trên bản đồ"}
                   </Link>
@@ -1639,7 +1677,7 @@ export default function Chat() {
 
                       <div className="mt-1 flex items-center justify-between gap-2">
                         <p
-                          className={`min-w-0 flex-1 truncate text-xs ${
+                          className={`min-w-0 flex-1 truncate text-sm leading-5 ${
                             unread > 0 ? "font-semibold text-ink" : "text-muted"
                           }`}
                         >
@@ -1673,7 +1711,7 @@ export default function Chat() {
                 type="button"
                 onClick={() => setMobileView("list")}
                 aria-label="Quay lại danh sách đoạn chat"
-                className="relative flex size-9 shrink-0 items-center justify-center rounded-full text-body hover:bg-surface-2 md:hidden"
+                className="relative flex size-10 shrink-0 items-center justify-center rounded-full text-body hover:bg-surface-2 md:hidden"
               >
                 <ArrowLeft className="size-5" />
                 {otherUnreadCount > 0 && (
@@ -1701,12 +1739,12 @@ export default function Chat() {
                     {partnerDisplayName}
                   </p>
                   {currentOrderId && (
-                    <span className="hidden sm:inline-flex shrink-0 rounded-full bg-surface-2 px-2 py-0.5 font-mono text-[10px] font-semibold text-brand-deep">
+                    <span className="hidden sm:inline-flex shrink-0 rounded-full bg-surface-2 px-2 py-0.5 font-mono text-xs font-semibold text-brand-deep">
                       {orderDisplayCode}
                     </span>
                   )}
                 </div>
-                <p className="truncate text-[11px] text-muted">
+                <p className="truncate text-xs text-muted">
                   {partnerTyping ? (
                     <span className="font-semibold text-brand">Đang nhập tin nhắn...</span>
                   ) : (
@@ -1729,20 +1767,30 @@ export default function Chat() {
                   <button
                     type="button"
                     onClick={handleAcceptInitialTerms}
-                    className="btn-primary hidden sm:inline-flex h-8 px-3 text-xs"
+                    className="btn-primary hidden sm:inline-flex min-h-9 px-3 text-[13px] font-semibold"
                   >
                     Chốt lịch ban đầu
                   </button>
                 )}
 
-              {currentOrderId && (thread?.isProposalLocked || statusLower === "completed") && (
-                <Link
-                  to={nextStepAction.to}
-                  className="btn-outline hidden lg:inline-flex h-8 px-3 text-xs"
-                >
-                  {nextStepAction.label}
-                </Link>
-              )}
+              {currentOrderId &&
+                (thread?.isProposalLocked || statusLower === "completed") &&
+                (nextStepAction.to ? (
+                  <Link
+                    to={nextStepAction.to}
+                    className="btn-outline hidden lg:inline-flex min-h-9 px-3 text-[13px] font-semibold"
+                  >
+                    {nextStepAction.label}
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={nextStepAction.action}
+                    className="btn-outline hidden lg:inline-flex min-h-9 px-3 text-[13px] font-semibold"
+                  >
+                    {nextStepAction.label}
+                  </button>
+                ))}
 
               <button
                 type="button"
@@ -1750,7 +1798,7 @@ export default function Chat() {
                 aria-label="Thông tin đơn và ảnh đính kèm"
                 aria-expanded={showInfoPanel}
                 title="Thông tin đơn & Ảnh đính kèm"
-                className={`flex size-9 items-center justify-center rounded-full border transition-colors ${
+                className={`flex size-10 items-center justify-center rounded-full border transition-colors ${
                   showInfoPanel
                     ? "border-brand bg-brand/10 text-brand"
                     : "border-transparent text-brand hover:bg-surface-2"
@@ -1760,47 +1808,6 @@ export default function Chat() {
               </button>
             </div>
           </header>
-
-          {/* Thanh ghim điều khoản thương lượng (Pinned Strip kiểu Messenger) */}
-          {currentOrderId && !isInquiryOrder && (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surface-2/70 px-3 sm:px-4 py-2 text-xs">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
-                <span className="font-bold text-ink">{categoryLabel(thread?.categoryCode)}</span>
-                <span className="text-muted">·</span>
-                <span className="font-bold text-brand-deep tabular-nums">
-                  {(thread?.agreedPricePerKg || thread?.initialPricePerKg || 7000).toLocaleString(
-                    "vi-VN",
-                  )}{" "}
-                  đ/kg
-                </span>
-                <span className="text-muted">·</span>
-                <span className="font-semibold text-ink tabular-nums">{activeWeight} kg</span>
-                <span className="hidden sm:inline text-muted">·</span>
-                <span className="hidden sm:inline font-semibold text-ink">
-                  {thread?.confirmedTimeSlot || thread?.proposedTimeSlot || "09:00 - 11:00"}
-                </span>
-                <span className="hidden md:inline font-bold text-brand-deep tabular-nums">
-                  (~{estimatedTotal.toLocaleString("vi-VN")} đ)
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                {thread?.isProposalLocked ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
-                    Đã chốt
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={openProposalModal}
-                    className="btn-outline h-7 px-2.5 text-[11px] font-semibold"
-                  >
-                    Đề xuất giá &amp; giờ
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Luồng tin nhắn */}
           <div
@@ -1824,7 +1831,7 @@ export default function Chat() {
                   <p className="text-base font-bold text-ink">
                     Trò chuyện &amp; Thương lượng cùng {partnerFromMap || "cơ sở thu mua"}
                   </p>
-                  <p className="max-w-[52ch] text-xs leading-relaxed text-muted">
+                  <p className="max-w-[52ch] text-sm leading-6 text-muted">
                     Nhắn tin hỏi giá, gửi ảnh phế liệu thực tế hoặc bấm Lên đơn &amp; Đề xuất giá
                     ngay tại đây. Lịch sử trao đổi được lưu bất biến (BR-NEG-01).
                   </p>
@@ -1832,7 +1839,7 @@ export default function Chat() {
                     <button
                       type="button"
                       onClick={() => setIsProposalModalOpen(true)}
-                      className="btn-primary h-10 px-4 text-xs font-semibold"
+                      className="btn-primary min-h-10 px-4 text-sm font-semibold"
                     >
                       Lên đơn &amp; Đề xuất giá ngay
                     </button>
@@ -1844,16 +1851,17 @@ export default function Chat() {
                           "Chào cơ sở, mình muốn hỏi giá thu mua hôm nay và hẹn lịch bàn giao.",
                         )
                       }
-                      className="btn-outline h-10 px-4 text-xs font-medium"
+                      className="btn-outline min-h-10 px-4 text-sm font-semibold"
                     >
                       Hỏi giá thu mua hôm nay
                     </button>
-                    <Link
-                      to={createHandoverForPartnerUrl}
-                      className="btn-ghost h-10 px-4 text-xs text-muted hover:text-ink"
+                    <button
+                      type="button"
+                      onClick={() => setHandoverModalOpen(true)}
+                      className="btn-ghost min-h-10 px-4 text-sm font-medium text-muted hover:text-ink"
                     >
                       Đặt lịch kèm ghim bản đồ
-                    </Link>
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -1862,26 +1870,36 @@ export default function Chat() {
                   <p className="text-base font-bold text-ink">
                     Chọn một cuộc trò chuyện để bắt đầu
                   </p>
-                  <p className="max-w-[50ch] text-xs leading-relaxed text-muted">
+                  <p className="max-w-[50ch] text-sm leading-6 text-muted">
                     {isRecycler
                       ? "Khi người dân nhắn tin thương lượng hoặc gửi yêu cầu thu gom tới cơ sở, tin nhắn sẽ xuất hiện ở danh sách bên trái."
-                      : "Chọn điểm thu mua trên bản đồ hoặc tạo yêu cầu bàn giao để nhắn tin trao đổi trực tiếp."}
+                      : "Chọn điểm thu mua trên bản đồ hoặc tạo yêu cầu bàn giao ngay tại đây."}
                   </p>
-                  <Link
-                    to={createHandoverForPartnerUrl}
-                    className="btn-primary h-10 px-5 text-xs font-semibold"
-                  >
-                    {isRecycler ? "Đi tới Tiếp nhận yêu cầu" : "Tạo yêu cầu bàn giao mới"}
-                  </Link>
+                  {isRecycler ? (
+                    <Link
+                      to="/recycler/requests"
+                      className="btn-primary min-h-10 px-5 text-sm font-semibold"
+                    >
+                      Đi tới Tiếp nhận yêu cầu
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setHandoverModalOpen(true)}
+                      className="btn-primary min-h-10 px-5 text-sm font-semibold"
+                    >
+                      Tạo yêu cầu bàn giao mới
+                    </button>
+                  )}
                 </div>
               )
             ) : errorMsg ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
                 {errorMsg}
               </div>
             ) : (
               <>
-                <p className="self-center rounded-full border border-line-soft bg-white px-3 py-1 text-center text-[11px] text-muted shadow-2xs">
+                <p className="self-center rounded-full border border-line-soft bg-white px-3 py-1 text-center text-xs text-muted shadow-2xs">
                   Toàn bộ trao đổi được lưu phục vụ đối soát minh bạch (BR-NEG-01)
                 </p>
 
@@ -1908,7 +1926,7 @@ export default function Chat() {
 
                       {m.messageType === "System" ? (
                         <div className="my-1 flex justify-center">
-                          <div className="max-w-[90%] rounded-full border border-emerald-200 bg-emerald-50 px-3.5 py-1 text-center text-[11px] font-medium text-emerald-800">
+                          <div className="max-w-[90%] rounded-full border border-emerald-200 bg-emerald-50 px-3.5 py-1 text-center text-[13px] leading-5 font-medium text-emerald-800">
                             {m.messageContent}
                           </div>
                         </div>
@@ -1952,11 +1970,11 @@ export default function Chat() {
                                   }`}
                                 >
                                   <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-line/60 pb-2">
-                                    <span className="flex items-center gap-1.5 text-xs font-bold text-ink">
+                                    <span className="flex items-center gap-1.5 text-sm font-bold text-ink">
                                       Bản đề xuất thương lượng
                                     </span>
                                     <span
-                                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
+                                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                                         isAccepted
                                           ? "bg-emerald-100 text-emerald-800"
                                           : isSuperseded
@@ -1978,9 +1996,9 @@ export default function Chat() {
                                     </span>
                                   </div>
 
-                                  <div className="mb-2.5 grid grid-cols-2 gap-2 text-xs text-body">
+                                  <div className="mb-2.5 grid grid-cols-2 gap-2 text-sm text-body">
                                     <div className="rounded-lg border border-line-soft bg-white/85 p-2">
-                                      <span className="block text-[10px] text-muted">
+                                      <span className="block text-xs text-muted">
                                         Đơn giá đề xuất
                                       </span>
                                       <span className="text-sm font-bold text-brand-deep tabular-nums">
@@ -1988,7 +2006,7 @@ export default function Chat() {
                                       </span>
                                     </div>
                                     <div className="rounded-lg border border-line-soft bg-white/85 p-2">
-                                      <span className="block text-[10px] text-muted">
+                                      <span className="block text-xs text-muted">
                                         Khối lượng
                                       </span>
                                       <span className="text-sm font-bold text-ink tabular-nums">
@@ -1996,7 +2014,7 @@ export default function Chat() {
                                       </span>
                                     </div>
                                     <div className="col-span-2 rounded-lg border border-line-soft bg-white/85 p-2">
-                                      <span className="block text-[10px] text-muted">
+                                      <span className="block text-xs text-muted">
                                         Khung giờ thu gom
                                       </span>
                                       <span className="font-bold text-ink">
@@ -2022,7 +2040,7 @@ export default function Chat() {
                                   </div>
 
                                   {p.note && (
-                                    <p className="mb-2.5 rounded-lg bg-white/70 p-2 text-xs italic text-body">
+                                    <p className="mb-2.5 rounded-lg bg-white/70 p-2 text-sm leading-6 italic text-body">
                                       "{p.note}"
                                     </p>
                                   )}
@@ -2034,7 +2052,7 @@ export default function Chat() {
                                           <button
                                             type="button"
                                             onClick={() => handleRespondProposal(m.id, true)}
-                                            className="btn-primary h-8 flex-1 px-3 text-xs font-semibold"
+                                            className="btn-primary min-h-10 flex-1 px-3 text-[13px] font-semibold sm:min-h-9"
                                           >
                                             Chấp nhận
                                           </button>
@@ -2052,20 +2070,20 @@ export default function Chat() {
                                               if (p.pickupAddress) setProposalAddress(p.pickupAddress)
                                               setIsProposalModalOpen(true)
                                             }}
-                                            className="btn-outline h-8 px-2.5 text-xs text-ink"
+                                            className="btn-outline min-h-10 px-3 text-[13px] font-semibold text-ink sm:min-h-9"
                                           >
                                             Đề xuất lại
                                           </button>
                                           <button
                                             type="button"
                                             onClick={() => handleRespondProposal(m.id, false)}
-                                            className="btn-ghost h-8 px-2.5 text-xs text-red-600"
+                                            className="btn-ghost min-h-10 px-3 text-[13px] font-semibold text-red-600 sm:min-h-9"
                                           >
                                             Từ chối
                                           </button>
                                         </div>
                                       ) : (
-                                        <p className="text-center text-[11px] font-medium text-amber-800">
+                                        <p className="text-center text-xs font-medium text-amber-800">
                                           Đang chờ {partnerDisplayName} phản hồi (BR-NEG-03)
                                         </p>
                                       )}
@@ -2121,7 +2139,7 @@ export default function Chat() {
                                 </div>
                               )}
                               {m.messageContent && (
-                                <p className="whitespace-pre-wrap text-sm leading-relaxed break-words">
+                                <p className="whitespace-pre-wrap text-[15px] leading-6 break-words">
                                   {m.messageContent}
                                 </p>
                               )}
@@ -2175,7 +2193,7 @@ export default function Chat() {
           {chatErr && (
             <p
               role="alert"
-              className="mx-3 mb-2 rounded-xl border border-warn/35 bg-warn/10 px-3.5 py-2 text-xs font-medium text-warn"
+              className="mx-3 mb-2 rounded-xl border border-warn/35 bg-warn/10 px-3.5 py-2 text-sm leading-6 font-medium text-warn"
             >
               {chatErr}
             </p>
@@ -2198,7 +2216,7 @@ export default function Chat() {
               type="button"
               disabled={!canCompose || uploadingImage}
               onClick={() => fileInputRef.current?.click()}
-              className="flex size-9 sm:size-10 shrink-0 items-center justify-center rounded-full text-brand transition-colors hover:bg-surface-2 disabled:opacity-40"
+              className="flex size-11 sm:size-10 shrink-0 items-center justify-center rounded-full text-brand transition-colors hover:bg-surface-2 disabled:opacity-40"
               title="Gửi ảnh chụp thực tế phế liệu"
               aria-label="Đính kèm ảnh phế liệu"
             >
@@ -2213,7 +2231,7 @@ export default function Chat() {
               <button
                 type="button"
                 onClick={openProposalModal}
-                className="inline-flex h-9 sm:h-10 shrink-0 items-center gap-1.5 rounded-full border border-brand/30 bg-brand/8 px-2.5 sm:px-3 text-xs font-semibold text-brand transition-colors hover:bg-brand/15"
+                className="inline-flex min-h-11 sm:min-h-10 shrink-0 items-center gap-1.5 rounded-full border border-brand/30 bg-brand/8 px-3 text-[13px] font-semibold text-brand transition-colors hover:bg-brand/15"
                 title="Lên đơn hoặc gửi đề xuất điều chỉnh giá, khối lượng và khung giờ"
               >
                 <ClipboardList className="size-4 shrink-0" />
@@ -2241,14 +2259,14 @@ export default function Chat() {
                     ? `Nhắn tin hỏi giá với ${partnerDisplayName}...`
                     : `Nhắn tin cho ${partnerDisplayName}...`
               }
-              className="h-9 sm:h-10 min-w-0 flex-1 rounded-full border border-line bg-surface-2 px-4 text-sm text-ink placeholder:text-muted focus:border-brand focus:bg-white focus:outline-none disabled:opacity-60"
+              className="min-h-11 sm:min-h-10 min-w-0 flex-1 rounded-full border border-line bg-surface-2 px-4 text-base text-ink placeholder:text-muted focus:border-brand focus:bg-white focus:outline-none disabled:opacity-60 sm:text-[15px]"
             />
 
             <button
               type="submit"
               disabled={!canCompose || sending}
               aria-label="Gửi tin nhắn"
-              className="btn-primary h-9 sm:h-10 shrink-0 rounded-full px-3 sm:px-4 text-xs sm:text-sm"
+              className="btn-primary min-h-11 sm:min-h-10 shrink-0 rounded-full px-3.5 sm:px-4 text-sm font-semibold"
             >
               <SendHorizontal className="size-4 shrink-0" />
               <span className="hidden sm:inline">{sending ? "Đang gửi..." : "Gửi"}</span>
@@ -2280,7 +2298,7 @@ export default function Chat() {
                 </button>
               </div>
 
-              <div className="flex-1 space-y-4 overflow-y-auto p-4 text-xs">
+              <div className="flex-1 space-y-4 overflow-y-auto p-4 text-sm">
                 <div className="flex flex-col items-center text-center">
                   <div
                     className={`flex size-14 items-center justify-center rounded-full border text-base font-bold ${avatarToneClass(
@@ -2289,11 +2307,11 @@ export default function Chat() {
                   >
                     {getInitials(partnerDisplayName)}
                   </div>
-                  <p className="mt-2 font-bold text-sm text-ink">{partnerDisplayName}</p>
-                  <span className="mt-1 rounded-full bg-surface-2 px-2.5 py-0.5 font-mono text-[11px] text-brand-deep">
+                  <p className="mt-2 font-bold text-base text-ink">{partnerDisplayName}</p>
+                  <span className="mt-1 rounded-full bg-surface-2 px-2.5 py-0.5 font-mono text-xs text-brand-deep">
                     {orderDisplayCode}
                   </span>
-                  <p className="mt-1.5 flex items-start justify-center gap-1 text-[11px] text-muted">
+                  <p className="mt-1.5 flex items-start justify-center gap-1 text-[13px] leading-5 text-muted">
                     <MapPin className="mt-0.5 size-3.5 shrink-0" />
                     <span>{partnerAddress}</span>
                   </p>
@@ -2341,7 +2359,7 @@ export default function Chat() {
                         setShowInfoPanel(false)
                         openProposalModal()
                       }}
-                      className="btn-outline h-9 w-full justify-center text-xs"
+                      className="btn-outline min-h-10 w-full justify-center text-[13px] font-semibold sm:min-h-9"
                     >
                       {currentOrderId && !isInquiryOrder
                         ? "Đề xuất giá & giờ mới"
@@ -2356,18 +2374,31 @@ export default function Chat() {
                       <button
                         type="button"
                         onClick={handleAcceptInitialTerms}
-                        className="btn-primary h-9 w-full justify-center text-xs"
+                        className="btn-primary min-h-10 w-full justify-center text-[13px] font-semibold sm:min-h-9"
                       >
                         Chốt lịch ban đầu
                       </button>
                     )}
 
-                  <Link
-                    to={nextStepAction.to}
-                    className="btn-primary h-9 w-full justify-center text-xs"
-                  >
-                    {nextStepAction.label}
-                  </Link>
+                  {nextStepAction.to ? (
+                    <Link
+                      to={nextStepAction.to}
+                      className="btn-primary min-h-10 w-full justify-center text-[13px] font-semibold sm:min-h-9"
+                    >
+                      {nextStepAction.label}
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowInfoPanel(false)
+                        nextStepAction.action?.()
+                      }}
+                      className="btn-primary min-h-10 w-full justify-center text-[13px] font-semibold sm:min-h-9"
+                    >
+                      {nextStepAction.label}
+                    </button>
+                  )}
                 </div>
 
                 {/* Ảnh đính kèm đã chia sẻ trong phòng chat */}
@@ -2376,7 +2407,7 @@ export default function Chat() {
                     Ảnh đã chia sẻ ({sharedImages.length})
                   </p>
                   {sharedImages.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-line p-3 text-center text-[11px] text-muted">
+                    <p className="rounded-lg border border-dashed border-line p-3 text-center text-sm leading-6 text-muted">
                       Chưa có ảnh phế liệu nào trong đoạn chat này.
                     </p>
                   ) : (
@@ -2404,34 +2435,55 @@ export default function Chat() {
         )}
       </div>
 
+      {/* Modal tạo yêu cầu bàn giao tích hợp trong Chat */}
+      <HandoverRequestModal
+        open={handoverModalOpen}
+        onClose={() => setHandoverModalOpen(false)}
+        initialPartnerId={partnerIdParam || matchedOrderMeta?.recyclerId || ""}
+        initialPartnerName={partnerFromMap || matchedOrderMeta?.partner || ""}
+        initialWaste={wasteFromParam}
+        onCreated={handleHandoverCreated}
+      />
+
       {/* Modal Đề Xuất Giá & Khung Giờ Mới */}
       {isProposalModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="card max-h-[90vh] w-full max-w-[480px] overflow-y-auto p-6 shadow-2xl animate-in fade-in zoom-in-95">
-            <div className="mb-4 flex items-center justify-between border-b border-line pb-3">
-              <h3 className="text-base font-bold text-ink">
-                {currentOrderId && !isInquiryOrder
-                  ? "Đề xuất giá & Khung giờ thu gom"
-                  : "Lên đơn & Đề xuất giá thu gom"}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsProposalModalOpen(false)}
-                className="btn-ghost size-8 p-0 text-lg text-muted hover:text-ink"
-              >
-                ✕
-              </button>
-            </div>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Đề xuất giá và khung giờ thu gom"
+          onClick={() => setIsProposalModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/55 p-4 backdrop-blur-xs"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[490px] rounded-2xl border border-line bg-surface-2/80 p-1 shadow-2xl"
+          >
+            <div className="max-h-[90dvh] overflow-y-auto rounded-[14px] bg-surface p-5 sm:p-6">
+              <div className="mb-4 flex items-center justify-between border-b border-line-soft pb-3">
+                <h3 className="text-base font-bold text-ink">
+                  {currentOrderId && !isInquiryOrder
+                    ? "Đề xuất giá & Khung giờ thu gom"
+                    : "Lên đơn & Đề xuất giá thu gom"}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsProposalModalOpen(false)}
+                  aria-label="Đóng hộp thoại đề xuất"
+                  className="grid size-10 place-items-center rounded-full border border-line bg-surface-2 text-muted transition-colors hover:text-ink"
+                >
+                  <X className="size-4.5" />
+                </button>
+              </div>
 
-            <form noValidate onSubmit={handleSendProposal} className="flex flex-col gap-4 text-xs">
+            <form noValidate onSubmit={handleSendProposal} className="flex flex-col gap-4 text-sm">
               <div>
-                <label className="mb-1 block font-semibold text-ink">
+                <label className="mb-1.5 block text-sm font-semibold text-ink">
                   Loại phế liệu thu gom: <RequiredMark />
                 </label>
                 <select
                   value={proposalCategory}
                   onChange={(e) => setProposalCategory(e.target.value)}
-                  className="input h-10 text-sm"
+                  className="input min-h-11 text-base sm:text-[15px]"
                 >
                   {CHAT_WASTE_CATEGORIES.map((cat) => (
                     <option key={cat.code} value={cat.code}>
@@ -2442,7 +2494,7 @@ export default function Chat() {
               </div>
 
               <div>
-                <label className="mb-1 block font-semibold text-ink">
+                <label className="mb-1.5 block text-sm font-semibold text-ink">
                   Đơn giá thu mua đề xuất (VNĐ/kg): <RequiredMark />
                 </label>
                 <div className="flex items-center gap-2">
@@ -2452,17 +2504,17 @@ export default function Chat() {
                     step="500"
                     value={proposalPrice}
                     onChange={(e) => setProposalPrice(Number(e.target.value))}
-                    className="input h-10 text-sm font-bold text-brand"
+                    className="input min-h-11 text-base font-bold text-brand sm:text-[15px]"
                   />
-                  <span className="shrink-0 text-muted">VNĐ / kg</span>
+                  <span className="shrink-0 text-sm text-muted">VNĐ / kg</span>
                 </div>
-                <div className="mt-1.5 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-2">
                   {[6500, 7000, 7500, 8000].map((pr) => (
                     <button
                       key={pr}
                       type="button"
                       onClick={() => setProposalPrice(pr)}
-                      className="chip bg-surface-2 text-[11px] hover:bg-brand/10 hover:text-brand"
+                      className="min-h-10 rounded-full border border-line bg-surface-2 px-3 text-[13px] font-semibold transition-colors hover:bg-brand/10 hover:text-brand sm:min-h-9"
                     >
                       {pr.toLocaleString("vi-VN")} đ
                     </button>
@@ -2471,7 +2523,7 @@ export default function Chat() {
               </div>
 
               <div>
-                <label className="mb-1 block font-semibold text-ink">
+                <label className="mb-1.5 block text-sm font-semibold text-ink">
                   Khối lượng ước tính (kg): <RequiredMark />
                 </label>
                 <input
@@ -2480,13 +2532,13 @@ export default function Chat() {
                   step="0.5"
                   value={proposalWeight}
                   onChange={(e) => setProposalWeight(Number(e.target.value))}
-                  className="input h-10 text-sm"
+                  className="input min-h-11 text-base sm:text-[15px]"
                 />
               </div>
 
               <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block min-h-5 leading-5 font-semibold text-ink">
+                  <label className="mb-1.5 block leading-6 font-semibold text-ink">
                     Ngày hẹn thu gom:{" "}
                     <span className="whitespace-nowrap">
                       <RequiredMark />
@@ -2508,16 +2560,16 @@ export default function Chat() {
                         if (firstValid) setProposalSlot(firstValid)
                       }
                     }}
-                    className="input h-10 text-sm"
+                    className="input min-h-11 text-base sm:text-[15px]"
                     required
                   />
-                  <span className="mt-1 block text-[11px] text-muted">
+                  <span className="mt-1 block text-xs text-muted">
                     Hôm nay ({formatIsoDateToVi(appointmentBounds.minDate)}) đến +30 ngày
                   </span>
                 </div>
 
                 <div>
-                  <label className="mb-1 block min-h-5 leading-5 font-semibold text-ink">
+                  <label className="mb-1.5 block leading-6 font-semibold text-ink">
                     Khung giờ thu gom:{" "}
                     <span className="whitespace-nowrap">
                       <RequiredMark />
@@ -2529,7 +2581,7 @@ export default function Chat() {
                       setProposalSlot(e.target.value)
                       setProposalErr("")
                     }}
-                    className="input h-10 text-sm"
+                    className="input min-h-11 text-base sm:text-[15px]"
                   >
                     {TIME_SLOTS.map((slot) => {
                       const past = isTimeSlotInPastForDate(proposalDate, slot)
@@ -2547,14 +2599,14 @@ export default function Chat() {
               {proposalErr && (
                 <p
                   role="alert"
-                  className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs font-medium text-warn"
+                  className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm leading-6 font-medium text-warn"
                 >
                   {proposalErr}
                 </p>
               )}
 
               <div>
-                <label className="mb-1 block font-semibold text-ink">
+                <label className="mb-1.5 block text-sm font-semibold text-ink">
                   Địa điểm thu gom / Điểm hẹn đầu ngõ: <RequiredMark />
                 </label>
                 <input
@@ -2562,12 +2614,12 @@ export default function Chat() {
                   value={proposalAddress}
                   onChange={(e) => setProposalAddress(e.target.value)}
                   placeholder="Ví dụ: Cổng phụ Khu CNC Hòa Lạc (gần ĐH FPT), Thạch Thất"
-                  className="input h-10 text-sm"
+                  className="input min-h-11 text-base sm:text-[15px]"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block font-semibold text-ink">
+                <label className="mb-1.5 block text-sm font-semibold text-ink">
                   Ghi chú cho đối tác (tuỳ chọn):
                 </label>
                 <textarea
@@ -2575,7 +2627,7 @@ export default function Chat() {
                   value={proposalNote}
                   onChange={(e) => setProposalNote(e.target.value)}
                   placeholder="Ví dụ: Rác đã phân loại sạch, buộc bao sẵn; hoặc Kho bận tuyến sáng, hẹn đầu giờ chiều..."
-                  className="input py-2 text-xs"
+                  className="input min-h-12 py-2.5 text-base sm:text-[15px]"
                 />
               </div>
 
@@ -2583,19 +2635,20 @@ export default function Chat() {
                 <button
                   type="button"
                   onClick={() => setIsProposalModalOpen(false)}
-                  className="btn-ghost h-10 px-4 text-xs"
+                  className="btn-ghost min-h-10 px-4 text-sm font-semibold sm:min-h-9"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
                   disabled={submittingProposal}
-                  className="btn-primary h-10 px-5 text-xs font-semibold"
+                  className="btn-primary min-h-10 px-5 text-sm font-semibold sm:min-h-9"
                 >
                   {submittingProposal ? "Đang gửi..." : "Gửi bản đề xuất"}
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       )}
