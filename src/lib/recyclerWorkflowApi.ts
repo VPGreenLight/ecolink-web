@@ -539,7 +539,7 @@ export interface SubmitRecyclerOnboardingResult {
   userId?: string
 }
 
-async function uploadSingleDocument(
+export async function uploadSingleDocument(
   file: File,
   documentType: "permit" | "facility-photo",
 ): Promise<string> {

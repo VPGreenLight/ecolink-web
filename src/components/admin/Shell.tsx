@@ -15,6 +15,7 @@ import { hasLiveBackendAuth, ROLE_LABEL, signOut, useSession } from "@/lib/sessi
 import { openAuthPopup } from "@/lib/popupAuth"
 import Assistant from "@/components/admin/Assistant"
 import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
+import UserAvatar from "@/components/UserAvatar"
 
 const STAFF_ROUTE_PERMISSIONS: Record<string, readonly string[]> = {
   "/staff/ai-review": ["REVIEW_AI", "ai.review"],
@@ -137,6 +138,7 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
             <NotificationBellPopover role={role} />
             <AccountMenu
               name={session?.name ?? ""}
+              avatarUrl={session?.avatarUrl}
               label={ROLE_LABEL[role]}
               items={ACCOUNT_ITEMS[role]}
             />
@@ -233,15 +235,6 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
   )
 }
 
-function initialsOf(name: string) {
-  return name
-    .split(" ")
-    .slice(-2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase()
-}
-
 /** Avatar + menu tài khoản ở thanh trên.
  *
  *  Menu tài khoản KHÔNG nằm trong sidebar: sidebar là danh sách màn hình của
@@ -250,10 +243,12 @@ function initialsOf(name: string) {
  *  avatar, đúng chỗ của nó ở mọi app khác. */
 function AccountMenu({
   name,
+  avatarUrl,
   label,
   items,
 }: {
   name: string
+  avatarUrl?: string | null
   label: string
   items: readonly (readonly [string, string])[]
 }) {
@@ -288,9 +283,7 @@ function AccountMenu({
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1.5 rounded-full border border-line bg-white py-1 pr-2 pl-1 transition-colors hover:border-sage-line hover:bg-surface-2"
       >
-        <span className="grid size-8 place-items-center rounded-full bg-[linear-gradient(145deg,#00874a,#004826)] text-[12px] leading-none font-bold tracking-wide text-white">
-          {initialsOf(name)}
-        </span>
+        <UserAvatar name={name} avatarUrl={avatarUrl} size="sm" />
         <span className="hidden text-[13px] text-muted sm:block">{name}</span>
         <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-3.5 text-muted">
           <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -303,9 +296,7 @@ function AccountMenu({
           className="absolute top-full right-0 mt-2 w-64 overflow-hidden rounded-2xl border border-line bg-white shadow-[0_18px_44px_-8px_rgba(15,31,21,0.16)]"
         >
           <div className="flex items-center gap-3 border-b border-line-soft bg-surface-2/60 p-4">
-            <span className="grid size-11 shrink-0 place-items-center rounded-full bg-[linear-gradient(145deg,#00874a,#004826)] text-sm leading-none font-bold tracking-wide text-white">
-              {initialsOf(name)}
-            </span>
+            <UserAvatar name={name} avatarUrl={avatarUrl} size="md" />
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-ink">{name}</p>
               <p className="text-xs text-muted">{label}</p>
@@ -320,7 +311,7 @@ function AccountMenu({
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
               >
-                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="size-4 text-muted">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4 text-muted">
                   <circle cx="12" cy="8" r="3.5" />
                   <path d="M12 14c-3.9 0-7 2.4-7 5.4V21h14v-1.6c0-3-3.1-5.4-7-5.4Z" />
                 </svg>

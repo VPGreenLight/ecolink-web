@@ -7,18 +7,6 @@ export const NAV_LINKS = [
   { to: "/blog", label: "Blog" },
 ] as const
 
-// Blog không có ở thanh dưới: 5 tab trên màn 320px sẽ chật, và blog là nội
-// dung đọc thêm chứ không phải chức năng chính.
-// Đổi thưởng thì có: đó là điểm đóng lại vòng lặp giao rác -> tích điểm, thiếu
-// nó thì người dùng mobile không tới được nơi tiêu điểm. Đổi "Đối tác" (chỉ để
-// xem danh bạ, có trong footer) ra cho "Đổi thưởng".
-export const MOBILE_LINKS = [
-  { to: "/", label: "Tổng quan" },
-  { to: "/scanner", label: "Nhận diện" },
-  { to: "/map", label: "Thu gom" },
-  { to: "/rewards", label: "Đổi thưởng" },
-] as const
-
 export const FOOTER_COLUMNS = [
   {
     title: "HỆ SINH THÁI",

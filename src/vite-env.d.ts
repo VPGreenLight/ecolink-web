@@ -9,6 +9,8 @@ interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string
   /** Google OAuth 2.0 Client ID cho Google Identity Services (`POST /api/v1/auth/google`). */
   readonly VITE_GOOGLE_CLIENT_ID?: string
+  /** Bật/tắt HTTPS cho Vite dev & preview server (mặc định `true` để dùng Camera/GPS qua Wi-Fi LAN). */
+  readonly VITE_HTTPS?: string
 }
 
 interface ImportMeta {

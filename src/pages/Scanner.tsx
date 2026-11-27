@@ -1921,6 +1921,19 @@ const T = {
 
 /* ---------------------------------------------------------------- camera (chụp ảnh trực tiếp) */
 
+function getCameraViewport() {
+  if (typeof window === "undefined") {
+    return { isLandscape: false, isFullScreen: false }
+  }
+  const w = document.documentElement.clientWidth || window.innerWidth
+  const h = document.documentElement.clientHeight || window.innerHeight
+  const mediaLandscape = window.matchMedia?.("(orientation: landscape)").matches ?? false
+  const isLandscape = w !== h ? w > h : mediaLandscape
+  // Giữ viewfinder toàn màn hình trên cả điện thoại xoay ngang (vd. 844×390, 932×430)
+  const isFullScreen = w < 768 || (w < 1024 && h < 580)
+  return { isLandscape, isFullScreen }
+}
+
 function CameraPanel({
   onShoot,
   onClose,
@@ -1932,15 +1945,51 @@ function CameraPanel({
   const [err, setErr] = useState("")
   const [ready, setReady] = useState(false)
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment")
+  const [viewport, setViewport] = useState(getCameraViewport)
 
-  // Khoá cuộn trang nền khi mở camera toàn màn hình trên mobile
   useEffect(() => {
+    let rafId = 0
+    let timerId = 0
+    const sync = () => {
+      const next = getCameraViewport()
+      setViewport((prev) =>
+        prev.isLandscape === next.isLandscape && prev.isFullScreen === next.isFullScreen
+          ? prev
+          : next,
+      )
+    }
+    // Trên iOS/Android, kích thước viewport có thể trễ 1 nhịp sau sự kiện orientationchange
+    const scheduleSync = () => {
+      sync()
+      cancelAnimationFrame(rafId)
+      clearTimeout(timerId)
+      rafId = requestAnimationFrame(sync)
+      timerId = window.setTimeout(sync, 120)
+    }
+    const mql = window.matchMedia?.("(orientation: landscape)")
+    window.addEventListener("resize", scheduleSync)
+    window.addEventListener("orientationchange", scheduleSync)
+    mql?.addEventListener?.("change", scheduleSync)
+    screen.orientation?.addEventListener?.("change", scheduleSync)
+    return () => {
+      cancelAnimationFrame(rafId)
+      clearTimeout(timerId)
+      window.removeEventListener("resize", scheduleSync)
+      window.removeEventListener("orientationchange", scheduleSync)
+      mql?.removeEventListener?.("change", scheduleSync)
+      screen.orientation?.removeEventListener?.("change", scheduleSync)
+    }
+  }, [])
+
+  // Khoá cuộn trang nền khi mở camera toàn màn hình trên mobile (kể cả khi xoay ngang)
+  useEffect(() => {
+    if (!viewport.isFullScreen) return
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = "hidden"
     return () => {
       document.body.style.overflow = prevOverflow
     }
-  }, [])
+  }, [viewport.isFullScreen])
 
   useEffect(() => {
     let stream: MediaStream | undefined
@@ -1953,14 +2002,14 @@ function CameraPanel({
       return
     }
 
-    const isPortrait =
-      typeof window !== "undefined" && window.innerHeight > window.innerWidth
+    const usePortraitStream = viewport.isFullScreen && !viewport.isLandscape
 
     const constraints: MediaStreamConstraints = {
       video: {
         facingMode: { ideal: facingMode },
-        width: { ideal: isPortrait ? 1080 : 1280 },
-        height: { ideal: isPortrait ? 1920 : 720 },
+        aspectRatio: { ideal: usePortraitStream ? 9 / 16 : 16 / 9 },
+        width: { ideal: usePortraitStream ? 1080 : 1280 },
+        height: { ideal: usePortraitStream ? 1920 : 720 },
       },
       audio: false,
     }
@@ -1973,10 +2022,16 @@ function CameraPanel({
           return
         }
         stream = s
-        if (video.current) {
-          video.current.srcObject = s
-          void video.current.play()
-          setReady(true)
+        const v = video.current
+        if (v) {
+          v.srcObject = s
+          const markReady = () => {
+            if (!alive) return
+            if (v.videoWidth > 0 && v.videoHeight > 0) setReady(true)
+          }
+          v.onloadedmetadata = markReady
+          void v.play().then(markReady).catch(() => {})
+          if (v.readyState >= 1) markReady()
         }
       })
       .catch((e: DOMException) => {
@@ -1994,7 +2049,7 @@ function CameraPanel({
       alive = false
       stream?.getTracks().forEach((t) => t.stop())
     }
-  }, [facingMode])
+  }, [facingMode, viewport.isFullScreen, viewport.isLandscape])
 
   const toggleFacingMode = () => {
     setFacingMode((prev) => (prev === "environment" ? "user" : "environment"))
@@ -2003,13 +2058,42 @@ function CameraPanel({
   const shoot = useCallback(
     (autoScan: boolean) => {
       const v = video.current
-      if (!v || !v.videoWidth) return
+      if (!v || !v.videoWidth || !v.videoHeight) return
+
+      const vidW = v.videoWidth
+      const vidH = v.videoHeight
+      const rect = v.getBoundingClientRect()
+      const dispW = rect.width || v.clientWidth
+      const dispH = rect.height || v.clientHeight
+
+      // Cắt đúng vùng đang hiển thị qua `object-cover` trên khung camera để ảnh chụp khớp hướng (dọc/ngang) và khung hình người dùng thấy
+      let sx = 0
+      let sy = 0
+      let sw = vidW
+      let sh = vidH
+      if (dispW > 0 && dispH > 0) {
+        const vidRatio = vidW / vidH
+        const dispRatio = dispW / dispH
+        if (vidRatio > dispRatio) {
+          sw = vidH * dispRatio
+          sx = (vidW - sw) / 2
+        } else if (vidRatio < dispRatio) {
+          sh = vidW / dispRatio
+          sy = (vidH - sh) / 2
+        }
+      }
+
       const c = document.createElement("canvas")
-      c.width = v.videoWidth
-      c.height = v.videoHeight
+      c.width = Math.max(1, Math.round(sw))
+      c.height = Math.max(1, Math.round(sh))
       const ctx = c.getContext("2d")
       if (!ctx) return
-      ctx.drawImage(v, 0, 0, c.width, c.height)
+
+      if (facingMode === "user") {
+        ctx.translate(c.width, 0)
+        ctx.scale(-1, 1)
+      }
+      ctx.drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height)
       c.toBlob(
         (blob) => {
           if (blob) {
@@ -2020,7 +2104,7 @@ function CameraPanel({
         0.92,
       )
     },
-    [onShoot],
+    [facingMode, onShoot],
   )
 
   // Phím Enter = chụp & quét ngay (giữ đúng hành vi của nút chính trên panel)
@@ -2035,36 +2119,53 @@ function CameraPanel({
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [ready, err, shoot])
 
+  const isMobileFull = viewport.isFullScreen
+  const isMobileLandscape = isMobileFull && viewport.isLandscape
+
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-black select-none md:relative md:inset-auto md:z-auto md:overflow-clip md:rounded-2xl md:border md:border-line/70 md:bg-white md:shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-      {/* Mobile Top Bar */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/85 via-black/40 to-transparent z-20 md:hidden">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md border border-white/10">
-          <i className="pulse-bar size-1.5 rounded-full bg-mint-bright" />
-          Camera AI trực tiếp
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={toggleFacingMode}
-            aria-label="Đổi camera trước hoặc sau"
-            className="grid size-10 place-items-center rounded-full bg-white/15 text-white backdrop-blur-md border border-white/15 active:scale-90 transition-transform"
-          >
-            <CameraRotateIcon className="size-5" />
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Đóng camera"
-            className="grid size-10 place-items-center rounded-full bg-white/15 text-white backdrop-blur-md border border-white/15 active:scale-90 transition-transform"
-          >
-            <CloseModalIcon className="size-5" />
-          </button>
+    <div
+      className={
+        isMobileFull
+          ? `fixed inset-0 z-[60] flex bg-black select-none ${
+              isMobileLandscape ? "flex-row" : "flex-col"
+            }`
+          : "relative flex flex-col overflow-clip rounded-2xl border border-line/70 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)] select-none"
+      }
+    >
+      {/* Mobile Top Bar (portrait) */}
+      {isMobileFull && !isMobileLandscape && (
+        <div className="z-20 flex items-center justify-between bg-gradient-to-b from-black/85 via-black/40 to-transparent px-4 py-3">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md">
+            <i className="pulse-bar size-1.5 rounded-full bg-mint-bright" />
+            Camera AI trực tiếp
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleFacingMode}
+              aria-label="Đổi camera trước hoặc sau"
+              className="grid size-10 place-items-center rounded-full border border-white/15 bg-white/15 text-white backdrop-blur-md transition-transform active:scale-90"
+            >
+              <CameraRotateIcon className="size-5" />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Đóng camera"
+              className="grid size-10 place-items-center rounded-full border border-white/15 bg-white/15 text-white backdrop-blur-md transition-transform active:scale-90"
+            >
+              <CloseModalIcon className="size-5" />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Viewfinder Frame Container */}
-      <div className="relative min-h-0 flex-1 md:flex-none md:aspect-video bg-black overflow-hidden flex items-center justify-center">
+      <div
+        className={`relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden bg-black ${
+          isMobileFull ? "" : "aspect-video flex-none"
+        }`}
+      >
         {err ? (
           <div className="grid h-full place-items-center px-6 text-center">
             <div>
@@ -2086,93 +2187,135 @@ function CameraPanel({
               playsInline
               muted
               autoPlay
-              className={`size-full object-cover ${facingMode === "user" ? "scale-x-[-1]" : ""}`}
+              className={`absolute inset-0 size-full object-cover ${facingMode === "user" ? "scale-x-[-1]" : ""}`}
               aria-label="Khung hình camera"
             />
             {!ready && (
-              <p className="absolute inset-0 grid place-items-center text-[13px] text-white/70 bg-black/60 z-10">
+              <p className="absolute inset-0 z-10 grid place-items-center bg-black/60 text-[13px] text-white/70">
                 Đang bật camera...
               </p>
             )}
 
-            {/* Desktop Top Badges & Close Button */}
-            <span className="hidden md:inline-flex absolute top-3 left-3 items-center gap-1.5 rounded-full bg-ink/85 px-3 py-1.5 text-[11px] font-semibold text-white z-10 backdrop-blur-sm border border-white/10">
-              <i className="pulse-bar size-1.5 rounded-full bg-mint-bright" />
-              Camera đang mở
-            </span>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Đóng camera"
-              className="hidden md:grid absolute top-3 right-3 size-8 place-items-center rounded-full bg-ink/70 hover:bg-ink text-white/80 hover:text-white transition-colors z-10"
-            >
-              <CloseModalIcon className="size-4" />
-            </button>
+            {isMobileLandscape && (
+              <span className="absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/55 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md">
+                <i className="pulse-bar size-1.5 rounded-full bg-mint-bright" />
+                Camera AI trực tiếp
+              </span>
+            )}
+
+            {!isMobileFull && (
+              <>
+                <span className="absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-ink/85 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur-sm">
+                  <i className="pulse-bar size-1.5 rounded-full bg-mint-bright" />
+                  Camera đang mở
+                </span>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Đóng camera"
+                  className="absolute top-3 right-3 z-10 grid size-8 place-items-center rounded-full bg-ink/70 text-white/80 transition-colors hover:bg-ink hover:text-white"
+                >
+                  <CloseModalIcon className="size-4" />
+                </button>
+              </>
+            )}
           </>
         )}
       </div>
 
-      {/* Mobile Bottom Control Bar */}
-      <div className="flex md:hidden flex-col gap-3 p-4 pb-[max(2rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-black via-black/85 to-transparent z-20">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => shoot(false)}
-            disabled={!!err || !ready}
-            className="flex-1 h-13 rounded-2xl bg-white/15 hover:bg-white/25 active:scale-95 text-white font-semibold text-sm backdrop-blur-md border border-white/20 transition-all flex items-center justify-center gap-2 disabled:opacity-40"
-          >
-            <EyeScanIcon className="size-4 text-white/80" />
-            Chụp xem lại
-          </button>
-          <button
-            type="button"
-            onClick={() => shoot(true)}
-            disabled={!!err || !ready}
-            className="flex-[1.4] h-13 rounded-2xl bg-gradient-to-r from-brand to-emerald-600 hover:from-brand-deep hover:to-emerald-700 active:scale-95 text-white font-bold text-sm shadow-[0_8px_24px_rgba(0,135,74,0.4)] transition-all flex items-center justify-center gap-2 disabled:opacity-40"
-          >
-            <SparkIcon />
-            Chụp &amp; Quét ngay
-          </button>
-        </div>
-      </div>
+      {/* Mobile Bottom / Side Control Bar */}
+      {isMobileFull ? (
+        <div
+          className={
+            isMobileLandscape
+              ? "z-20 flex w-44 shrink-0 flex-col justify-between border-l border-white/10 bg-black/92 p-3 pr-[max(0.75rem,env(safe-area-inset-right))]"
+              : "z-20 flex flex-col gap-3 bg-gradient-to-t from-black via-black/85 to-transparent p-4 pb-[max(2rem,env(safe-area-inset-bottom))]"
+          }
+        >
+          {isMobileLandscape && (
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={toggleFacingMode}
+                aria-label="Đổi camera trước hoặc sau"
+                className="grid size-10 place-items-center rounded-full border border-white/15 bg-white/15 text-white backdrop-blur-md transition-transform active:scale-90"
+              >
+                <CameraRotateIcon className="size-5" />
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Đóng camera"
+                className="grid size-10 place-items-center rounded-full border border-white/15 bg-white/15 text-white backdrop-blur-md transition-transform active:scale-90"
+              >
+                <CloseModalIcon className="size-5" />
+              </button>
+            </div>
+          )}
 
-      {/* Desktop Bottom Action Bar */}
-      <div className="hidden md:flex flex-wrap items-center justify-between gap-3 border-t border-surface-2 px-5 py-3.5 bg-white">
-        <p className="text-[13px] text-muted">
-          {err ? "Hoặc đóng rồi dùng nút tải ảnh lên" : "Nhấn Enter để chụp & quét ngay"}
-        </p>
-        <div className="flex shrink-0 flex-wrap items-center gap-2.5">
-          <button type="button" onClick={onClose} className="btn-ghost h-9 px-3.5 text-[13px]">
-            Huỷ
-          </button>
-          <button
-            type="button"
-            onClick={toggleFacingMode}
-            className="btn-outline h-9 px-3 text-[13px] flex items-center gap-1.5"
-            title="Đổi camera trước hoặc sau"
-          >
-            <CameraRotateIcon className="size-3.5 text-muted" />
-            Đổi camera
-          </button>
-          <button
-            type="button"
-            onClick={() => shoot(false)}
-            disabled={!!err || !ready}
-            className="btn-outline h-9 px-3.5 text-[13px] disabled:opacity-50"
-          >
-            Chụp xem lại
-          </button>
-          <button
-            type="button"
-            onClick={() => shoot(true)}
-            disabled={!!err || !ready}
-            className="btn-primary h-9 px-4 text-[13px] font-semibold disabled:opacity-50 shadow-sm"
-          >
-            <SparkIcon />
-            Chụp &amp; Quét ngay
-          </button>
+          <div className={isMobileLandscape ? "flex flex-col gap-2.5" : "flex items-center gap-3"}>
+            <button
+              type="button"
+              onClick={() => shoot(false)}
+              disabled={!!err || !ready}
+              className={`${
+                isMobileLandscape ? "h-12 w-full px-3 text-xs" : "h-13 flex-1 text-sm"
+              } flex items-center justify-center gap-2 rounded-2xl border border-white/20 bg-white/15 font-semibold text-white backdrop-blur-md transition-all hover:bg-white/25 active:scale-95 disabled:opacity-40`}
+            >
+              <EyeScanIcon className="size-4 shrink-0 text-white/80" />
+              Chụp xem lại
+            </button>
+            <button
+              type="button"
+              onClick={() => shoot(true)}
+              disabled={!!err || !ready}
+              className={`${
+                isMobileLandscape ? "h-13 w-full px-3 text-xs" : "h-13 flex-[1.4] text-sm"
+              } flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-brand to-emerald-600 font-bold text-white shadow-[0_8px_24px_rgba(0,135,74,0.4)] transition-all hover:from-brand-deep hover:to-emerald-700 active:scale-95 disabled:opacity-40`}
+            >
+              <SparkIcon />
+              Chụp &amp; Quét ngay
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-surface-2 bg-white px-5 py-3.5">
+          <p className="text-[13px] text-muted">
+            {err ? "Hoặc đóng rồi dùng nút tải ảnh lên" : "Nhấn Enter để chụp & quét ngay"}
+          </p>
+          <div className="flex shrink-0 flex-wrap items-center gap-2.5">
+            <button type="button" onClick={onClose} className="btn-ghost h-9 px-3.5 text-[13px]">
+              Huỷ
+            </button>
+            <button
+              type="button"
+              onClick={toggleFacingMode}
+              className="btn-outline flex h-9 items-center gap-1.5 px-3 text-[13px]"
+              title="Đổi camera trước hoặc sau"
+            >
+              <CameraRotateIcon className="size-3.5 text-muted" />
+              Đổi camera
+            </button>
+            <button
+              type="button"
+              onClick={() => shoot(false)}
+              disabled={!!err || !ready}
+              className="btn-outline h-9 px-3.5 text-[13px] disabled:opacity-50"
+            >
+              Chụp xem lại
+            </button>
+            <button
+              type="button"
+              onClick={() => shoot(true)}
+              disabled={!!err || !ready}
+              className="btn-primary h-9 px-4 text-[13px] font-semibold shadow-sm disabled:opacity-50"
+            >
+              <SparkIcon />
+              Chụp &amp; Quét ngay
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

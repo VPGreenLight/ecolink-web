@@ -2,6 +2,7 @@ import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import type * as LeafletTypes from "leaflet"
 import {
   filterAreaPresets,
+  requestBrowserGeolocation,
   resolveSearchCoordinates,
   searchPlacesOnSubmit,
   type GeocodingSuggestionDto,
@@ -64,12 +65,25 @@ export default function LocationPinPickerMap({
 
   const onChangeRef = useRef(onChange)
   const privacyFuzzRef = useRef(privacyFuzz)
+  const rawAnchorRef = useRef({ lat, lng })
+  const lastEmittedRef = useRef<{ lat: number; lng: number } | null>(null)
   useEffect(() => {
     onChangeRef.current = onChange
   }, [onChange])
   useEffect(() => {
     privacyFuzzRef.current = privacyFuzz
   }, [privacyFuzz])
+  useEffect(() => {
+    const emitted = lastEmittedRef.current
+    if (
+      emitted &&
+      Math.abs(lat - emitted.lat) < 1e-6 &&
+      Math.abs(lng - emitted.lng) < 1e-6
+    ) {
+      return
+    }
+    rawAnchorRef.current = { lat, lng }
+  }, [lat, lng])
 
   const presetMatches = useMemo(() => {
     if (!query.trim()) return []
@@ -78,11 +92,13 @@ export default function LocationPinPickerMap({
 
   const emitCoordinates = (rawLat: number, rawLng: number, addressHint?: string) => {
     if (readOnly || !onChangeRef.current) return
+    rawAnchorRef.current = { lat: rawLat, lng: rawLng }
     const resolved = resolveSearchCoordinates(
       rawLat,
       rawLng,
       allowPrivacyFuzz && privacyFuzzRef.current,
     )
+    lastEmittedRef.current = { lat: resolved.lat, lng: resolved.lng }
     onChangeRef.current(resolved.lat, resolved.lng, addressHint)
   }
 
@@ -245,24 +261,16 @@ export default function LocationPinPickerMap({
     }
   }
 
-  function requestGps() {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setNotice("Trình duyệt không hỗ trợ định vị GPS. Hãy bấm trực tiếp lên bản đồ để ghim.")
-      return
-    }
+  async function requestGps() {
     setLocatingGps(true)
     setNotice("")
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        emitCoordinates(pos.coords.latitude, pos.coords.longitude)
-        setLocatingGps(false)
-      },
-      () => {
-        setLocatingGps(false)
-        setNotice("Không lấy được quyền GPS. Bạn hãy gõ tên khu vực hoặc bấm lên bản đồ để ghim.")
-      },
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60_000 },
-    )
+    const res = await requestBrowserGeolocation()
+    setLocatingGps(false)
+    if (res.ok) {
+      emitCoordinates(res.lat, res.lng)
+      return
+    }
+    setNotice(res.message)
   }
 
   const osmInspectUrl = `https://www.openstreetmap.org/?mlat=${lat.toFixed(5)}&mlon=${lng.toFixed(5)}#map=17/${lat.toFixed(5)}/${lng.toFixed(5)}`
@@ -306,7 +314,10 @@ export default function LocationPinPickerMap({
                 onClick={() => {
                   const next = !privacyFuzz
                   setPrivacyFuzz(next)
-                  const resolved = resolveSearchCoordinates(lat, lng, next)
+                  privacyFuzzRef.current = next
+                  const { lat: rawLat, lng: rawLng } = rawAnchorRef.current
+                  const resolved = resolveSearchCoordinates(rawLat, rawLng, next)
+                  lastEmittedRef.current = { lat: resolved.lat, lng: resolved.lng }
                   onChange?.(resolved.lat, resolved.lng)
                 }}
                 className={`h-9 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors ${

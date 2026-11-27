@@ -4,6 +4,8 @@ import { r as openAuthPopup } from "./assets/popupAuth-CbEcM25r.js";
 import { a as markNotificationRead, i as markAllNotificationsRead, n as createNotificationHubConnection, r as fetchMyNotifications, t as NOTIFICATIONS_UPDATED_EVENT } from "./assets/notificationsApi-blefiHjL.js";
 import { o as getAdminReconciliationLedger, v as useEntitlements } from "./assets/servicePackageApi-l8q88aSB.js";
 import { m as ConfirmLogoutDialog, o as Portal, p as PORTAL_NAV } from "./assets/Portal-BCYwLxhx.js";
+import { h as fetchMyVirtualTree } from "./assets/gamificationApi-oNhUqEyX.js";
+import { a as getFrameSrc, c as readLiveTreePreview, i as getDefaultFrameForStage, l as readStoredTreePreview, o as getStageName, r as clearLiveTreePreview, s as getTreeAvatarImgClass, u as saveLiveTreePreview } from "./assets/virtualTree-BwLBbA3D.js";
 import { a as fetchCurrentUserProfile } from "./assets/authApi-B_RZeGQf.js";
 import { t as AI_AVATAR } from "./assets/scanner-DJC07y4s.js";
 import { d as POSTS, f as STAFF, h as fmtVnd, i as COMPLAINTS, m as fmtInt, n as AI_CASES, o as DATASET, p as STATS, r as APPLICATIONS } from "./assets/ops-DEQYZm4o.js";
@@ -11,12 +13,13 @@ import { t as FLOWS } from "./assets/cashflow-B8HhmFRJ.js";
 import { a as fetchAiDatasetDashboard, l as fetchStaffAiFeedbackQueue } from "./assets/aiCurationApi-CKzkMDeL.js";
 import { l as fetchStaffBlogs } from "./assets/blogApi-y9RkAsWE.js";
 import { c as getAdminKpiSummary, o as getAdminAnalyticsCharts, u as getAdminStaffList } from "./assets/governanceApi-BMnRND9a.js";
-import { h as fetchStaffApplications } from "./assets/recyclerWorkflowApi-KrUDy3w0.js";
+import { h as fetchStaffApplications } from "./assets/recyclerWorkflowApi-CvjGt52T.js";
 import { l as fetchStaffComplaints } from "./assets/reviewComplaintApi-BPqoqhtM.js";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Link, MemoryRouter, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+import { BookOpen, Gift, Home, MapPin, ScanLine } from "lucide-react";
 //#region src/components/AuthLayout.tsx
 /** Khung trang riêng cho Đăng nhập / Đăng ký.
 *
@@ -133,6 +136,76 @@ function AuthLayout() {
 	});
 }
 //#endregion
+//#region src/components/UserAvatar.tsx
+var SIZE_CLS = {
+	sm: {
+		box: "size-8",
+		text: "text-[11px]"
+	},
+	md: {
+		box: "size-11",
+		text: "text-[15px]"
+	}
+};
+function initialsOf(name) {
+	const parts = name.trim().split(/\s+/).filter(Boolean);
+	if (parts.length === 0) return "";
+	if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+	return parts.slice(-2).map((part) => part[0]).join("").toUpperCase();
+}
+/** Circular portrait placeholder clipped cleanly to the lower rim instead of a floating icon. */
+function GuestPortraitMark() {
+	return /* @__PURE__ */ jsxs("svg", {
+		viewBox: "0 0 32 32",
+		fill: "none",
+		"aria-hidden": "true",
+		className: "size-full text-brand-deep",
+		children: [/* @__PURE__ */ jsx("path", {
+			d: "M5.2 32c0-5.4 4.3-9.2 10.8-9.2s10.8 3.8 10.8 9.2",
+			fill: "currentColor",
+			fillOpacity: "0.14",
+			stroke: "currentColor",
+			strokeOpacity: "0.72",
+			strokeWidth: "1.4",
+			strokeLinecap: "round"
+		}), /* @__PURE__ */ jsx("circle", {
+			cx: "16",
+			cy: "12.5",
+			r: "4.6",
+			fill: "currentColor",
+			fillOpacity: "0.16",
+			stroke: "currentColor",
+			strokeOpacity: "0.78",
+			strokeWidth: "1.4"
+		})]
+	});
+}
+/** Shared user avatar for Navbar and AdminShell with photo, monogram, and guest states. */
+function UserAvatar({ name = "", avatarUrl, size = "sm" }) {
+	const [failedUrl, setFailedUrl] = useState(null);
+	const scale = SIZE_CLS[size];
+	const cleanUrl = avatarUrl?.trim() || "";
+	const initials = initialsOf(name);
+	if (cleanUrl && failedUrl !== cleanUrl) return /* @__PURE__ */ jsx("span", {
+		className: `relative grid ${scale.box} shrink-0 overflow-hidden rounded-full bg-surface-2 ring-1 ring-inset ring-black/10`,
+		children: /* @__PURE__ */ jsx("img", {
+			src: cleanUrl,
+			alt: name || "Ảnh đại diện",
+			onError: () => setFailedUrl(cleanUrl),
+			className: "size-full object-cover",
+			referrerPolicy: "no-referrer"
+		})
+	});
+	if (initials) return /* @__PURE__ */ jsx("span", {
+		className: `grid ${scale.box} shrink-0 place-items-center rounded-full bg-[radial-gradient(125%_125%_at_28%_18%,var(--color-brand)_0%,var(--color-brand-deep)_95%)] ${scale.text} leading-none font-semibold tracking-[0.03em] text-white ring-1 ring-inset ring-black/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] select-none`,
+		children: initials
+	});
+	return /* @__PURE__ */ jsx("span", {
+		className: `relative grid ${scale.box} shrink-0 overflow-hidden rounded-full bg-[radial-gradient(120%_100%_at_50%_15%,rgba(141,249,184,0.38)_0%,var(--color-surface-2)_58%,var(--color-surface-3)_100%)] ring-1 ring-inset ring-brand/18 shadow-[inset_0_1px_0_rgba(255,255,255,0.95)]`,
+		children: /* @__PURE__ */ jsx(GuestPortraitMark, {})
+	});
+}
+//#endregion
 //#region src/data/nav.ts
 var NAV_LINKS = [
 	{
@@ -154,24 +227,6 @@ var NAV_LINKS = [
 	{
 		to: "/blog",
 		label: "Blog"
-	}
-];
-var MOBILE_LINKS = [
-	{
-		to: "/",
-		label: "Tổng quan"
-	},
-	{
-		to: "/scanner",
-		label: "Nhận diện"
-	},
-	{
-		to: "/map",
-		label: "Thu gom"
-	},
-	{
-		to: "/rewards",
-		label: "Đổi thưởng"
 	}
 ];
 var FOOTER_COLUMNS = [{
@@ -223,24 +278,6 @@ var SUPPORT = {
 };
 //#endregion
 //#region src/components/Navbar.tsx
-function initialsOf$1(name) {
-	return name.split(" ").slice(-2).map((part) => part[0]).join("").toUpperCase();
-}
-/** Icon người dùng: viewBox cố định nên tỉ lệ đúng ở mọi size, khác với
-*  hình tròn + thang vẽ bằng phần trăm trước đây. */
-function UserGlyph({ className }) {
-	return /* @__PURE__ */ jsxs("svg", {
-		viewBox: "0 0 24 24",
-		fill: "currentColor",
-		"aria-hidden": "true",
-		className,
-		children: [/* @__PURE__ */ jsx("circle", {
-			cx: "12",
-			cy: "8",
-			r: "4.25"
-		}), /* @__PURE__ */ jsx("path", { d: "M12 13.75c-4.28 0-7.75 2.7-7.75 6.03V21h15.5v-1.22c0-3.33-3.47-6.03-7.75-6.03Z" })]
-	});
-}
 function Chevron({ open }) {
 	return /* @__PURE__ */ jsx("svg", {
 		viewBox: "0 0 16 16",
@@ -254,26 +291,6 @@ function Chevron({ open }) {
 			strokeLinecap: "round",
 			strokeLinejoin: "round"
 		})
-	});
-}
-function Avatar({ user, avatarUrl, size = "size-9" }) {
-	const [imgFailed, setImgFailed] = useState(false);
-	useEffect(() => {
-		setImgFailed(false);
-	}, [avatarUrl]);
-	if (avatarUrl && !imgFailed) return /* @__PURE__ */ jsx("img", {
-		src: avatarUrl,
-		alt: user || "Ảnh đại diện",
-		onError: () => setImgFailed(true),
-		className: `${size} shrink-0 rounded-full border border-line-soft object-cover`
-	});
-	if (user) return /* @__PURE__ */ jsx("span", {
-		className: `grid ${size} shrink-0 place-items-center rounded-full bg-[linear-gradient(145deg,#00874a,#004826)] text-[13px] leading-none font-bold tracking-wide text-white`,
-		children: initialsOf$1(user)
-	});
-	return /* @__PURE__ */ jsx("span", {
-		className: `grid ${size} shrink-0 place-items-center rounded-full bg-surface-2`,
-		children: /* @__PURE__ */ jsx(UserGlyph, { className: "size-1/2 text-sage-line" })
 	});
 }
 /** Menu tài khoản: các mục dùng chung cho cả 4 vai trò sau đăng nhập. */
@@ -398,23 +415,23 @@ function AccountMenu$1() {
 				"aria-haspopup": "menu",
 				"aria-expanded": open,
 				onClick: () => setOpen((v) => !v),
-				className: "flex h-10 items-center gap-1 rounded-full border border-line bg-white px-1 shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-colors hover:border-sage-line hover:bg-surface-2",
-				children: [/* @__PURE__ */ jsx(Avatar, {
-					user,
+				className: "flex h-10 items-center gap-1.5 rounded-full border border-line bg-white py-1 pr-2 pl-1 shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-colors hover:border-sage-line hover:bg-surface-2",
+				children: [/* @__PURE__ */ jsx(UserAvatar, {
+					name: user,
 					avatarUrl: session?.avatarUrl,
-					size: "size-8"
+					size: "sm"
 				}), /* @__PURE__ */ jsx(Chevron, { open })]
 			}),
 			open && /* @__PURE__ */ jsx("div", {
 				role: "menu",
-				className: "absolute top-full right-0 mt-2.5 w-[360px] overflow-hidden rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)]",
+				className: "absolute top-full right-0 mt-2.5 max-h-[calc(100dvh-5.75rem)] w-[min(360px,calc(100vw-2rem))] overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)]",
 				children: user ? /* @__PURE__ */ jsxs(Fragment, { children: [
 					/* @__PURE__ */ jsxs("div", {
 						className: "flex items-center gap-3.5 border-b border-line-soft bg-surface-2/60 px-4 py-3.5",
-						children: [/* @__PURE__ */ jsx(Avatar, {
-							user,
+						children: [/* @__PURE__ */ jsx(UserAvatar, {
+							name: user,
 							avatarUrl: session?.avatarUrl,
-							size: "size-11"
+							size: "md"
 						}), /* @__PURE__ */ jsxs("div", {
 							className: "min-w-0",
 							children: [/* @__PURE__ */ jsx("p", {
@@ -672,17 +689,31 @@ function NotificationBellLink({ isLoggedIn }) {
 }
 //#endregion
 //#region src/components/MobileNav.tsx
+var TAB_ICON = {
+	"/": Home,
+	"/scanner": ScanLine,
+	"/map": MapPin,
+	"/rewards": Gift,
+	"/blog": BookOpen
+};
 /** Bottom tab bar, only visible below the `lg` breakpoint. */
 function MobileNav() {
 	return /* @__PURE__ */ jsx("nav", {
-		"aria-label": "Điều hướng chính",
-		className: "fixed right-3 bottom-3 left-3 z-50 grid grid-cols-4 overflow-hidden rounded-[14px] border border-line/80 bg-white/94 shadow-[0_8px_28px_rgba(15,31,21,0.14)] backdrop-blur-xl lg:hidden",
-		children: MOBILE_LINKS.map((link) => /* @__PURE__ */ jsx(NavLink, {
-			to: link.to,
-			end: link.to === "/",
-			className: ({ isActive }) => `grid min-h-12 place-items-center border-0 border-r border-line/60 px-1 text-xs font-semibold last:border-r-0 ${isActive ? "bg-surface-2 text-brand-deep" : "text-body"}`,
-			children: link.label
-		}, link.to))
+		"aria-label": "Điều hướng chính (di động)",
+		className: "fixed right-2 bottom-2.5 left-2 z-40 grid grid-cols-5 overflow-hidden rounded-[14px] border border-line/80 bg-white/94 shadow-[0_8px_28px_rgba(15,31,21,0.14)] backdrop-blur-xl min-[360px]:right-2.5 min-[360px]:left-2.5 lg:hidden",
+		children: NAV_LINKS.map((link) => {
+			const Icon = TAB_ICON[link.to];
+			return /* @__PURE__ */ jsx(NavLink, {
+				to: link.to,
+				end: link.to === "/",
+				className: ({ isActive }) => `flex min-h-[54px] flex-col items-center justify-start gap-1 border-0 border-r border-line/60 px-0.5 pt-2 pb-1.5 text-center text-[10px] leading-[1.15] font-semibold tracking-[-0.015em] transition-colors last:border-r-0 min-[412px]:text-[11px] sm:px-1 sm:text-xs sm:tracking-normal ${isActive ? "bg-surface-2 text-brand-deep" : "text-body"}`,
+				children: ({ isActive }) => /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Icon, {
+					"aria-hidden": "true",
+					strokeWidth: isActive ? 2.15 : 1.75,
+					className: "size-[17px] shrink-0 sm:size-[18px]"
+				}), /* @__PURE__ */ jsx("span", { children: link.label })] })
+			}, link.to);
+		})
 	});
 }
 //#endregion
@@ -762,10 +793,333 @@ function FooterList({ title, note, items }) {
 	] });
 }
 //#endregion
+//#region src/components/VirtualTreeFab.tsx
+var FAB_POS_KEY = "ecolink:tree-fab-pos-v1";
+var DRAG_THRESHOLD_PX = 6;
+function samePreview(a, b) {
+	return a.stage === b.stage && a.label === b.label && a.water === b.water && a.isDead === b.isDead && a.harvestReady === b.harvestReady;
+}
+function resolveInitialPreview(isGuest, liveTreeUser, userKey) {
+	if (liveTreeUser) {
+		const cached = readLiveTreePreview(userKey);
+		if (cached) return cached;
+		return {
+			stage: "seed",
+			label: getStageName("seed"),
+			water: null,
+			isDead: false,
+			harvestReady: false
+		};
+	}
+	if (!isGuest) {
+		const stored = readStoredTreePreview();
+		if (stored) return {
+			stage: stored.stage,
+			label: stored.isDead ? "Héo khô" : getStageName(stored.stage),
+			water: stored.water,
+			isDead: stored.isDead,
+			harvestReady: stored.harvestReady
+		};
+	}
+	const stage = "seed";
+	return {
+		stage,
+		label: getStageName(stage),
+		water: 80,
+		isDead: false,
+		harvestReady: false
+	};
+}
+function getWaterTheme(water, isDead) {
+	if (water === null) return {
+		stroke: "#cbd5e1",
+		textClass: "text-muted border-line bg-white"
+	};
+	if (isDead || water <= 20) return {
+		stroke: "#e11d48",
+		textClass: "text-rose-700 border-rose-200 bg-white"
+	};
+	if (water < 30) return {
+		stroke: "#d97706",
+		textClass: "text-amber-700 border-amber-200 bg-white"
+	};
+	if (water >= 60 && water <= 90) return {
+		stroke: "#0284c7",
+		textClass: "text-sky-700 border-sky-200 bg-white"
+	};
+	return {
+		stroke: "#2563eb",
+		textClass: "text-blue-700 border-blue-200 bg-white"
+	};
+}
+function readSavedRatio() {
+	if (typeof window === "undefined") return {
+		rx: 1,
+		ry: 1
+	};
+	try {
+		const raw = localStorage.getItem(FAB_POS_KEY);
+		if (!raw) return {
+			rx: 1,
+			ry: 1
+		};
+		const parsed = JSON.parse(raw);
+		if (typeof parsed.rx === "number" && typeof parsed.ry === "number") return {
+			rx: Math.min(1, Math.max(0, parsed.rx)),
+			ry: Math.min(1, Math.max(0, parsed.ry))
+		};
+	} catch {}
+	return {
+		rx: 1,
+		ry: 1
+	};
+}
+function getViewportSize() {
+	return {
+		w: document.documentElement.clientWidth || window.innerWidth,
+		h: document.documentElement.clientHeight || window.innerHeight
+	};
+}
+function getSafeBounds(w, h) {
+	const desktop = w >= 1024;
+	const size = w >= 640 ? 60 : 58;
+	const marginX = desktop ? 24 : 14;
+	const minX = marginX;
+	const maxX = Math.max(minX, w - size - marginX);
+	const minY = desktop ? 88 : 80;
+	return {
+		minX,
+		maxX,
+		minY,
+		maxY: Math.max(minY, h - size - (desktop ? 24 : 90)),
+		size
+	};
+}
+function clampRatioToPixels(ratio, w, h) {
+	const { minX, maxX, minY, maxY } = getSafeBounds(w, h);
+	return {
+		x: Math.round(minX + ratio.rx * (maxX - minX)),
+		y: Math.round(minY + ratio.ry * (maxY - minY))
+	};
+}
+/** Nút nổi hình tròn (`58px`/`60px`): viền ngoài mảnh hiển thị mực nước rút đối xứng 2 bên,
+*  lòng trong là ảnh cây thật của Cây Ảo EcoLink kèm nhãn `%`, kéo thả tự do trên 4 trang chính. */
+function VirtualTreeFab() {
+	const { pathname } = useLocation();
+	const session = useSession();
+	const isGuest = !session && !isSsrSmokeTest();
+	const liveTreeUser = hasLiveBackendAuth() && session?.role === "user";
+	const userKey = session?.id || session?.name || "";
+	const [preview, setPreview] = useState(() => resolveInitialPreview(isGuest, liveTreeUser, userKey));
+	const [ratioPos, setRatioPos] = useState(() => readSavedRatio());
+	const [coords, setCoords] = useState(() => {
+		if (isSsrSmokeTest() || typeof window === "undefined") return null;
+		const { w, h } = getViewportSize();
+		return clampRatioToPixels(readSavedRatio(), w, h);
+	});
+	const [dragging, setDragging] = useState(false);
+	const dragRef = useRef(null);
+	const suppressClickRef = useRef(false);
+	useEffect(() => {
+		if (!liveTreeUser) {
+			if (isGuest) clearLiveTreePreview();
+			const next = resolveInitialPreview(isGuest, liveTreeUser, userKey);
+			setPreview((prev) => samePreview(prev, next) ? prev : next);
+		} else {
+			const cached = readLiveTreePreview(userKey);
+			if (cached) setPreview((prev) => samePreview(prev, cached) ? prev : cached);
+			let active = true;
+			fetchMyVirtualTree().then((res) => {
+				if (!active || !res.data) return;
+				const next = saveLiveTreePreview(userKey, res.data);
+				setPreview((prev) => samePreview(prev, next) ? prev : next);
+			}).catch(() => {
+				if (!active || readLiveTreePreview(userKey)) return;
+				setPreview((prev) => prev.water === null ? {
+					...prev,
+					water: 80
+				} : prev);
+			});
+			return () => {
+				active = false;
+			};
+		}
+		if (isGuest || typeof window === "undefined") return;
+		const onStorage = (e) => {
+			if (e.key === "ecolink:virtual-tree-v1") {
+				const next = resolveInitialPreview(isGuest, liveTreeUser, userKey);
+				setPreview((prev) => samePreview(prev, next) ? prev : next);
+			}
+		};
+		window.addEventListener("storage", onStorage);
+		return () => window.removeEventListener("storage", onStorage);
+	}, [
+		pathname,
+		isGuest,
+		liveTreeUser,
+		userKey
+	]);
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const syncCoords = () => {
+			const { w, h } = getViewportSize();
+			const next = clampRatioToPixels(ratioPos, w, h);
+			setCoords((prev) => prev && prev.x === next.x && prev.y === next.y ? prev : next);
+		};
+		syncCoords();
+		window.addEventListener("resize", syncCoords);
+		return () => window.removeEventListener("resize", syncCoords);
+	}, [ratioPos]);
+	const handlePointerDown = (e) => {
+		if (e.button !== 0 || typeof window === "undefined") return;
+		suppressClickRef.current = false;
+		const { w, h } = getViewportSize();
+		const current = coords ?? clampRatioToPixels(ratioPos, w, h);
+		dragRef.current = {
+			pointerId: e.pointerId,
+			startClientX: e.clientX,
+			startClientY: e.clientY,
+			startX: current.x,
+			startY: current.y,
+			moved: false
+		};
+		const onMove = (ev) => {
+			const d = dragRef.current;
+			if (!d || d.pointerId !== ev.pointerId) return;
+			const dx = ev.clientX - d.startClientX;
+			const dy = ev.clientY - d.startClientY;
+			if (!d.moved) {
+				if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+				d.moved = true;
+				suppressClickRef.current = true;
+				setDragging(true);
+			}
+			const vw = getViewportSize();
+			const { minX, maxX, minY, maxY } = getSafeBounds(vw.w, vw.h);
+			setCoords({
+				x: Math.min(maxX, Math.max(minX, Math.round(d.startX + dx))),
+				y: Math.min(maxY, Math.max(minY, Math.round(d.startY + dy)))
+			});
+		};
+		const onEnd = (ev) => {
+			const d = dragRef.current;
+			if (!d || d.pointerId !== ev.pointerId) return;
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onEnd);
+			window.removeEventListener("pointercancel", onEnd);
+			dragRef.current = null;
+			if (!d.moved) return;
+			setDragging(false);
+			const vw = getViewportSize();
+			const { minX, maxX, minY, maxY } = getSafeBounds(vw.w, vw.h);
+			const curX = Math.min(maxX, Math.max(minX, Math.round(d.startX + (ev.clientX - d.startClientX))));
+			const curY = Math.min(maxY, Math.max(minY, Math.round(d.startY + (ev.clientY - d.startClientY))));
+			const nextRatio = {
+				rx: maxX > minX ? (curX - minX) / (maxX - minX) : 1,
+				ry: maxY > minY ? (curY - minY) / (maxY - minY) : 1
+			};
+			setRatioPos(nextRatio);
+			setCoords({
+				x: curX,
+				y: curY
+			});
+			try {
+				localStorage.setItem(FAB_POS_KEY, JSON.stringify(nextRatio));
+			} catch {}
+			window.setTimeout(() => {
+				suppressClickRef.current = false;
+			}, 60);
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onEnd);
+		window.addEventListener("pointercancel", onEnd);
+	};
+	const handleClick = (e) => {
+		if (suppressClickRef.current) {
+			e.preventDefault();
+			e.stopPropagation();
+			suppressClickRef.current = false;
+		}
+	};
+	const waterRatio = preview.water !== null ? preview.water / 100 : 0;
+	const radius = 22.75;
+	const circumference = 2 * Math.PI * radius;
+	const dashOffset = circumference * (1 - waterRatio);
+	const arcRotation = 90 - 180 * waterRatio;
+	const waterTheme = getWaterTheme(preview.water, preview.isDead);
+	const frameSrc = getFrameSrc(getDefaultFrameForStage(preview.stage));
+	const waterLabel = preview.water !== null ? `${preview.water}%` : "--";
+	const tooltipOnRight = ratioPos.rx < .45;
+	const ariaLabel = `Mở Cây Ảo EcoLink (${preview.label}${preview.water !== null ? `, mực nước ${preview.water}%` : ""}) — có thể kéo để di chuyển`;
+	return /* @__PURE__ */ jsxs(Link, {
+		to: "/ecofacts",
+		"aria-label": ariaLabel,
+		title: `Cây Ảo EcoLink · ${preview.label}${preview.water !== null ? ` · Ẩm ${preview.water}%` : ""} (Kéo để di chuyển)`,
+		onPointerDown: handlePointerDown,
+		onClick: handleClick,
+		draggable: false,
+		style: coords ? {
+			left: `${coords.x}px`,
+			top: `${coords.y}px`
+		} : void 0,
+		className: `group fixed z-30 flex size-[58px] touch-none select-none items-center justify-center rounded-full bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 sm:size-[60px] lg:z-40 ${coords ? "" : "right-3.5 bottom-20 lg:right-6 lg:bottom-6"} ${dragging ? "cursor-grabbing shadow-[0_16px_32px_-6px_rgba(15,31,21,0.24)]" : "cursor-grab shadow-[0_8px_22px_-4px_rgba(15,31,21,0.18),0_2px_6px_rgba(15,31,21,0.08)] transition-shadow duration-200 hover:shadow-[0_12px_26px_-4px_rgba(15,31,21,0.24)]"}`,
+		children: [
+			/* @__PURE__ */ jsxs("svg", {
+				viewBox: "0 0 48 48",
+				"aria-hidden": "true",
+				className: "pointer-events-none absolute inset-0 size-full",
+				children: [/* @__PURE__ */ jsx("circle", {
+					cx: "24",
+					cy: "24",
+					r: radius,
+					fill: "none",
+					stroke: "#e2e8f0",
+					strokeWidth: "2.5"
+				}), preview.water !== null && preview.water > 0 && /* @__PURE__ */ jsx("circle", {
+					cx: "24",
+					cy: "24",
+					r: radius,
+					fill: "none",
+					stroke: waterTheme.stroke,
+					strokeWidth: "2.5",
+					strokeLinecap: "round",
+					strokeDasharray: circumference,
+					strokeDashoffset: dashOffset,
+					transform: `rotate(${arcRotation} 24 24)`
+				})]
+			}),
+			/* @__PURE__ */ jsx("span", {
+				className: "pointer-events-none relative block size-[50px] overflow-hidden rounded-full bg-sky-100 isolate sm:size-[52px]",
+				children: /* @__PURE__ */ jsx("img", {
+					src: frameSrc,
+					alt: "",
+					draggable: false,
+					className: `${getTreeAvatarImgClass(preview.stage)} select-none ${preview.isDead ? "grayscale contrast-125 opacity-75" : ""}`
+				})
+			}),
+			/* @__PURE__ */ jsx("span", {
+				className: `pointer-events-none absolute -bottom-1.5 left-1/2 min-w-[34px] -translate-x-1/2 rounded-full border px-1.5 py-[1.5px] text-center text-[10.5px] leading-none font-bold tabular-nums shadow-2xs ${waterTheme.textClass}`,
+				children: waterLabel
+			}),
+			/* @__PURE__ */ jsx("span", {
+				className: `pointer-events-none absolute top-1/2 hidden -translate-y-1/2 items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-xs font-semibold whitespace-nowrap text-ink shadow-[0_8px_20px_-4px_rgba(15,31,21,0.14)] transition-opacity duration-150 lg:flex ${tooltipOnRight ? "left-full ml-3" : "right-full mr-3"} ${dragging ? "opacity-0" : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"}`,
+				children: /* @__PURE__ */ jsxs("span", { children: ["Cây Ảo · ", preview.label] })
+			})
+		]
+	});
+}
+//#endregion
 //#region src/components/Layout.tsx
+var TREE_FAB_ROUTES = /* @__PURE__ */ new Set([
+	"/",
+	"/scanner",
+	"/map",
+	"/rewards"
+]);
 /** Khung dùng chung cho mọi trang công khai và portal (hộp thoại đăng nhập/đăng ký Trang Nhỏ được render toàn cục). */
 function Layout() {
 	const { pathname } = useLocation();
+	const showTreeFab = TREE_FAB_ROUTES.has(pathname);
 	useEffect(() => {
 		window.scrollTo({ top: 0 });
 		ensureActiveAuthSession();
@@ -782,6 +1136,7 @@ function Layout() {
 				})
 			}),
 			/* @__PURE__ */ jsx(Footer, {}),
+			showTreeFab && /* @__PURE__ */ jsx(VirtualTreeFab, {}),
 			/* @__PURE__ */ jsx(MobileNav, {})
 		]
 	});
@@ -1375,6 +1730,7 @@ function AdminShell({ role }) {
 							className: "ml-auto flex items-center gap-2.5",
 							children: [/* @__PURE__ */ jsx(NotificationBellPopover, { role }), /* @__PURE__ */ jsx(AccountMenu, {
 								name: session?.name ?? "",
+								avatarUrl: session?.avatarUrl,
 								label: ROLE_LABEL[role],
 								items: ACCOUNT_ITEMS[role]
 							})]
@@ -1458,16 +1814,13 @@ function AdminShell({ role }) {
 		]
 	});
 }
-function initialsOf(name) {
-	return name.split(" ").slice(-2).map((part) => part[0]).join("").toUpperCase();
-}
 /** Avatar + menu tài khoản ở thanh trên.
 *
 *  Menu tài khoản KHÔNG nằm trong sidebar: sidebar là danh sách màn hình của
 *  khu vực làm việc, trộn 2 mục tài khoản dùng chung vào đó thì không phân biệt
 *  được đâu là việc công việc, đâu là việc của chính mình. Ở đây nó nằm sau
 *  avatar, đúng chỗ của nó ở mọi app khác. */
-function AccountMenu({ name, label, items }) {
+function AccountMenu({ name, avatarUrl, label, items }) {
 	const [open, setOpen] = useState(false);
 	const ref = useRef(null);
 	useEffect(() => {
@@ -1496,9 +1849,10 @@ function AccountMenu({ name, label, items }) {
 			onClick: () => setOpen((v) => !v),
 			className: "flex items-center gap-1.5 rounded-full border border-line bg-white py-1 pr-2 pl-1 transition-colors hover:border-sage-line hover:bg-surface-2",
 			children: [
-				/* @__PURE__ */ jsx("span", {
-					className: "grid size-8 place-items-center rounded-full bg-[linear-gradient(145deg,#00874a,#004826)] text-[12px] leading-none font-bold tracking-wide text-white",
-					children: initialsOf(name)
+				/* @__PURE__ */ jsx(UserAvatar, {
+					name,
+					avatarUrl,
+					size: "sm"
 				}),
 				/* @__PURE__ */ jsx("span", {
 					className: "hidden text-[13px] text-muted sm:block",
@@ -1523,9 +1877,10 @@ function AccountMenu({ name, label, items }) {
 			className: "absolute top-full right-0 mt-2 w-64 overflow-hidden rounded-2xl border border-line bg-white shadow-[0_18px_44px_-8px_rgba(15,31,21,0.16)]",
 			children: [/* @__PURE__ */ jsxs("div", {
 				className: "flex items-center gap-3 border-b border-line-soft bg-surface-2/60 p-4",
-				children: [/* @__PURE__ */ jsx("span", {
-					className: "grid size-11 shrink-0 place-items-center rounded-full bg-[linear-gradient(145deg,#00874a,#004826)] text-sm leading-none font-bold tracking-wide text-white",
-					children: initialsOf(name)
+				children: [/* @__PURE__ */ jsx(UserAvatar, {
+					name,
+					avatarUrl,
+					size: "md"
 				}), /* @__PURE__ */ jsxs("div", {
 					className: "min-w-0",
 					children: [/* @__PURE__ */ jsx("p", {
@@ -1545,6 +1900,10 @@ function AccountMenu({ name, label, items }) {
 					children: [/* @__PURE__ */ jsxs("svg", {
 						viewBox: "0 0 24 24",
 						fill: "none",
+						stroke: "currentColor",
+						strokeWidth: "1.8",
+						strokeLinecap: "round",
+						strokeLinejoin: "round",
 						"aria-hidden": "true",
 						className: "size-4 text-muted",
 						children: [/* @__PURE__ */ jsx("circle", {
@@ -1822,49 +2181,49 @@ function RequireRole({ roles, children }) {
 *  `preloadPages()` dùng cho `check-routes.tsx`: `renderToStaticMarkup` chạy
 *  đồng bộ, `lazy` chưa resolve sẽ render ra fallback nên phải nạp trước. */
 var loaders = {
-	Home: () => import("./assets/Home-k8NQ6yEO.js"),
+	Home: () => import("./assets/Home-BkvgQn6v.js"),
 	Blog: () => import("./assets/Blog-DAmbu5nB.js"),
 	BlogDetail: () => import("./assets/BlogDetail-BMwW6G0K.js"),
-	Rewards: () => import("./assets/Rewards-Djmud8sc.js"),
-	LeaderboardPage: () => import("./assets/Leaderboard-CCLSKTqq.js"),
-	Scanner: () => import("./assets/Scanner-BaVOVU4R.js"),
-	MapPage: () => import("./assets/MapPage-DLJW8nJv.js"),
-	Partners: () => import("./assets/Partners-BWm033tw.js"),
-	Feedback: () => import("./assets/Feedback-D2aS4pOs.js"),
-	Guidance: () => import("./assets/Guidance-B64HhuCr.js"),
-	Waste: () => import("./assets/Waste-C3Xvf9nX.js"),
-	Chat: () => import("./assets/Chat-BJG_CC2X.js"),
-	JoinRecycler: () => import("./assets/JoinRecycler-DaBpanVk.js"),
+	Rewards: () => import("./assets/Rewards-CHgQMsyX.js"),
+	LeaderboardPage: () => import("./assets/Leaderboard-DG6rGJmz.js"),
+	Scanner: () => import("./assets/Scanner-9CmTmEvU.js"),
+	MapPage: () => import("./assets/MapPage-CReaAnZZ.js"),
+	Partners: () => import("./assets/Partners-MuzCdETo.js"),
+	Feedback: () => import("./assets/Feedback-D6myre2N.js"),
+	Guidance: () => import("./assets/Guidance-Dy169-3z.js"),
+	Waste: () => import("./assets/Waste-CjkWb9O2.js"),
+	Chat: () => import("./assets/Chat-b0FuSbWD.js"),
+	JoinRecycler: () => import("./assets/JoinRecycler-CKNq2CEV.js"),
 	ResetPassword: () => import("./assets/ResetPassword-CfDS2T_e.js"),
 	Terms: () => import("./assets/Terms-D_XrPq_m.js"),
-	EcoFactsPage: () => import("./assets/EcoFactsPage-BBmqhcpy.js"),
+	EcoFactsPage: () => import("./assets/EcoFactsPage-CY6EA8zX.js"),
 	Login: () => import("./assets/Login-DZBXboIG.js"),
 	Register: () => import("./assets/Register-BGU-5WwP.js"),
 	Logout: () => import("./assets/Logout-rhaiOvHH.js"),
 	NotFound: () => import("./assets/NotFound-Cuzh8QZo.js"),
-	Profile: () => import("./assets/Profile-BolPmVSM.js"),
-	Notifications: () => import("./assets/Notifications-Dq0idcdj.js"),
+	Profile: () => import("./assets/Profile-CGBl5lBq.js"),
+	Notifications: () => import("./assets/Notifications-BW62DAL-.js"),
 	Password: () => import("./assets/Password-CCfwnswD.js"),
-	UserHome: () => import("./assets/Home-C5FWynUA.js"),
-	Handover: () => import("./assets/Handover-CSO7jsos.js"),
-	Receipt: () => import("./assets/Receipt-DXgn33pg.js"),
+	UserHome: () => import("./assets/Home-BqqEiJEX.js"),
+	Handover: () => import("./assets/Handover-DW-uiWKX.js"),
+	Receipt: () => import("./assets/Receipt-mv3kdxKd.js"),
 	Payout: () => import("./assets/Payout-yGmJynFN.js"),
-	Transactions: () => import("./assets/Transactions-Cpejq_Wi.js"),
-	Gamification: () => import("./assets/Gamification-Dxznwx52.js"),
-	RecyclerHome: () => import("./assets/Home-DHFRsPtz.js"),
-	Requests: () => import("./assets/Requests-CdSCfJ8I.js"),
-	Catalog: () => import("./assets/Catalog-ynK0XlfG.js"),
-	RecyclerReceipt: () => import("./assets/Receipt-KPgOM7Er.js"),
-	StaffHome: () => import("./assets/Home-ChPdSLwr.js"),
+	Transactions: () => import("./assets/Transactions-DXJe-7x3.js"),
+	Gamification: () => import("./assets/Gamification-DZ_Hzip9.js"),
+	RecyclerHome: () => import("./assets/Home-BUj2llS2.js"),
+	Requests: () => import("./assets/Requests-IsnKw1wf.js"),
+	Catalog: () => import("./assets/Catalog-Bz6fVaV5.js"),
+	RecyclerReceipt: () => import("./assets/Receipt-01oICbj2.js"),
+	StaffHome: () => import("./assets/Home-Widu9jAM.js"),
 	AiReview: () => import("./assets/AiReview-Cgi88xei.js"),
 	Dataset: () => import("./assets/Dataset-C8lc6PPD.js"),
-	Applications: () => import("./assets/Applications-5Qj3lal-.js"),
+	Applications: () => import("./assets/Applications-CI_OIQN1.js"),
 	Complaints: () => import("./assets/Complaints-B8Ya5uyn.js"),
 	Accounts: () => import("./assets/Accounts-CPDPaftY.js"),
 	BlogEditor: () => import("./assets/BlogEditor--KCnYcGl.js"),
-	EcoFacts: () => import("./assets/EcoFacts-DFpy_N-E.js"),
-	Gifts: () => import("./assets/Gifts-BBGeHOYF.js"),
-	StaffCheckIn: () => import("./assets/CheckIn-DMew8Zhj.js"),
+	EcoFacts: () => import("./assets/EcoFacts-DzJtXvrN.js"),
+	Gifts: () => import("./assets/Gifts-DdpGVev8.js"),
+	StaffCheckIn: () => import("./assets/CheckIn-CZiU2P5G.js"),
 	AdminHome: () => import("./assets/Home-hl3j4qUK.js"),
 	Reports: () => import("./assets/Reports-5rwfrv9a.js"),
 	StaffAccounts: () => import("./assets/StaffAccounts-B14WXELa.js"),
@@ -1872,11 +2231,11 @@ var loaders = {
 	BlogReview: () => import("./assets/BlogReview-B5bZfrqy.js"),
 	Categories: () => import("./assets/Categories-CTK5j1f-.js"),
 	Policy: () => import("./assets/Policy-CrolMlMo.js"),
-	GamificationConfig: () => import("./assets/Gamification-n8pLUCV9.js"),
-	LeaderboardConfig: () => import("./assets/Leaderboard-B8aN3fQ2.js"),
+	GamificationConfig: () => import("./assets/Gamification-C2tPL2M_.js"),
+	LeaderboardConfig: () => import("./assets/Leaderboard-BcHy73WL.js"),
 	Fees: () => import("./assets/Fees-BqchdO3v.js"),
 	Reconciliation: () => import("./assets/Reconciliation-Di-M7C2g.js"),
-	AccountProfile: () => import("./assets/AccountProfile-DY_fDlJP.js"),
+	AccountProfile: () => import("./assets/AccountProfile-BBrlPIO6.js"),
 	AccountPassword: () => import("./assets/AccountPassword-DZlQkZSj.js")
 };
 var PAGES = Object.fromEntries(Object.keys(loaders).map((name) => [name, lazy(loaders[name])]));
@@ -1887,7 +2246,7 @@ function preloadPages() {
 //#region src/App.tsx
 /** Trang nạp theo route (xem `src/lazyPages.ts`) - không import tĩnh ở đây
 *  nữa, để bundle không kéo toàn bộ project vào lần mở đầu tiên. */
-var { Home, Blog, BlogDetail, Rewards, LeaderboardPage, Scanner, MapPage, Partners, Feedback, Guidance, Waste, Chat, JoinRecycler, ResetPassword, Terms, EcoFactsPage, Login, Register, Logout, NotFound, Profile, Notifications, Password, UserHome, Handover, Receipt, Payout, Transactions, Gamification, RecyclerHome, Requests, Catalog, RecyclerReceipt, StaffHome, AiReview, Dataset, Applications, Complaints, Accounts, BlogEditor, EcoFacts, Gifts, StaffCheckIn, AdminHome, Reports, StaffAccounts, Permissions, BlogReview, Categories, Policy, GamificationConfig, LeaderboardConfig, Fees, Reconciliation, AccountProfile, AccountPassword } = PAGES;
+var { Home: Home$1, Blog, BlogDetail, Rewards, LeaderboardPage, Scanner, MapPage, Partners, Feedback, Guidance, Waste, Chat, JoinRecycler, ResetPassword, Terms, EcoFactsPage, Login, Register, Logout, NotFound, Profile, Notifications, Password, UserHome, Handover, Receipt, Payout, Transactions, Gamification, RecyclerHome, Requests, Catalog, RecyclerReceipt, StaffHome, AiReview, Dataset, Applications, Complaints, Accounts, BlogEditor, EcoFacts, Gifts, StaffCheckIn, AdminHome, Reports, StaffAccounts, Permissions, BlogReview, Categories, Policy, GamificationConfig, LeaderboardConfig, Fees, Reconciliation, AccountProfile, AccountPassword } = PAGES;
 /** Mọi route sau đăng nhập đều khai báo vai trò được vào. Không có route nào
 *  "ai cũng vào được": mọi chức năng đều thuộc đúng một vai trò trong tài
 *  liệu use case.
@@ -1949,7 +2308,7 @@ function AppRoutes() {
 				children: [
 					/* @__PURE__ */ jsx(Route, {
 						index: true,
-						element: /* @__PURE__ */ jsx(Home, {})
+						element: /* @__PURE__ */ jsx(Home$1, {})
 					}),
 					/* @__PURE__ */ jsx(Route, {
 						path: "blog",

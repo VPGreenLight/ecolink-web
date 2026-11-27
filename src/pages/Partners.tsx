@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
+import { MapPin } from "lucide-react"
+import FacilityPhotoCard from "@/components/FacilityPhotoCard"
 import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { CardListSkeleton } from "@/components/Portal"
 import { CTA, MATERIAL_TYPES, PARTNERS, REGIONS, type Partner } from "@/data/partners"
@@ -224,12 +226,20 @@ export default function Partners() {
               {pagedLiveRecyclers.map((r) => (
                 <div
                   key={r.id}
-                  className="flex flex-col justify-between gap-3 rounded-xl border border-line bg-white p-4"
+                  className="flex flex-col justify-between gap-3.5 rounded-2xl border border-line bg-white p-4 shadow-[0_8px_24px_-14px_rgba(15,31,21,0.12)]"
                 >
                   <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-base font-bold text-ink">{r.facilityName}</h3>
-                      <div className="flex shrink-0 items-center gap-1.5">
+                    <FacilityPhotoCard
+                      facilityName={r.facilityName}
+                      address={r.address}
+                      photoUrl={r.businessPhotoUrl}
+                      partnerKey={r.id}
+                      variant="card"
+                      className="mb-3"
+                    />
+                    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
+                      <h3 className="text-base leading-snug font-bold text-ink">{r.facilityName}</h3>
+                      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                         <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800">
                           ★ {(r.averageRating ?? 0).toFixed(1)} ({r.totalReviews ?? 0})
                         </span>
@@ -238,7 +248,20 @@ export default function Partners() {
                         </span>
                       </div>
                     </div>
-                    <p className="mt-1 text-xs text-muted">{r.address}</p>
+                    <p className="mt-1.5 flex items-start gap-1.5 text-xs leading-5 text-muted">
+                      <MapPin className="mt-0.5 size-3.5 shrink-0 text-brand" strokeWidth={1.6} aria-hidden="true" />
+                      <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{r.address}</span>
+                    </p>
+                    {r.description && (
+                      <p className="mt-2 line-clamp-2 text-xs leading-5 text-body [overflow-wrap:anywhere]">
+                        {r.description}
+                      </p>
+                    )}
+                    {r.representativeName && (
+                      <p className="mt-1 text-[11px] text-muted">
+                        Đại diện: <span className="font-semibold text-ink">{r.representativeName}</span>
+                      </p>
+                    )}
                     <ul className="mt-2.5 flex flex-wrap gap-1.5">
                       {r.materials.slice(0, 4).map((m) => (
                         <li
@@ -251,7 +274,7 @@ export default function Partners() {
                       ))}
                     </ul>
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line-soft pt-3 text-xs">
+                  <div className="flex flex-col gap-2 border-t border-line-soft pt-3 text-xs sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                     <span className="text-muted">Giờ mở cửa: {r.operatingHours}</span>
                     <div className="flex items-center gap-3">
                       <button

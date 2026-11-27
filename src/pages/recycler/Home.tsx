@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { Check, Crown, Lock, QrCode, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, Star } from "lucide-react"
+import { Camera, Check, Crown, Lock, QrCode, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, Star } from "lucide-react"
+import FacilityPhotoCard from "@/components/FacilityPhotoCard"
 import LocationPinPickerMap from "@/components/LocationPinPickerMap"
 import { PageHead, Stat, Status, Table, Td } from "@/components/Portal"
 import SponsoredAdBanner from "@/components/SponsoredAdBanner"
@@ -16,6 +17,7 @@ import {
   updateRecyclerProfile,
   updateRecyclerWarehousePin,
   updateRecyclerWeeklySchedule,
+  uploadSingleDocument,
   type RecyclerProfileDto,
   type ScheduleDayDto,
   type TransactionHistoryItemDto,
@@ -181,6 +183,8 @@ export default function RecyclerHome() {
   const [draftContactPhone, setDraftContactPhone] = useState(() => profile.contactPhone)
   const [draftOperatingHours, setDraftOperatingHours] = useState(() => profile.operatingHours)
   const [draftDescription, setDraftDescription] = useState(() => profile.description ?? "")
+  const [draftBusinessPhotoUrl, setDraftBusinessPhotoUrl] = useState(() => profile.businessPhotoUrl ?? "")
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileErr, setProfileErr] = useState("")
 
@@ -228,6 +232,7 @@ export default function RecyclerHome() {
         setDraftContactPhone(res.profile.contactPhone)
         setDraftOperatingHours(res.profile.operatingHours)
         setDraftDescription(res.profile.description ?? "")
+        setDraftBusinessPhotoUrl(res.profile.businessPhotoUrl ?? "")
         setWeeklySchedule(buildDefaultWeeklySchedule(res.weeklySchedule))
         setSyncedBackend(res.fromBackend)
 
@@ -417,6 +422,11 @@ export default function RecyclerHome() {
       return
     }
 
+    if (uploadingPhoto) {
+      setProfileErr("Đang tải ảnh mặt tiền / kho bãi lên, vui lòng đợi xong rồi lưu.")
+      return
+    }
+
     setSavingProfile(true)
     try {
       const res = await updateRecyclerProfile(profile, {
@@ -425,8 +435,10 @@ export default function RecyclerHome() {
         contactPhone: cleanPhone,
         operatingHours: cleanHours || profile.operatingHours,
         description: draftDescription.trim() || null,
+        businessPhotoUrl: draftBusinessPhotoUrl.trim() || null,
       })
       setProfile(res.profile)
+      setDraftBusinessPhotoUrl(res.profile.businessPhotoUrl ?? "")
       setSyncedBackend(res.fromBackend)
       setEditingProfile(false)
       setFlash(res.message)
@@ -436,6 +448,44 @@ export default function RecyclerHome() {
       )
     } finally {
       setSavingProfile(false)
+    }
+  }
+
+  const handleSelectFacilityPhoto = async (file: File | null) => {
+    if (!file) return
+    setProfileErr("")
+    if (!file.type.startsWith("image/")) {
+      setProfileErr("Vui lòng chọn tệp ảnh (JPG, PNG hoặc WebP).")
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setProfileErr("Kích thước ảnh kho bãi tối đa 5 MB.")
+      return
+    }
+    setUploadingPhoto(true)
+    try {
+      const uploadedUrl = await uploadSingleDocument(file, "facility-photo")
+      setDraftBusinessPhotoUrl(uploadedUrl)
+    } catch (err) {
+      if (hasLiveBackendAuth()) {
+        setProfileErr(
+          err instanceof Error ? err.message : "Không thể tải ảnh mặt tiền / kho bãi lên hệ thống.",
+        )
+      } else {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "")
+          reader.onerror = () => reject(new Error("Không thể đọc tệp ảnh."))
+          reader.readAsDataURL(file)
+        }).catch(() => "")
+        if (dataUrl) {
+          setDraftBusinessPhotoUrl(dataUrl)
+        } else {
+          setProfileErr("Không thể đọc tệp ảnh vừa chọn.")
+        }
+      }
+    } finally {
+      setUploadingPhoto(false)
     }
   }
 
@@ -796,9 +846,22 @@ export default function RecyclerHome() {
           </div>
         </div>
 
-        {profile.description && (
-          <p className="text-xs leading-5 text-body">{profile.description}</p>
-        )}
+        <div className="grid gap-4 md:grid-cols-[minmax(0,300px)_1fr] md:items-start">
+          <FacilityPhotoCard
+            facilityName={profile.facilityName}
+            address={profile.businessAddress}
+            photoUrl={editingProfile ? draftBusinessPhotoUrl || null : profile.businessPhotoUrl}
+            partnerKey={profile.recyclerId}
+            variant="detail"
+          />
+          <div className="flex flex-col gap-1.5 text-xs leading-5 text-body">
+            <p className="font-semibold text-ink">Giới thiệu &amp; quy trình tiếp nhận</p>
+            <p>
+              {profile.description ||
+                "Chưa có mô tả chi tiết. Bạn có thể bấm Chỉnh sửa hồ sơ để bổ sung ảnh thực tế mặt tiền / kho bãi và hướng dẫn giao hàng cho người dân."}
+            </p>
+          </div>
+        </div>
 
         {editingProfile && (
           <form
@@ -851,6 +914,43 @@ export default function RecyclerHome() {
                 placeholder="Giới thiệu dịch vụ thu gom tận nơi, cân điện tử tại chỗ..."
               />
             </label>
+            <div className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
+              <span>Ảnh thực tế mặt tiền / kho bãi</span>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border border-line bg-surface-2 px-3.5 text-xs font-medium text-ink transition-colors hover:border-sage-line hover:bg-surface-3">
+                  <Camera className="size-3.5 text-brand" strokeWidth={1.7} aria-hidden="true" />
+                  {uploadingPhoto
+                    ? "Đang tải ảnh lên..."
+                    : draftBusinessPhotoUrl
+                      ? "Đổi ảnh mặt tiền / kho bãi"
+                      : "Tải ảnh mặt tiền / kho bãi"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={uploadingPhoto}
+                    onChange={(e) => {
+                      const picked = e.target.files?.[0] ?? null
+                      e.currentTarget.value = ""
+                      void handleSelectFacilityPhoto(picked)
+                    }}
+                    className="sr-only"
+                  />
+                </label>
+                {draftBusinessPhotoUrl && (
+                  <button
+                    type="button"
+                    disabled={uploadingPhoto}
+                    onClick={() => setDraftBusinessPhotoUrl("")}
+                    className="inline-flex h-9 items-center rounded-full border border-line bg-white px-3 text-xs font-medium text-muted transition-colors hover:text-warn"
+                  >
+                    Dùng ảnh mặc định
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] font-normal text-muted">
+                Chấp nhận JPG, PNG hoặc WebP tối đa 5 MB. Hiển thị ngay trong chi tiết cơ sở trên Bản đồ &amp; Đối tác.
+              </p>
+            </div>
             {profileErr && (
               <p
                 role="alert"

@@ -10,27 +10,8 @@ import {
 } from "@/lib/notificationsApi"
 import { useEntitlements } from "@/lib/servicePackageApi"
 import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
+import UserAvatar from "@/components/UserAvatar"
 import { NAV_LINKS } from "@/data/nav"
-
-function initialsOf(name: string) {
-  return name
-    .split(" ")
-    .slice(-2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase()
-}
-
-  /** Icon người dùng: viewBox cố định nên tỉ lệ đúng ở mọi size, khác với
-   *  hình tròn + thang vẽ bằng phần trăm trước đây. */
-function UserGlyph({ className }: { className: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
-      <circle cx="12" cy="8" r="4.25" />
-      <path d="M12 13.75c-4.28 0-7.75 2.7-7.75 6.03V21h15.5v-1.22c0-3.33-3.47-6.03-7.75-6.03Z" />
-    </svg>
-  )
-}
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -48,46 +29,6 @@ function Chevron({ open }: { open: boolean }) {
         strokeLinejoin="round"
       />
     </svg>
-  )
-}
-
-function Avatar({
-  user,
-  avatarUrl,
-  size = "size-9",
-}: {
-  user: string
-  avatarUrl?: string | null
-  size?: string
-}) {
-  const [imgFailed, setImgFailed] = useState(false)
-  useEffect(() => {
-    setImgFailed(false)
-  }, [avatarUrl])
-
-  if (avatarUrl && !imgFailed) {
-    return (
-      <img
-        src={avatarUrl}
-        alt={user || "Ảnh đại diện"}
-        onError={() => setImgFailed(true)}
-        className={`${size} shrink-0 rounded-full border border-line-soft object-cover`}
-      />
-    )
-  }
-  if (user) {
-    return (
-      <span
-        className={`grid ${size} shrink-0 place-items-center rounded-full bg-[linear-gradient(145deg,#00874a,#004826)] text-[13px] leading-none font-bold tracking-wide text-white`}
-      >
-        {initialsOf(user)}
-      </span>
-    )
-  }
-  return (
-    <span className={`grid ${size} shrink-0 place-items-center rounded-full bg-surface-2`}>
-      <UserGlyph className="size-1/2 text-sage-line" />
-    </span>
   )
 }
 
@@ -199,9 +140,9 @@ function AccountMenu() {
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          className="flex h-10 items-center gap-1 rounded-full border border-line bg-white px-1 shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-colors hover:border-sage-line hover:bg-surface-2"
+          className="flex h-10 items-center gap-1.5 rounded-full border border-line bg-white py-1 pr-2 pl-1 shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-colors hover:border-sage-line hover:bg-surface-2"
         >
-          <Avatar user={user} avatarUrl={session?.avatarUrl} size="size-8" />
+          <UserAvatar name={user} avatarUrl={session?.avatarUrl} size="sm" />
           <Chevron open={open} />
         </button>
 
@@ -213,7 +154,7 @@ function AccountMenu() {
             {user ? (
               <>
                 <div className="flex items-center gap-3.5 border-b border-line-soft bg-surface-2/60 px-4 py-3.5">
-                  <Avatar user={user} avatarUrl={session?.avatarUrl} size="size-11" />
+                  <UserAvatar name={user} avatarUrl={session?.avatarUrl} size="md" />
                   <div className="min-w-0">
                     <p className="truncate text-base font-bold text-ink">{user}</p>
                     <p className="text-xs text-muted">{ROLE_LABEL[session!.role]}</p>
