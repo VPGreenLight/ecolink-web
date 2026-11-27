@@ -116,31 +116,3 @@ export async function searchPlacesOnSubmit(
   }
 }
 
-/**
- * Chuẩn hoá toạ độ tra cứu theo chế độ Bảo mật Vị trí (`BR-MTH-05`).
- * Khi `privacyMode = true`, làm tròn sang tâm ô lưới `0.005°` (~550m tại Việt Nam),
- * áp dụng thống nhất cho CẢ định vị GPS lẫn thao tác chấm điểm trên bản đồ (`Click-to-Pin`).
- */
-export function resolveSearchCoordinates(
-  rawLat: number,
-  rawLng: number,
-  privacyMode: boolean = true,
-  gridStepDeg: number = 0.005,
-): { lat: number; lng: number; isFuzzed: boolean } {
-  if (!privacyMode) {
-    return {
-      lat: Number(rawLat.toFixed(5)),
-      lng: Number(rawLng.toFixed(5)),
-      isFuzzed: false,
-    }
-  }
-
-  const fuzzedLat = Math.round(rawLat / gridStepDeg) * gridStepDeg
-  const fuzzedLng = Math.round(rawLng / gridStepDeg) * gridStepDeg
-  return {
-    lat: Number(fuzzedLat.toFixed(4)),
-    lng: Number(fuzzedLng.toFixed(4)),
-    isFuzzed: true,
-  }
-}
-

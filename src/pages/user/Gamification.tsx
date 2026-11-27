@@ -1,83 +1,137 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
+import { BookOpen, Droplets, Lock, Sprout, TriangleAlert, X } from "lucide-react"
 import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
-import { PageHead, Stat, Table, Td } from "@/components/Portal"
+import { PageHead, Stat } from "@/components/Portal"
 import SearchFilterBar from "@/components/SearchFilterBar"
-import { GIFTS } from "@/data/ops"
-import { GRAND_PRIZES, getSpendPoints, fmt } from "@/data/rewards"
+import { fmt, getSpendPoints } from "@/data/rewards"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import {
-  fetchAvailableGifts,
   fetchMyUnlockedEcoFacts,
   fetchMyVirtualTree,
-  fetchPointLedger,
   fetchPointWallet,
   upgradeVirtualTree,
   type EcoFactItemDto,
-  type GiftItemDto,
-  type PointTransactionDto,
+  type TreeLevelInfoDto,
   type VirtualTreeDto,
   type WalletDto,
 } from "@/lib/gamificationApi"
 import { isSsrSmokeTest } from "@/lib/hydration"
 import { hasLiveBackendAuth } from "@/lib/session"
+import {
+  getDefaultFrameForStage,
+  getEcoFactLevelNumbers,
+  getFrameSrc,
+  getStageName,
+  stageForBackendLevel,
+} from "@/lib/virtualTree"
 
-const BRANCHES = [
-  { x: 70, y: 175, cost: 500, title: "Nhựa PET tái chế thành sợi" },
-  { x: 130, y: 160, cost: 800, title: "Phân loại 3R tại Việt Nam" },
-  { x: 68, y: 130, cost: 1_200, title: "Pin Li-ion gây hoạ hoả" },
-  { x: 132, y: 112, cost: 1_500, title: "Màu nắp thùng rác có ý nghĩa" },
-  { x: 74, y: 100, cost: 2_000, title: "Bìa carton thu gom giá 2.200đ/kg" },
-  { x: 126, y: 96, cost: 3_000, title: "Thuế EPR và bài toán bao bì" },
+const OFFLINE_LEVELS: TreeLevelInfoDto[] = [
+  { level: 1, title: "Seedling", requiredPoints: 0, reached: true },
+  { level: 2, title: "Sprout", requiredPoints: 100, reached: true },
+  { level: 3, title: "Young Tree", requiredPoints: 300, reached: false },
+  { level: 4, title: "Ancient Canopy", requiredPoints: 700, reached: false },
 ]
 
-const SVG_COORDS = [
-  { x: 70, y: 175 },
-  { x: 130, y: 160 },
-  { x: 68, y: 130 },
-  { x: 132, y: 112 },
-  { x: 74, y: 100 },
-  { x: 126, y: 96 },
+const OFFLINE_FACTS: EcoFactItemDto[] = [
+  {
+    id: "offline-ef-1",
+    code: "EF-DEMO01",
+    title: "Nhựa PET tái chế thành sợi áo thể thao",
+    content:
+      "Khoảng 10 chai nhựa PET sạch sau khi nghiền vụn và kéo sợi đủ dệt một chiếc áo thun thể thao thoáng khí.",
+    unlockTreeLevel: 1,
+    isUnlocked: true,
+    status: "ACTIVE",
+    createdAt: "",
+    updatedAt: "",
+  },
+  {
+    id: "offline-ef-2",
+    code: "EF-DEMO02",
+    title: "Tái chế 1 lon nhôm tiết kiệm 95% năng lượng",
+    content:
+      "Sản xuất lon nhôm mới từ phế liệu tái chế tiêu tốn ít hơn tới 95% điện năng so với luyện nhôm từ quặng bauxite nguyên khai.",
+    unlockTreeLevel: 1,
+    isUnlocked: true,
+    status: "ACTIVE",
+    createdAt: "",
+    updatedAt: "",
+  },
+  {
+    id: "offline-ef-3",
+    code: "EF-DEMO03",
+    title: "Thủy tinh có thể tái chế vô hạn lần",
+    content:
+      "Không giống nhựa bị suy giảm mạch polymer, thủy tinh sạch có thể nấu chảy tái chế 100% vô số lần mà vẫn giữ nguyên độ tinh khiết.",
+    unlockTreeLevel: 2,
+    isUnlocked: true,
+    status: "ACTIVE",
+    createdAt: "",
+    updatedAt: "",
+  },
+  {
+    id: "offline-ef-4",
+    code: "EF-DEMO04",
+    title: "Pin Li-ion cần thu gom riêng để tránh cháy nổ",
+    content:
+      "Nâng cấp cây ảo đến cấp tương ứng để mở khóa nội dung kiến thức chi tiết.",
+    unlockTreeLevel: 3,
+    isUnlocked: false,
+    status: "ACTIVE",
+    createdAt: "",
+    updatedAt: "",
+  },
+  {
+    id: "offline-ef-5",
+    code: "EF-DEMO05",
+    title: "Bìa carton khô giữ giá trị sợi giấy cao",
+    content:
+      "Nâng cấp cây ảo đến cấp tương ứng để mở khóa nội dung kiến thức chi tiết.",
+    unlockTreeLevel: 3,
+    isUnlocked: false,
+    status: "ACTIVE",
+    createdAt: "",
+    updatedAt: "",
+  },
+  {
+    id: "offline-ef-6",
+    code: "EF-DEMO06",
+    title: "Trách nhiệm mở rộng của nhà sản xuất (EPR)",
+    content:
+      "Nâng cấp cây ảo đến cấp tương ứng để mở khóa nội dung kiến thức chi tiết.",
+    unlockTreeLevel: 4,
+    isUnlocked: false,
+    status: "ACTIVE",
+    createdAt: "",
+    updatedAt: "",
+  },
 ]
 
-/** U-13 Điểm danh · U-14 Đổi điểm lấy quà · U-15 Cây ảo & Eco Fact. */
+/** U-15 · Thư viện Eco Fact & Tiến trình nâng cấp Cây ảo. */
 export default function Gamification() {
   const [liveMode] = useState(() => hasLiveBackendAuth())
   const [wallet, setWallet] = useState<WalletDto | null>(null)
   const [tree, setTree] = useState<VirtualTreeDto | null>(null)
   const [facts, setFacts] = useState<EcoFactItemDto[]>([])
-  const [gifts, setGifts] = useState<GiftItemDto[]>([])
   const [upgrading, setUpgrading] = useState(false)
   const [flash, setFlash] = useState("")
   const [factSearch, setFactSearch] = useState("")
   const debouncedFactSearch = useDebouncedValue(factSearch, 250)
+  const [factLevelFilter, setFactLevelFilter] = useState<number | "all">("all")
   const [factPage, setFactPage] = useState(1)
-  const factPageSize = FIXED_PAGE_SIZE
-  const [giftSearch, setGiftSearch] = useState("")
-  const debouncedGiftSearch = useDebouncedValue(giftSearch, 250)
-  const [giftPage, setGiftPage] = useState(1)
-  const giftPageSize = FIXED_PAGE_SIZE
-  const [ledger, setLedger] = useState<PointTransactionDto[]>([])
-  const [ledgerTotal, setLedgerTotal] = useState(0)
-  const [ledgerPage, setLedgerPage] = useState(1)
+  const [selectedFact, setSelectedFact] = useState<EcoFactItemDto | null>(null)
 
   const loadAll = async () => {
     try {
-      const [wRes, tRes, fRes, gRes, lRes] = await Promise.all([
+      const [wRes, tRes, fRes] = await Promise.all([
         fetchPointWallet(),
         fetchMyVirtualTree(),
         fetchMyUnlockedEcoFacts(true),
-        fetchAvailableGifts({ sort: "points_asc" }),
-        fetchPointLedger({ page: ledgerPage, pageSize: FIXED_PAGE_SIZE }),
       ])
       if (wRes.data) setWallet(wRes.data)
       if (tRes.data) setTree(tRes.data)
       if (fRes.data) setFacts(fRes.data)
-      if (gRes.data) setGifts(gRes.data)
-      if (lRes.data) {
-        setLedger(lRes.data.items ?? [])
-        setLedgerTotal(lRes.data.totalCount ?? lRes.data.items?.length ?? 0)
-      }
     } catch {
       // Giữ trạng thái hiện tại
     }
@@ -86,8 +140,16 @@ export default function Gamification() {
   useEffect(() => {
     if (isSsrSmokeTest()) return
     if (liveMode) void loadAll()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveMode, ledgerPage])
+  }, [liveMode])
+
+  useEffect(() => {
+    if (!selectedFact) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedFact(null)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [selectedFact])
 
   const handleUpgrade = async () => {
     if (upgrading) return
@@ -111,50 +173,66 @@ export default function Gamification() {
     }
   }
 
-  const spendLabel = liveMode
-    ? wallet
-      ? fmt(wallet.balance)
-      : "—"
-    : fmt(getSpendPoints())
-  const rankLabel = liveMode
-    ? wallet
-      ? fmt(wallet.totalEarned)
-      : "—"
-    : "23.400"
-  const stageValue = liveMode
-    ? tree
-      ? `Cấp ${tree.level} · ${tree.levelTitle}`
-      : "—"
-    : "Rừng"
+  const activeFacts = liveMode ? facts : OFFLINE_FACTS
+  const displayLevels = liveMode && tree?.levels?.length ? tree.levels : OFFLINE_LEVELS
+  const levelNumbers = useMemo(
+    () => getEcoFactLevelNumbers(liveMode ? tree?.levels : OFFLINE_LEVELS, activeFacts),
+    [liveMode, tree?.levels, activeFacts],
+  )
+
+  const unlockedCount = liveMode
+    ? (tree?.unlockedFactCount ??
+      facts.filter(
+        (f) => f.isUnlocked === true || (f.isUnlocked === undefined && tree ? f.unlockTreeLevel <= tree.level : false),
+      ).length)
+    : OFFLINE_FACTS.filter((f) => f.isUnlocked).length
+  const totalCount = liveMode ? (tree?.totalFactCount ?? facts.length) : OFFLINE_FACTS.length
+  const unlockPct = totalCount > 0 ? Math.round((unlockedCount / totalCount) * 100) : 0
+
+  const spendLabel = liveMode ? (wallet ? fmt(wallet.balance) : "—") : fmt(getSpendPoints())
+  const rankLabel = liveMode ? (wallet ? fmt(wallet.totalEarned) : "—") : "400"
+  const stageValue = liveMode ? (tree ? `Cấp ${tree.level} · ${tree.levelTitle}` : "—") : "Cấp 2 · Sprout"
   const stageNote = liveMode
     ? tree
       ? tree.isMaxLevel
         ? "Đã đạt cấp cây tối đa"
         : `Cần ${fmt(tree.upgradeCost ?? 0)} điểm lên ${tree.nextLevelTitle ?? `Cấp ${tree.nextLevel}`}`
       : "Đang tải..."
-    : "Cần thêm 6.600 điểm để lên Đại dương"
-  const factStatValue = liveMode
-    ? tree
-      ? `${tree.unlockedFactCount} / ${tree.totalFactCount}`
-      : "—"
-    : "2 / 6"
+    : "Cần 300 điểm lên Young Tree"
+  const factStatValue = liveMode ? (tree ? `${tree.unlockedFactCount} / ${tree.totalFactCount}` : "—") : `${unlockedCount} / ${totalCount}`
   const factStatNote = liveMode
     ? tree
       ? `Tưới: ${tree.dailyWaterCount}/${tree.dailyLimit} · Bón phân: ${tree.dailyFertilizeCount}/${tree.dailyFertilizeLimit}${tree.fertilizerPacks > 0 ? ` (+${tree.fertilizerPacks} túi)` : ""}`
       : "Mở khoá qua từng cấp cây"
-    : "Cần thêm 4.500 điểm cho tất cả"
+    : "Mở khoá qua từng cấp cây"
+
+  const visualStage =
+    liveMode && tree ? (tree.harvestReady ? "fruiting" : stageForBackendLevel(tree.level)) : "sprout"
+  const hydrationPct = liveMode && tree ? tree.hydrationPercent : 75
+  const isWilted = liveMode && tree ? tree.isWilted : false
+  const careExp = liveMode && tree ? tree.careExp : 20
+  const maxCareExp = liveMode && tree && tree.maxCareExp > 0 ? tree.maxCareExp : 80
+
+  const filteredFacts = useMemo(() => {
+    const fkw = debouncedFactSearch.trim().toLowerCase()
+    return activeFacts.filter((f) => {
+      const matchesLevel = factLevelFilter === "all" || f.unlockTreeLevel === factLevelFilter
+      const matchesQuery = !fkw || `${f.title} ${f.content} ${f.code}`.toLowerCase().includes(fkw)
+      return matchesLevel && matchesQuery
+    })
+  }, [activeFacts, factLevelFilter, debouncedFactSearch])
+
+  const pagedFacts = useMemo(
+    () => paginateItems(filteredFacts, factPage, FIXED_PAGE_SIZE),
+    [filteredFacts, factPage],
+  )
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6 sm:gap-8">
       <PageHead
-        eyebrow="GAMIFICATION"
-        title="Điểm xanh, quà tặng và cây ảo"
-        body="Điểm xanh cộng dồn từ giao rác đúng phân loại. Dùng điểm để đổi quà, và nâng cấp cây ảo để mở khoá thêm Eco Fact."
-        action={
-          <Link to="/rewards" className="btn-primary h-11 shrink-0 px-5">
-            Điểm danh và đổi quà
-          </Link>
-        }
+        eyebrow="ECO FACT"
+        title="Thư viện kiến thức Eco Fact"
+        body="Nâng cấp Cây ảo bằng Điểm Xanh để mở khóa các cột mốc kiến thức phân loại và tái chế bền vững."
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -164,7 +242,7 @@ export default function Gamification() {
         <Stat label="Eco Fact đã mở" value={factStatValue} note={factStatNote} />
       </div>
 
-      {/* Cây ảo của bạn */}
+      {/* Tầng 1: Tiến trình Cây Ảo & Các mốc Cấp độ */}
       <section className="card overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft px-5 py-4">
           <div>
@@ -184,7 +262,7 @@ export default function Gamification() {
             >
               {upgrading
                 ? "Đang nâng cấp..."
-                : `Tưới & Lên cấp ${tree.nextLevel} (-${fmt(tree.upgradeCost ?? 0)}đ)`}
+                : `Nâng lên Cấp ${tree.nextLevel} (-${fmt(tree.upgradeCost ?? 0)} điểm)`}
             </button>
           )}
         </div>
@@ -198,362 +276,327 @@ export default function Gamification() {
           </p>
         )}
 
-        <div className="grid gap-5 p-4 sm:p-5 md:grid-cols-[260px_1fr] md:gap-6">
-          <figure className="mx-auto w-full max-w-[260px] rounded-xl border border-line bg-surface-2 p-4 md:mx-0 md:max-w-none">
-            <svg
-              viewBox="0 0 200 240"
-              className="w-full"
-              role="img"
-              aria-label="Cây ảo EcoLink"
-            >
-              <path d="M100 230V120" stroke="var(--color-brand-deep)" strokeWidth="7" strokeLinecap="round" />
-              {SVG_COORDS.map((pos, i) => {
-                const actualUnlockedFacts = facts.filter(
-                  (f) =>
-                    f.isUnlocked === true ||
-                    (f.isUnlocked === undefined && tree ? f.unlockTreeLevel <= tree.level : false),
-                ).length
-                const unlockedCount = liveMode ? (tree?.unlockedFactCount ?? actualUnlockedFacts) : 2
-                const open = i < unlockedCount
-                return (
-                  <g key={i}>
-                    <path
-                      d={`M100 ${200 - i * 14}L${pos.x} ${pos.y}`}
-                      stroke={open ? "var(--color-brand-deep)" : "var(--color-sage-line)"}
-                      strokeWidth="5"
-                      strokeLinecap="round"
-                    />
-                    <circle
-                      cx={pos.x}
-                      cy={pos.y}
-                      r="15"
-                      fill={open ? "var(--color-brand)" : "var(--color-surface-3)"}
-                      stroke={open ? "var(--color-brand-deep)" : "var(--color-sage-line)"}
-                      strokeWidth="1.5"
-                    />
-                  </g>
-                )
-              })}
-            </svg>
-            <figcaption className="mt-2 text-center text-[13px] text-muted">
-              {liveMode
-                ? tree
-                  ? `${tree.unlockedFactCount} / ${tree.totalFactCount} Eco Fact đã mở khoá`
-                  : "Đang tải..."
-                : `2 / ${BRANCHES.length} Eco Fact đã mở khoá`}
-            </figcaption>
-          </figure>
+        <div className="grid items-stretch gap-5 p-4 sm:p-5 lg:grid-cols-[260px_1fr] lg:gap-6">
+          <Link
+            to="/ecofacts"
+            aria-label="Mở trang Cây ảo EcoLink để tưới nước và bón phân"
+            className="group relative flex aspect-[4/3] w-full flex-col justify-between overflow-hidden rounded-2xl border border-line bg-slate-100 shadow-2xs transition-shadow hover:shadow-md lg:aspect-auto lg:min-h-[220px]"
+          >
+            <img
+              src={getFrameSrc(getDefaultFrameForStage(visualStage))}
+              alt={`Cây ảo EcoLink - ${isWilted ? "Héo khô" : getStageName(visualStage)}`}
+              className={`absolute inset-0 size-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.03] ${
+                isWilted ? "grayscale contrast-125 opacity-75" : ""
+              }`}
+            />
 
-          {liveMode ? (
-            <div className="flex flex-col gap-3">
-              <div className="grid gap-2 sm:grid-cols-2">
-                {(tree?.levels ?? []).map((lv) => (
-                  <div
-                    key={lv.level}
-                    className={`rounded-lg border px-3.5 py-2.5 text-sm ${lv.reached
-                      ? "border-brand/30 bg-brand/6 text-ink"
-                      : "border-line bg-surface text-muted"
-                      }`}
-                  >
-                    <p className="font-bold">
-                      Cấp {lv.level}: {lv.title} {lv.reached ? "✓" : ""}
-                    </p>
-                    <p className="text-xs">
-                      {lv.level === 1
-                        ? "Cấp khởi đầu"
-                        : `Chi phí nâng cấp: ${fmt(lv.requiredPoints)} điểm`}
-                    </p>
-                  </div>
-                ))}
+            <div className="relative z-10 flex items-center justify-between gap-2 p-2.5">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-slate-800 shadow-2xs backdrop-blur-md">
+                {isWilted ? (
+                  <TriangleAlert className="size-3 text-rose-600" />
+                ) : (
+                  <span className="size-2 rounded-full bg-emerald-500" />
+                )}
+                {isWilted ? "Héo khô" : getStageName(visualStage)}
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold tabular-nums text-sky-800 shadow-2xs backdrop-blur-md">
+                <Droplets className="size-3 text-sky-600" />
+                Ẩm {hydrationPct}%
+              </span>
+            </div>
+
+            <div className="relative z-10 mt-auto flex items-center justify-between gap-2 border-t border-white/50 bg-white/90 px-3 py-2 text-xs backdrop-blur-md">
+              <span className="inline-flex items-center gap-1 font-semibold tabular-nums text-ink">
+                <Sprout className="size-3.5 text-brand" />
+                EXP vụ này: {careExp}/{maxCareExp}
+              </span>
+              <span className="font-bold text-brand-deep group-hover:underline">
+                Chăm cây →
+              </span>
+            </div>
+          </Link>
+
+          <div className="flex flex-col justify-between gap-4">
+            <div className="rounded-xl border border-line-soft bg-surface-2 p-3.5 sm:p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-bold text-ink">Tiến trình mở khóa Eco Fact</span>
+                <span className="font-bold tabular-nums text-brand-deep">
+                  Đã mở {unlockedCount}/{totalCount} bài ({unlockPct}%)
+                </span>
               </div>
-
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-bold text-ink">
-                  Thư viện Eco Fact (
-                  {tree?.unlockedFactCount ??
-                    facts.filter(
-                      (f) =>
-                        f.isUnlocked === true ||
-                        (f.isUnlocked === undefined && tree
-                          ? f.unlockTreeLevel <= tree.level
-                          : false),
-                    ).length}
-                  /{tree?.totalFactCount ?? facts.length} đã mở)
-                </h3>
-                <input
-                  type="search"
-                  value={factSearch}
-                  onChange={(e) => {
-                    setFactSearch(e.target.value)
-                    setFactPage(1)
-                  }}
-                  placeholder="Tìm kiến thức Eco Fact..."
-                  aria-label="Tìm Eco Fact"
-                  className="input h-10 w-full text-base sm:h-9 sm:max-w-xs sm:text-xs"
+              <div
+                className="mt-2 h-2.5 w-full overflow-hidden rounded-full border border-slate-200/70 bg-white p-0.5"
+                role="progressbar"
+                aria-valuenow={unlockPct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Tiến trình mở khóa Eco Fact"
+              >
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-brand to-emerald-500 transition-all duration-500"
+                  style={{ width: `${unlockPct}%` }}
                 />
               </div>
-              {(() => {
-                const fkw = debouncedFactSearch.trim().toLowerCase()
-                const filteredFacts = facts.filter(
-                  (f) =>
-                    !fkw ||
-                    `${f.title} ${f.content} ${f.code}`.toLowerCase().includes(fkw),
-                )
-                const pagedFacts = paginateItems(filteredFacts, factPage, factPageSize)
-                if (filteredFacts.length === 0) {
-                  return (
-                    <p className="text-sm text-muted">
-                      Chưa có Eco Fact nào khớp tìm kiếm. Hãy nâng cấp cây để mở thêm kiến thức!
-                    </p>
-                  )
-                }
+              {liveMode && tree && (
+                <p className="mt-2 text-xs text-muted">
+                  Đã đầu tư <span className="font-semibold text-ink">{fmt(tree.growthPoints)} điểm</span>{" "}
+                  · Đã thu hoạch <span className="font-semibold text-ink">{tree.totalHarvested} vụ</span>
+                </p>
+              )}
+            </div>
+
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {displayLevels.map((lv) => {
+                const factCountAtLevel = activeFacts.filter((f) => f.unlockTreeLevel === lv.level).length
+                const isNext = liveMode && tree ? lv.level === tree.nextLevel : lv.level === 3
                 return (
-                  <>
-                    <ul className="flex flex-col gap-2">
-                      {pagedFacts.map((f) => {
-                        const unlocked =
-                          f.isUnlocked === true ||
-                          (f.isUnlocked === undefined &&
-                            (tree ? f.unlockTreeLevel <= tree.level : false))
-                        return (
-                          <li
-                            key={f.id}
-                            className={`rounded-lg border px-4 py-3 ${
-                              unlocked
-                                ? "border-brand/25 bg-brand/6"
-                                : "border-line bg-surface opacity-75"
-                            }`}
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <p className="text-sm font-bold text-ink">{f.title}</p>
-                              <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-brand-deep">
-                                {unlocked ? `Mốc Cấp ${f.unlockTreeLevel} · Đã mở` : `Khóa · Mở ở Cấp ${f.unlockTreeLevel}`}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-xs leading-5 text-body">
-                              {unlocked ? f.content : "Nâng cấp cây ảo đến cấp tương ứng để mở khóa nội dung kiến thức chi tiết."}
-                            </p>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                    <PaginationBar
-                      page={factPage}
-                      pageSize={factPageSize}
-                      totalCount={filteredFacts.length}
-                      onPageChange={setFactPage}
-                      itemLabel="Eco Fact"
-                    />
-                  </>
-                )
-              })()}
-            </div>
-          ) : (
-            <ul className="flex flex-col gap-2.5">
-              {BRANCHES.map((b, i) => (
-                <li
-                  key={b.cost}
-                  className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3 ${i < 2 ? "border-brand/30 bg-brand/6" : "border-line bg-surface"
+                  <div
+                    key={lv.level}
+                    className={`flex flex-col justify-between rounded-xl border px-3.5 py-3 text-sm ${
+                      lv.reached
+                        ? "border-brand/30 bg-brand/6 text-ink"
+                        : isNext
+                          ? "border-brand/40 bg-white text-ink shadow-2xs"
+                          : "border-line bg-surface text-muted"
                     }`}
-                >
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    <span
-                      aria-hidden="true"
-                      className={`grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-bold ${i < 2 ? "bg-brand text-white" : "bg-surface-2 text-muted"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-bold">
+                        Cấp {lv.level}: {lv.title}
+                      </p>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          lv.reached
+                            ? "bg-white text-brand-deep"
+                            : isNext
+                              ? "bg-brand/10 text-brand-deep"
+                              : "bg-surface-2 text-muted"
                         }`}
-                    >
-                      {i < 2 ? "✓" : "·"}
-                    </span>
-                    <span className={`text-sm font-semibold ${i < 2 ? "text-ink" : "text-body"}`}>
-                      {b.title}
-                    </span>
-                    <span className="text-[11px] font-semibold text-muted">
-                      {i < 2 ? "Đã mở" : "Chưa mở"}
-                    </span>
-                  </span>
-                  <span className="text-[13px] font-semibold tabular-nums text-muted">
-                    {b.cost.toLocaleString("vi-VN")} điểm
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
-
-      {/* Catalog quà */}
-      <section>
-        <h2 className="text-lg leading-7 font-bold tracking-tight text-ink">
-          Quà đang mở
-        </h2>
-        <p className="mt-1 text-sm text-muted">
-          Đổi bằng điểm tiêu dùng. Đổi xong mới trừ, và điểm xếp hạng giữ nguyên nên
-          không bị tụt hạng.
-        </p>
-        <div className="mt-4 flex flex-col gap-4">
-          <SearchFilterBar
-            value={giftSearch}
-            onChange={(v) => {
-              setGiftSearch(v)
-              setGiftPage(1)
-            }}
-            label="Tìm quà tặng"
-            placeholder="Tìm theo tên quà tặng hoặc loại quà..."
-          />
-          {liveMode ? (
-            (() => {
-              const gkw = debouncedGiftSearch.trim().toLowerCase()
-              const filteredGifts = gifts.filter(
-                (g) =>
-                  !gkw ||
-                  `${g.name} ${g.type === "Voucher" ? "e-voucher" : "quà vật lý"}`
-                    .toLowerCase()
-                    .includes(gkw),
-              )
-              const pagedGifts = paginateItems(filteredGifts, giftPage, giftPageSize)
-              return (
-                <>
-                  <Table head={["Quà tặng", "Loại", "Điểm", "Tồn kho"]}>
-                    {pagedGifts.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="px-4 py-6 text-center text-xs text-muted">
-                          Không tìm thấy quà tặng phù hợp.
-                        </td>
-                      </tr>
-                    ) : (
-                      pagedGifts.map((g) => (
-                        <tr key={g.id}>
-                          <Td className="font-semibold text-ink">{g.name}</Td>
-                          <Td>{g.type === "Voucher" ? "E-Voucher" : "Quà vật lý"}</Td>
-                          <Td className="tabular-nums">{fmt(g.pointsRequired)}</Td>
-                          <Td>
-                            {g.stockQuantity <= 0
-                              ? "Hết hàng"
-                              : `${fmt(g.stockQuantity)} món`}
-                          </Td>
-                        </tr>
-                      ))
+                      >
+                        {lv.reached ? "Đã đạt ✓" : isNext ? "Cấp kế tiếp" : "Chưa mở"}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+                      <span>
+                        {lv.level === 1 ? "Cấp khởi đầu" : `Chi phí: ${fmt(lv.requiredPoints)} điểm`}
+                      </span>
+                      {factCountAtLevel > 0 && (
+                        <span className="font-medium text-muted">
+                          {factCountAtLevel} Eco Fact
+                        </span>
+                      )}
+                    </div>
+                    {isNext && liveMode && tree && (
+                      <div className="mt-2">
+                        <div className="h-1.5 overflow-hidden rounded-full bg-surface-3">
+                          <div
+                            className="h-full rounded-full bg-brand transition-all duration-300"
+                            style={{ width: `${tree.progressPercent}%` }}
+                          />
+                        </div>
+                      </div>
                     )}
-                  </Table>
-                  <PaginationBar
-                    page={giftPage}
-                    pageSize={giftPageSize}
-                    totalCount={filteredGifts.length}
-                    onPageChange={setGiftPage}
-                    itemLabel="quà tặng"
-                  />
-                </>
-              )
-            })()
-          ) : (
-            (() => {
-              const gkw = debouncedGiftSearch.trim().toLowerCase()
-              const offlineGifts = [
-                ...GIFTS.filter((g) => g.active)
-                  .sort((a, b) => a.cost - b.cost)
-                  .map((g) => ({
-                    id: g.id,
-                    name: g.name,
-                    kindLabel: g.kind === "voucher" ? "Phiếu giảm giá" : "Quà vật lý",
-                    cost: g.cost,
-                    stockLabel:
-                      g.stock === null
-                        ? "Không giới hạn"
-                        : g.stock === 0
-                          ? "Hết hàng"
-                          : `${g.stock.toLocaleString("vi-VN")} món`,
-                    isGrand: false,
-                  })),
-                ...GRAND_PRIZES.map((g) => ({
-                  id: g.id,
-                  name: g.name,
-                  kindLabel: "Quà vật lý",
-                  cost: g.cost,
-                  stockLabel: "Giới hạn theo mùa",
-                  isGrand: true,
-                })),
-              ].filter((g) => !gkw || `${g.name} ${g.kindLabel}`.toLowerCase().includes(gkw))
-              const pagedOfflineGifts = paginateItems(offlineGifts, giftPage, giftPageSize)
-              return (
-                <>
-                  <Table head={["Quà tặng", "Loại", "Điểm", "Tồn kho"]}>
-                    {pagedOfflineGifts.map((g) => (
-                      <tr key={g.id}>
-                        <Td className="font-semibold text-ink">
-                          {g.name}
-                          {g.isGrand && (
-                            <span className="ml-2 rounded-full bg-mint/30 px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-brand-deep">
-                              Giải lớn
-                            </span>
-                          )}
-                        </Td>
-                        <Td>{g.kindLabel}</Td>
-                        <Td className="tabular-nums">{g.cost.toLocaleString("vi-VN")}</Td>
-                        <Td>{g.stockLabel}</Td>
-                      </tr>
-                    ))}
-                  </Table>
-                  <PaginationBar
-                    page={giftPage}
-                    pageSize={giftPageSize}
-                    totalCount={offlineGifts.length}
-                    onPageChange={setGiftPage}
-                    itemLabel="quà tặng"
-                  />
-                </>
-              )
-            })()
-          )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
       </section>
 
-      {liveMode && (
-        <section className="card flex flex-col gap-3 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-base font-bold text-ink">Lịch sử biến động Điểm Xanh</h2>
-              <p className="mt-0.5 text-xs text-muted">
-                Theo dõi chi tiết các lần cộng điểm bàn giao, điểm danh, nâng cấp cây ảo và đổi quà.
-              </p>
-            </div>
-            <Link to="/rewards" className="text-xs font-semibold text-brand hover:underline">
-              Mở trang Đổi thưởng →
-            </Link>
+      {/* Tầng 2: Thư viện Eco Fact toàn chiều ngang (đồng bộ thiết kế với /ecofacts) */}
+      <section className="card flex flex-col gap-4 p-4 sm:p-5 lg:p-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h2 className="text-base font-bold text-ink sm:text-lg">
+              Thư viện Eco Fact ({unlockedCount}/{totalCount} đã mở)
+            </h2>
+            <p className="mt-0.5 text-xs text-muted sm:text-sm">
+              Lọc theo cấp độ cây hoặc tìm nhanh theo từ khóa, mã kiến thức.
+            </p>
           </div>
-          {ledger.length === 0 ? (
-            <p className="text-sm text-muted">Chưa có giao dịch điểm xanh nào được ghi nhận.</p>
-          ) : (
-            <>
-              <Table head={["Thời gian", "Hoạt động", "Mô tả", "Biến động"]}>
-                {ledger.map((item) => (
-                  <tr key={item.id}>
-                    <Td className="tabular-nums text-xs text-muted whitespace-nowrap">
-                      {new Date(item.createdAt).toLocaleString("vi-VN")}
-                    </Td>
-                    <Td className="text-xs font-semibold text-ink whitespace-nowrap">
-                      {item.actionType}
-                    </Td>
-                    <Td className="text-xs text-body">{item.description || "—"}</Td>
-                    <Td
-                      className={`tabular-nums font-bold whitespace-nowrap ${
-                        item.points >= 0 ? "text-brand-deep" : "text-warn"
+          <Link to="/rewards" className="text-xs font-semibold text-brand-deep hover:underline">
+            Điểm danh &amp; đổi quà →
+          </Link>
+        </div>
+
+        <SearchFilterBar
+          label="Tìm kiếm kiến thức Eco Fact"
+          value={factSearch}
+          onChange={(v) => {
+            setFactSearch(v)
+            setFactPage(1)
+          }}
+          placeholder="Tìm tiêu đề, mã EF-... hoặc nội dung..."
+          totalCount={filteredFacts.length}
+          countLabel="bài kiến thức"
+        >
+          <div className="no-scrollbar -mx-1 flex w-full items-center gap-1.5 overflow-x-auto px-1 py-0.5 sm:mx-0 sm:w-auto sm:flex-wrap sm:overflow-visible sm:px-0">
+            <button
+              type="button"
+              onClick={() => {
+                setFactLevelFilter("all")
+                setFactPage(1)
+              }}
+              className={`h-9 shrink-0 rounded-full border px-3.5 text-xs font-semibold whitespace-nowrap sm:h-8 sm:px-3 ${
+                factLevelFilter === "all"
+                  ? "border-brand bg-brand text-white"
+                  : "border-line bg-white text-body hover:bg-surface-2"
+              }`}
+            >
+              Tất cả cấp
+            </button>
+            {levelNumbers.map((lv) => (
+              <button
+                key={lv}
+                type="button"
+                onClick={() => {
+                  setFactLevelFilter(lv)
+                  setFactPage(1)
+                }}
+                className={`h-9 shrink-0 rounded-full border px-3.5 text-xs font-semibold whitespace-nowrap sm:h-8 sm:px-3 ${
+                  factLevelFilter === lv
+                    ? "border-brand bg-brand text-white"
+                    : "border-line bg-white text-body hover:bg-surface-2"
+                }`}
+              >
+                Cấp {lv}
+              </button>
+            ))}
+          </div>
+        </SearchFilterBar>
+
+        {pagedFacts.length === 0 ? (
+          <p className="rounded-xl border border-line bg-surface p-6 text-center text-sm text-muted">
+            Chưa có Eco Fact nào khớp bộ lọc. Hãy nâng cấp Cây ảo để mở thêm kiến thức!
+          </p>
+        ) : (
+          <ul className="grid gap-3 md:grid-cols-2">
+            {pagedFacts.map((fact) => {
+              const unlocked =
+                fact.isUnlocked === true ||
+                (fact.isUnlocked === undefined && (tree ? fact.unlockTreeLevel <= tree.level : false))
+              return (
+                <li
+                  key={fact.id}
+                  className={`flex flex-col rounded-2xl border p-4 transition-colors ${
+                    unlocked
+                      ? "border-brand/20 bg-brand/5"
+                      : "border-line bg-surface-2/70 opacity-85"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs font-bold text-brand">
+                      {fact.code}
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                        unlocked ? "bg-white text-brand-deep" : "bg-surface-3 text-muted"
                       }`}
                     >
-                      {item.points >= 0 ? `+${fmt(item.points)}` : fmt(item.points)}
-                    </Td>
-                  </tr>
-                ))}
-              </Table>
-              <PaginationBar
-                page={ledgerPage}
-                pageSize={FIXED_PAGE_SIZE}
-                totalCount={ledgerTotal}
-                onPageChange={setLedgerPage}
-                itemLabel="giao dịch điểm"
+                      {!unlocked && <Lock className="size-3" />}
+                      {unlocked
+                        ? `Mốc Cấp ${fact.unlockTreeLevel}`
+                        : `Khóa · Cần Cấp ${fact.unlockTreeLevel}`}
+                    </span>
+                  </div>
+                  <h3 className="mt-1.5 text-sm font-bold text-ink">{fact.title}</h3>
+                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-body">
+                    {unlocked
+                      ? fact.content
+                      : "Nâng cấp cây ảo đến cấp tương ứng để mở khóa nội dung kiến thức chi tiết."}
+                  </p>
+                  {unlocked && (
+                    <div className="mt-3 flex items-center justify-between border-t border-brand/10 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFact(fact)}
+                        className="inline-flex min-h-9 items-center gap-1.5 py-1 text-xs font-semibold text-brand-deep hover:underline lg:min-h-0 lg:py-0"
+                      >
+                        <BookOpen className="size-3.5" />
+                        Đọc chi tiết
+                      </button>
+                      {fact.sourceUrl && (
+                        <a
+                          href={fact.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex min-h-9 items-center py-1 text-[11px] font-medium text-muted hover:text-brand lg:min-h-0 lg:py-0"
+                        >
+                          Nguồn ↗
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+
+        <PaginationBar
+          page={factPage}
+          pageSize={FIXED_PAGE_SIZE}
+          totalCount={filteredFacts.length}
+          onPageChange={setFactPage}
+          itemLabel="Eco Fact"
+        />
+      </section>
+
+      {selectedFact && (
+        <div
+          onClick={() => setSelectedFact(null)}
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={selectedFact.title}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="card relative max-h-[86dvh] w-full overflow-y-auto overscroll-contain rounded-t-2xl rounded-b-none bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-xl sm:max-w-lg sm:rounded-2xl sm:p-6"
+          >
+            <button
+              type="button"
+              onClick={() => setSelectedFact(null)}
+              aria-label="Đóng chi tiết Eco Fact"
+              className="absolute top-3.5 right-3.5 grid size-10 place-items-center rounded-full border border-line bg-surface text-muted hover:bg-surface-2 hover:text-ink sm:top-4 sm:right-4 sm:size-8 sm:rounded-lg sm:border-0"
+            >
+              <X className="size-4" />
+            </button>
+            <div className="flex flex-wrap items-center gap-2 pr-8">
+              <span className="rounded-full bg-brand/10 px-2.5 py-0.5 font-mono text-xs font-bold text-brand-deep">
+                {selectedFact.code}
+              </span>
+              <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs font-semibold text-ink">
+                Mốc Cấp {selectedFact.unlockTreeLevel}
+              </span>
+            </div>
+            <h3 className="mt-3 text-lg font-bold text-ink">{selectedFact.title}</h3>
+            {selectedFact.imageUrl && (
+              <img
+                src={selectedFact.imageUrl}
+                alt={selectedFact.title}
+                className="mt-3 max-h-56 w-full rounded-xl border border-line object-cover"
               />
-            </>
-          )}
-        </section>
+            )}
+            <p className="mt-3 whitespace-pre-line text-sm leading-6 text-body">
+              {selectedFact.content}
+            </p>
+            {selectedFact.sourceUrl && (
+              <p className="mt-4 border-t border-line-soft pt-3 text-xs text-muted">
+                Nguồn tham khảo:{" "}
+                <a
+                  href={selectedFact.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="break-all font-semibold text-brand-deep hover:underline"
+                >
+                  {selectedFact.sourceUrl} ↗
+                </a>
+              </p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

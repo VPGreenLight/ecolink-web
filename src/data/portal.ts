@@ -34,7 +34,7 @@ export const PORTAL_NAV: Record<Role, PortalSection[]> = {
         { to: "/guidance", label: "Hướng dẫn phân loại" },
         { to: "/waste", label: "Tra cứu loại rác" },
         { to: "/rewards", label: "Đổi thưởng và điểm danh" },
-        { to: "/user/gamification", label: "Cây ảo và Eco Fact" },
+        { to: "/user/gamification", label: "Eco Fact" },
       ],
     },
     {

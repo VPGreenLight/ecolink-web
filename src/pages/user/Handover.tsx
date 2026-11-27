@@ -1393,13 +1393,11 @@ function CreateForm({
           <RequiredMark />
         </span>
         <span className="text-[12px] text-muted">
-          Bạn có thể ghim tại đầu ngõ, sảnh toà nhà hoặc bật làm mờ ~500m nếu muốn hẹn thêm qua khung chat.
+          Bạn có thể ghim tại đầu ngõ, sảnh toà nhà hoặc vị trí thuận tiện để cơ sở thu mua dễ tìm.
         </span>
         <LocationPinPickerMap
           lat={pickupLat}
           lng={pickupLng}
-          allowPrivacyFuzz
-          defaultPrivacyFuzz={false}
           pinTitle="Điểm hẹn bàn giao"
           heightClass="h-[230px]"
           onChange={(nextLat, nextLng, addressHint) => {

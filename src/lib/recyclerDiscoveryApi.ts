@@ -25,6 +25,8 @@ export interface CollectionPartnerDto {
   operatingHours: string
   description?: string | null
   businessPhotoUrl?: string | null
+  recyclerType?: "Facility" | "Individual" | string
+  businessPhotoUrls?: string[]
   hasVerifiedBadge?: boolean
   isFeatured?: boolean
   isOnline?: boolean

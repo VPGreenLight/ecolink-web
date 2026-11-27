@@ -119,6 +119,26 @@ export function getStageName(stage: TreeStage): string {
   return STAGES.find((s) => s.id === stage)?.name ?? "Hạt mầm"
 }
 
+export function getEcoFactLevelNumbers(
+  levels?: { level: number }[] | null,
+  facts?: { unlockTreeLevel: number }[] | null,
+): number[] {
+  const set = new Set<number>()
+  if (levels && levels.length > 0) {
+    for (const lv of levels) {
+      if (lv.level >= 1) set.add(lv.level)
+    }
+  } else {
+    for (const lv of [1, 2, 3, 4]) set.add(lv)
+  }
+  if (facts) {
+    for (const f of facts) {
+      if (f.unlockTreeLevel >= 1) set.add(f.unlockTreeLevel)
+    }
+  }
+  return Array.from(set).sort((a, b) => a - b)
+}
+
 /** Căn chỉnh và phóng to khung ảnh cây WebP theo đúng tỷ lệ từng giai đoạn trong lòng nút tròn. */
 export function getTreeAvatarImgClass(stage: TreeStage): string {
   switch (stage) {

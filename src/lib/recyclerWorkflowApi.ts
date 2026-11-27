@@ -54,8 +54,12 @@ export interface RecyclerApplicationDetailDto {
   operatingHours: string
   contactPhone: string
   description?: string | null
+  recyclerType?: "Facility" | "Individual" | string
   legalPermitUrl?: string | null
   businessPhotoUrl?: string | null
+  identityCardFrontUrl?: string | null
+  identityCardBackUrl?: string | null
+  businessPhotoUrls?: string[]
   verificationStatus: "Pending" | "Verified" | "Rejected" | string
   activeStatus: "Online" | "Offline" | string
   rejectionReason?: string | null
@@ -88,6 +92,8 @@ export interface RecyclerProfileDto {
   description?: string | null
   legalPermitUrl?: string | null
   businessPhotoUrl?: string | null
+  recyclerType?: "Facility" | "Individual" | string
+  businessPhotoUrls?: string[]
   verificationStatus: string
   activeStatus: string
   rejectionReason?: string | null
@@ -298,6 +304,7 @@ export interface TradeOrderApiDto {
 
 export interface StaffApplicationView extends Application {
   userId?: string
+  recyclerType?: "Facility" | "Individual" | string
   representativeName?: string
   phone?: string
   email?: string
@@ -305,6 +312,9 @@ export interface StaffApplicationView extends Application {
   longitude: number
   legalPermitUrl?: string
   businessPhotoUrl?: string
+  businessPhotoUrls?: string[]
+  identityCardFrontUrl?: string
+  identityCardBackUrl?: string
   fromBackend?: boolean
 }
 
@@ -521,7 +531,10 @@ async function authorizedRequest<T>(
 
 /* ------------------------------------------------------------------ Link 1: Đăng ký cơ sở (U-17) */
 
+export type RecyclerPartnerType = "Facility" | "Individual"
+
 export interface SubmitRecyclerOnboardingInput {
+  recyclerType: RecyclerPartnerType
   facilityName: string
   representativeName: string
   phone: string
@@ -530,7 +543,11 @@ export interface SubmitRecyclerOnboardingInput {
   latitude: number
   longitude: number
   materials: string[]
-  documents: File[]
+  permitFile?: File | null
+  facilityPhotoFiles?: File[]
+  cccdFrontFile?: File | null
+  cccdBackFile?: File | null
+  documents?: File[]
 }
 
 export interface SubmitRecyclerOnboardingResult {
@@ -541,7 +558,7 @@ export interface SubmitRecyclerOnboardingResult {
 
 async function uploadSingleDocument(
   file: File,
-  documentType: "permit" | "facility-photo",
+  documentType: "permit" | "facility-photo" | "cccd-front" | "cccd-back",
 ): Promise<string> {
   const form = new FormData()
   form.append("file", file)
@@ -555,6 +572,24 @@ async function uploadSingleDocument(
     },
   )
   return res.data.fileUrl
+}
+
+async function uploadWithOfflineFallback(
+  file: File,
+  documentType: "permit" | "facility-photo" | "cccd-front" | "cccd-back",
+  folder: string,
+): Promise<string> {
+  try {
+    return await uploadSingleDocument(file, documentType)
+  } catch (uploadErr) {
+    if (
+      (uploadErr instanceof ApiError && !uploadErr.isNetworkError) ||
+      hasLiveBackendAuth()
+    ) {
+      throw uploadErr
+    }
+    return `https://mock-r2.ecolink.vn/recycler-kyb/${folder}/${encodeURIComponent(file.name)}`
+  }
 }
 
 export function formatRecyclerApplicationCode(
@@ -619,44 +654,46 @@ export async function submitRecyclerOnboarding(
   ).slice(0, 100)
 
   try {
-    let legalPermitUrl = `https://mock-r2.ecolink.vn/recycler-kyb/legal-permits/${encodeURIComponent(
-      input.documents[0]?.name || "giay-phep.pdf",
-    )}`
-    let businessPhotoUrl = `https://mock-r2.ecolink.vn/recycler-kyb/facility-photos/${encodeURIComponent(
-      input.documents[1]?.name || input.documents[0]?.name || "kho-bai.jpg",
-    )}`
+    const isIndividual = input.recyclerType === "Individual"
+    let legalPermitUrl = ""
+    let businessPhotoUrl = ""
+    let businessPhotoUrls: string[] | undefined
+    let identityCardFrontUrl: string | undefined
+    let identityCardBackUrl: string | undefined
 
-    if (input.documents[0]) {
-      try {
-        legalPermitUrl = await uploadSingleDocument(input.documents[0], "permit")
-      } catch (uploadErr) {
-        if (
-          (uploadErr instanceof ApiError && !uploadErr.isNetworkError) ||
-          hasLiveBackendAuth()
-        ) {
-          throw uploadErr
-        }
-        // Giữ URL mô phỏng hợp lệ nếu chạy ngoại tuyến hoàn toàn
+    if (isIndividual) {
+      if (input.cccdFrontFile) {
+        identityCardFrontUrl = await uploadWithOfflineFallback(
+          input.cccdFrontFile,
+          "cccd-front",
+          "identity-cards",
+        )
       }
-    }
-    if (input.documents[1]) {
-      try {
-        businessPhotoUrl = await uploadSingleDocument(input.documents[1], "facility-photo")
-      } catch (uploadErr) {
-        if (
-          (uploadErr instanceof ApiError && !uploadErr.isNetworkError) ||
-          hasLiveBackendAuth()
-        ) {
-          throw uploadErr
-        }
-        // Giữ URL mô phỏng hợp lệ nếu chạy ngoại tuyến hoàn toàn
+      if (input.cccdBackFile) {
+        identityCardBackUrl = await uploadWithOfflineFallback(
+          input.cccdBackFile,
+          "cccd-back",
+          "identity-cards",
+        )
       }
-    } else if (
-      input.documents[0] &&
-      legalPermitUrl &&
-      !legalPermitUrl.startsWith("https://mock-r2.ecolink.vn/")
-    ) {
-      businessPhotoUrl = legalPermitUrl
+    } else {
+      const permit = input.permitFile ?? input.documents?.[0] ?? null
+      const photos =
+        input.facilityPhotoFiles && input.facilityPhotoFiles.length > 0
+          ? input.facilityPhotoFiles
+          : input.documents?.slice(1) ?? []
+
+      if (permit) {
+        legalPermitUrl = await uploadWithOfflineFallback(permit, "permit", "legal-permits")
+      }
+      if (photos.length > 0) {
+        businessPhotoUrls = await Promise.all(
+          photos.map((photo) =>
+            uploadWithOfflineFallback(photo, "facility-photo", "facility-photos"),
+          ),
+        )
+        businessPhotoUrl = businessPhotoUrls[0] ?? ""
+      }
     }
 
     if (isAuthenticatedUpgrade) {
@@ -665,6 +702,7 @@ export async function submitRecyclerOnboarding(
         {
           method: "POST",
           body: JSON.stringify({
+            recyclerType: input.recyclerType,
             facilityName: input.facilityName.trim(),
             representativeName: resolvedRepresentative,
             businessAddress: input.businessAddress.trim(),
@@ -675,6 +713,9 @@ export async function submitRecyclerOnboarding(
             description,
             legalPermitUrl,
             businessPhotoUrl,
+            businessPhotoUrls: isIndividual ? undefined : businessPhotoUrls,
+            identityCardFrontUrl: isIndividual ? identityCardFrontUrl : undefined,
+            identityCardBackUrl: isIndividual ? identityCardBackUrl : undefined,
           }),
         },
       )
@@ -699,6 +740,7 @@ export async function submitRecyclerOnboarding(
         password: `Eco@${suffix}99`,
         fullName: resolvedRepresentative,
         phoneNumber: cleanPhone,
+        recyclerType: input.recyclerType,
         facilityName: input.facilityName.trim(),
         representativeName: resolvedRepresentative,
         businessAddress: input.businessAddress.trim(),
@@ -709,6 +751,9 @@ export async function submitRecyclerOnboarding(
         description,
         legalPermitUrl,
         businessPhotoUrl,
+        businessPhotoUrls: isIndividual ? undefined : businessPhotoUrls,
+        identityCardFrontUrl: isIndividual ? identityCardFrontUrl : undefined,
+        identityCardBackUrl: isIndividual ? identityCardBackUrl : undefined,
       }),
     })
 
@@ -730,15 +775,23 @@ export async function submitRecyclerOnboarding(
     // Dự phòng ngoại tuyến: chỉ chạy khi thực sự không có máy chủ Backend và chưa đăng nhập thực
     const fallbackCode = `HS-${yyyy}-${suffix.slice(-4)}`
     const state = readSyncState()
+    const offlineDocs =
+      input.recyclerType === "Individual"
+        ? [input.cccdFrontFile?.name, input.cccdBackFile?.name].filter((x): x is string => Boolean(x))
+        : [
+            input.permitFile?.name,
+            ...(input.facilityPhotoFiles ?? []).map((f) => f.name),
+          ].filter((x): x is string => Boolean(x))
     const offlineApp: StaffApplicationView = {
       id: fallbackCode,
+      recyclerType: input.recyclerType,
       name: input.facilityName.trim(),
       representativeName: input.representativeName.trim() || undefined,
       phone: input.phone.trim(),
       email,
       address: input.businessAddress.trim(),
       materials: input.materials.join(", "),
-      docs: input.documents.map((d) => d.name),
+      docs: offlineDocs.length > 0 ? offlineDocs : (input.documents ?? []).map((d) => d.name),
       date: `${dd}/${mm}/${yyyy}`,
       status: "pending",
       latitude: input.latitude,
@@ -1059,9 +1112,21 @@ function mapDtoToStaffView(dto: RecyclerApplicationDetailDto): StaffApplicationV
         ? "rejected"
         : "pending"
 
+  const recyclerType = dto.recyclerType === "Individual" ? "Individual" : "Facility"
+  const businessPhotoUrls = Array.isArray(dto.businessPhotoUrls) && dto.businessPhotoUrls.length > 0
+    ? dto.businessPhotoUrls.filter((u) => Boolean(u && u.trim()))
+    : dto.businessPhotoUrl
+      ? [dto.businessPhotoUrl]
+      : []
+
   const docs: string[] = []
-  if (dto.legalPermitUrl) docs.push("Giấy phép kinh doanh / pháp lý")
-  if (dto.businessPhotoUrl) docs.push("Ảnh mặt tiền kho bãi")
+  if (recyclerType === "Individual") {
+    if (dto.identityCardFrontUrl) docs.push("CCCD mặt trước")
+    if (dto.identityCardBackUrl) docs.push("CCCD mặt sau")
+  } else {
+    if (dto.legalPermitUrl) docs.push("Giấy phép kinh doanh / pháp lý")
+    if (businessPhotoUrls.length > 0) docs.push(`Bộ ảnh kho bãi (${businessPhotoUrls.length}/5)`)
+  }
   if (docs.length === 0) docs.push("Hồ sơ đăng ký điện tử")
 
   const rawDesc = dto.description?.replace(/^Thu mua:\s*/i, "").trim()
@@ -1069,6 +1134,7 @@ function mapDtoToStaffView(dto: RecyclerApplicationDetailDto): StaffApplicationV
   return {
     id: formatRecyclerApplicationCode(dto.userId, dto.submittedAt),
     userId: dto.userId,
+    recyclerType,
     name: dto.facilityName,
     representativeName: dto.representativeName ?? dto.applicantFullName,
     phone: dto.contactPhone,
@@ -1083,6 +1149,9 @@ function mapDtoToStaffView(dto: RecyclerApplicationDetailDto): StaffApplicationV
     longitude: Number(dto.longitude) || 105.5253,
     legalPermitUrl: dto.legalPermitUrl ?? undefined,
     businessPhotoUrl: dto.businessPhotoUrl ?? undefined,
+    businessPhotoUrls,
+    identityCardFrontUrl: dto.identityCardFrontUrl ?? undefined,
+    identityCardBackUrl: dto.identityCardBackUrl ?? undefined,
     fromBackend: true,
   }
 }

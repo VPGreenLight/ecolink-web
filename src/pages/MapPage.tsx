@@ -1,6 +1,6 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
-import { BadgeCheck, ChevronDown, Clock, List, Map as MapIcon, MapPin, Navigation, Phone, Search, ShieldCheck, Tag, X } from "lucide-react"
+import { BadgeCheck, ChevronDown, Clock, List, Map as MapIcon, MapPin, Navigation, Phone, Search, Tag, X } from "lucide-react"
 import ShinyText from "@/components/ShinyText"
 import LeafletRecyclerMap, {
   type SearchCoordinateSource,
@@ -8,7 +8,6 @@ import LeafletRecyclerMap, {
 import { ApiError } from "@/lib/api"
 import {
   filterAreaPresets,
-  resolveSearchCoordinates,
   searchPlacesOnSubmit,
   type GeocodingSuggestionDto,
 } from "@/lib/geocodingApi"
@@ -257,12 +256,11 @@ function getPartnerPriceSummary(
   return { matchedMat, minPrice }
 }
 
-/** U-05 Tìm kiếm cơ sở thu gom theo vị trí địa lý trên bản đồ tương tác (Privacy-First Geocoding).
+/** U-05 Tìm kiếm cơ sở thu gom theo vị trí địa lý trên bản đồ tương tác.
  *
  *  Kết nối trực tiếp với:
  *   - Bản đồ tương tác `Leaflet 1.9.4` + `CARTO Voyager` (`VITE_CARTO_API_KEY`)
  *   - Tìm kiếm 2 tầng: gợi ý tức thì bằng `LOCATION_PRESETS` khi gõ + `GET /api/v1/geocoding/search` khi nhấn Enter
- *   - Bảo mật vị trí `BR-MTH-05`: làm mờ toạ độ sang lưới `~500m` (`0.005°`) cho cả GPS, Click-to-Pin và địa chỉ tìm kiếm
  *   - `GET /api/v1/recyclers/nearby` & `GET /api/v1/recyclers/{recyclerId}` */
 export default function MapPage() {
   const session = useSession()
@@ -273,7 +271,7 @@ export default function MapPage() {
     ? (initialCatParam.trim().toLowerCase() as DiscoverableCategory)
     : ""
 
-  // Tâm neo gốc trước khi qua bộ lọc làm mờ vị trí ~500m (BR-MTH-05)
+  // Tâm neo gốc dùng làm tâm quét bán kính trên bản đồ
   const [rawAnchor, setRawAnchor] = useState<{
     rawLat: number
     rawLng: number
@@ -286,8 +284,6 @@ export default function MapPage() {
     source: "preset",
   })
 
-  // Mặc định BẬT ẩn vị trí chính xác (~500m) theo nguyên tắc Privacy-by-Design
-  const [privacyMode, setPrivacyMode] = useState<boolean>(true)
   const [showLocationPicker, setShowLocationPicker] = useState<boolean>(false)
 
   // Trạng thái ô tìm kiếm khu vực 2 tầng (Tầng 1: Presets 0ms | Tầng 2: Nominatim Proxy khi Submit)
@@ -384,22 +380,16 @@ export default function MapPage() {
     })
   }, [selectedId])
 
-  // Toạ độ thực sự dùng để vẽ tâm & gửi lên Backend (đã làm mờ lưới ~500m cho GPS, Click-to-Pin và Tìm kiếm)
-  const coords = useMemo(() => {
-    const shouldFuzz = privacyMode && rawAnchor.source !== "preset"
-    const resolved = resolveSearchCoordinates(
-      rawAnchor.rawLat,
-      rawAnchor.rawLng,
-      shouldFuzz,
-    )
-    return {
-      lat: resolved.lat,
-      lng: resolved.lng,
-      isFuzzed: resolved.isFuzzed,
+  // Toạ độ thực sự dùng để vẽ tâm & gửi lên Backend
+  const coords = useMemo(
+    () => ({
+      lat: Number(rawAnchor.rawLat.toFixed(5)),
+      lng: Number(rawAnchor.rawLng.toFixed(5)),
       label: rawAnchor.label,
       source: rawAnchor.source,
-    }
-  }, [rawAnchor, privacyMode])
+    }),
+    [rawAnchor],
+  )
 
   // Tầng 1: Lọc tức thì bộ địa danh nội bộ (0ms, không gọi mạng khi gõ phím)
   const instantPresets = useMemo(() => filterAreaPresets(placeQuery, 6), [placeQuery])
@@ -419,7 +409,7 @@ export default function MapPage() {
     return () => clearTimeout(t)
   }, [keyword])
 
-  // Thao tác Lớp 2: Chấm điểm bất kỳ trên bản đồ (Click-to-Pin) — tự động áp dụng làm mờ ~500m
+  // Thao tác Lớp 2: Chấm điểm bất kỳ trên bản đồ (Click-to-Pin)
   const handleMapPinClick = useCallback((clickedLat: number, clickedLng: number) => {
     setRawAnchor({
       rawLat: clickedLat,
@@ -491,7 +481,7 @@ export default function MapPage() {
     }
   }
 
-  // Truy vấn danh sách cơ sở thu mua gần toạ độ (đã làm mờ nếu bật bảo mật)
+  // Truy vấn danh sách cơ sở thu mua gần toạ độ đã chọn
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
@@ -676,13 +666,11 @@ export default function MapPage() {
   }, [activePartner])
 
   const coordinateSourceLabel = useMemo(() => {
-    if (coords.isFuzzed) {
-      return "Đã làm mờ vị trí (~500m)"
-    }
-    if (coords.source === "gps") return "Định vị GPS chính xác"
+    if (coords.source === "gps") return "Định vị GPS hiện tại"
     if (coords.source === "pin") return "Điểm chấm trên bản đồ"
+    if (coords.source === "search") return "Địa danh tìm kiếm"
     return "Toạ độ khu vực chung"
-  }, [coords.isFuzzed, coords.source])
+  }, [coords.source])
 
   return (
     <div
@@ -704,7 +692,7 @@ export default function MapPage() {
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13px] font-semibold text-ink">{coords.label}</p>
             <p className="truncate text-[11px] text-muted">
-              Bán kính {radiusKm} km · {privacyMode ? "Ẩn vị trí ~500m" : "Vị trí chính xác"}
+              Bán kính {radiusKm} km · {coordinateSourceLabel}
             </p>
           </div>
           <span className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg bg-brand-deep px-2.5 text-xs font-semibold text-white">
@@ -786,7 +774,7 @@ export default function MapPage() {
         )}
       </div>
 
-      {/* Cột trái: khung bản đồ tương tác + tra cứu khu vực + bảo mật vị trí ~500m */}
+      {/* Cột trái: khung bản đồ tương tác + tra cứu khu vực */}
       <section
         className={`relative min-h-0 flex-1 flex-col overflow-clip rounded-2xl border border-line bg-surface-3 xl:flex xl:h-full xl:min-h-[520px] ${
           mobileView === "map" ? "flex" : "hidden"
@@ -797,7 +785,6 @@ export default function MapPage() {
             centerLat={coords.lat}
             centerLng={coords.lng}
             radiusKm={radiusKm}
-            privacyMode={privacyMode}
             source={coords.source}
             partners={partners}
             selectedPartnerId={activePartner?.id ?? null}
@@ -939,7 +926,7 @@ export default function MapPage() {
             </div>
           )}
 
-          {/* Thanh điều khiển gọn trên bản đồ Desktop (xl+): khu vực, quyền riêng tư và bán kính */}
+          {/* Thanh điều khiển gọn trên bản đồ Desktop (xl+): khu vực và bán kính */}
           <div className="pointer-events-none absolute inset-x-4 top-4 z-30 hidden flex-col gap-2 xl:flex">
             <div className="pointer-events-auto flex flex-wrap items-start gap-2">
               <div className="flex min-w-[280px] flex-1 items-center gap-2.5 rounded-xl border border-line bg-surface/95 px-3 py-2 shadow-sm backdrop-blur-md">
@@ -947,27 +934,9 @@ export default function MapPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-medium text-ink">{coords.label}</p>
                   <p className="truncate text-xs text-muted">
-                    {coordinateSourceLabel} · {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
+                    {coordinateSourceLabel} · {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
                   </p>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => setPrivacyMode((v) => !v)}
-                  data-message-code="BR-MTH-05"
-                  aria-pressed={privacyMode}
-                  title="Khi bật, toạ độ GPS và điểm bấm bản đồ được làm tròn sang lưới ~500m trước khi gửi đi"
-                  className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2 text-xs font-medium transition-colors ${
-                    privacyMode
-                      ? "border-brand/35 bg-brand/10 text-brand-deep"
-                      : "border-line bg-surface text-muted hover:bg-surface-2"
-                  }`}
-                >
-                  <ShieldCheck className="size-3.5" strokeWidth={1.5} />
-                  <span className="hidden sm:inline">
-                    {privacyMode ? "Ẩn vị trí ~500m" : "Vị trí chính xác"}
-                  </span>
-                </button>
 
                 <button
                   type="button"
@@ -1230,6 +1199,11 @@ export default function MapPage() {
                                 />
                               </span>
                             )}
+                            {p.recyclerType === "Individual" && (
+                              <span className="inline-flex shrink-0 items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
+                                Thu mua lưu động
+                              </span>
+                            )}
                           </div>
                           <p className="mt-0.5 truncate text-xs text-muted">{p.address}</p>
 
@@ -1331,7 +1305,7 @@ export default function MapPage() {
         </div>
       </section>
 
-      {/* Bottom Sheet chọn khu vực, bán kính & ẩn vị trí ~500m trên Mobile/Tablet (< xl) */}
+      {/* Bottom Sheet chọn khu vực & bán kính trên Mobile/Tablet (< xl) */}
       {showLocationPicker && (
         <div
           role="dialog"
@@ -1348,7 +1322,7 @@ export default function MapPage() {
               <div>
                 <h2 className="text-base font-semibold text-ink">Khu vực &amp; Bán kính</h2>
                 <p className="text-xs text-muted">
-                  {coordinateSourceLabel} · {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
+                  {coordinateSourceLabel} · {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
                 </p>
               </div>
               <button
@@ -1383,29 +1357,6 @@ export default function MapPage() {
               }}
               mobileExtras={
                 <div className="mb-4 flex flex-col gap-3">
-                  <div className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-line bg-surface-2/60 px-3 py-2.5">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-ink">Ẩn vị trí chính xác (~500m)</p>
-                      <p className="text-[11px] text-muted">
-                        Làm tròn GPS &amp; điểm chấm trước khi gửi đi
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setPrivacyMode((v) => !v)}
-                      data-message-code="BR-MTH-05"
-                      aria-pressed={privacyMode}
-                      className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
-                        privacyMode
-                          ? "border-brand/40 bg-brand-deep text-white"
-                          : "border-line bg-surface text-body"
-                      }`}
-                    >
-                      <ShieldCheck className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
-                      {privacyMode ? "Đang bật" : "Đang tắt"}
-                    </button>
-                  </div>
-
                   <div>
                     <p className="mb-1.5 text-xs font-semibold text-ink">Bán kính tìm kiếm</p>
                     <div role="group" aria-label="Bán kính tìm kiếm" className="grid grid-cols-4 gap-2">

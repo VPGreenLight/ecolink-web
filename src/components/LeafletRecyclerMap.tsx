@@ -8,13 +8,11 @@ export type SearchCoordinateSource = "preset" | "search" | "gps" | "pin"
 
 /** Màu tương ứng token brand trong index.css; Leaflet nhận màu qua SVG attribute. */
 const MAP_BRAND = "#278733"
-const MAP_BRAND_DEEP = "#006516"
 
 interface LeafletRecyclerMapProps {
   centerLat: number
   centerLng: number
   radiusKm: number
-  privacyMode: boolean
   source: SearchCoordinateSource
   partners: CollectionPartnerDto[]
   selectedPartnerId: string | null
@@ -46,13 +44,12 @@ function escapeHtml(raw: string): string {
  * Bản đồ tương tác Leaflet 1.9.4 tải nền CARTO Voyager (tương thích hoàn toàn với SSR `npm run check`).
  * - Nạp động `import("leaflet")` trong `useEffect` để không truy cập `window` trên Node.js.
  * - Tách ngữ cảnh xếp lớp `isolate z-0` để các thanh tìm kiếm nổi của EcoLink luôn hiển thị phía trên.
- * - Vẽ trực quan vòng bán kính quét (`radiusKm`) và vùng làm mờ bảo mật `~500m` (`BR-MTH-05`).
+ * - Vẽ trực quan vòng bán kính quét (`radiusKm`) và các ghim cơ sở thu mua trên bản đồ.
  */
 export default function LeafletRecyclerMap({
   centerLat,
   centerLng,
   radiusKm,
-  privacyMode,
   source,
   partners,
   selectedPartnerId,
@@ -208,7 +205,7 @@ export default function LeafletRecyclerMap({
     }
   }, [selectedPartnerId, partners, mapReady])
 
-  // 4. Vẽ lại vòng bán kính quét, vòng bảo mật ~500m và các ghim cơ sở thu mua
+  // 4. Vẽ lại vòng bán kính quét và các ghim cơ sở thu mua
   useEffect(() => {
     const L = leafletModRef.current
     const group = overlayLayerRef.current
@@ -227,23 +224,12 @@ export default function LeafletRecyclerMap({
       interactive: false,
     }).addTo(group)
 
-    // Tâm người dùng / vùng làm mờ vị trí chính xác (~500m theo BR-MTH-05)
-    if (privacyMode) {
-      L.circle([centerLat, centerLng], {
-        radius: 520,
-        color: MAP_BRAND_DEEP,
-        weight: 1.5,
-        fillColor: MAP_BRAND,
-        fillOpacity: 0.13,
-        interactive: false,
-      }).addTo(group)
-    }
-
-    const centerBadgeText = privacyMode
-      ? source === "gps" || source === "pin"
-        ? "Vùng ẩn danh ~500m"
-        : "Tâm khu vực tra cứu"
-      : "Tâm vị trí đã chọn"
+    const centerBadgeText =
+      source === "gps"
+        ? "Vị trí hiện tại của bạn"
+        : source === "pin"
+          ? "Tâm vị trí đã chọn"
+          : "Tâm khu vực tra cứu"
 
     const centerIcon = L.divIcon({
       className: "ecolink-leaflet-div-icon",
@@ -310,7 +296,7 @@ export default function LeafletRecyclerMap({
 
       marker.addTo(group)
     })
-  }, [centerLat, centerLng, radiusKm, privacyMode, source, partners, selectedPartnerId, mapReady])
+  }, [centerLat, centerLng, radiusKm, source, partners, selectedPartnerId, mapReady])
 
   const handleZoomIn = () => mapRef.current?.zoomIn()
   const handleZoomOut = () => mapRef.current?.zoomOut()
@@ -377,7 +363,7 @@ export default function LeafletRecyclerMap({
           type="button"
           onClick={onRequestGps}
           disabled={locatingGps}
-          title="Lấy vị trí GPS hiện tại (tự động làm mờ ~500m nếu bật bảo mật)"
+          title="Lấy vị trí GPS hiện tại"
           aria-label="Lấy vị trí GPS hiện tại"
           className="grid size-10 place-items-center rounded-xl border border-line bg-surface/95 text-brand-deep shadow-sm backdrop-blur-md transition-colors hover:bg-surface-2 active:scale-95 disabled:opacity-60 xl:size-9 xl:rounded-lg"
         >

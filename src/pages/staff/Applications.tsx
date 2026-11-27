@@ -235,7 +235,20 @@ export default function Applications() {
                 <li key={a.id} className="card flex flex-col gap-4 p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-bold text-ink">{a.name}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-bold text-ink">{a.name}</p>
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                            a.recyclerType === "Individual"
+                              ? "border border-sky-200 bg-sky-50 text-sky-800"
+                              : "border border-line bg-surface-2 text-body"
+                          }`}
+                        >
+                          {a.recyclerType === "Individual"
+                            ? "Thu mua nhỏ lẻ (Lưu động)"
+                            : "Cơ sở cố định"}
+                        </span>
+                      </div>
                       <p className="mt-0.5 text-[13px] text-muted">
                         {a.id} · {a.date} · {a.address}
                       </p>
@@ -255,42 +268,91 @@ export default function Applications() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <p className="text-[13px] font-semibold text-ink">
-                        Giấy tờ & chứng từ đã đính kèm
+                        {a.recyclerType === "Individual"
+                          ? "Chứng từ định danh (CCCD bảo mật nội bộ)"
+                          : "Giấy tờ & ảnh kho bãi đã đính kèm"}
                       </p>
                       <ul className="mt-2 flex flex-wrap gap-2">
-                        {!a.legalPermitUrl &&
-                          !a.businessPhotoUrl &&
-                          a.docs.map((d) => (
-                            <li
-                              key={d}
-                              className="rounded-full border border-line bg-surface-2 px-3 py-1 text-xs text-body"
-                            >
-                              {d}
-                            </li>
-                          ))}
-                        {a.legalPermitUrl && (
-                          <li>
-                            <a
-                              href={a.legalPermitUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-block rounded-full border border-brand/30 bg-brand/8 px-3 py-1 text-xs font-semibold text-brand-deep hover:underline"
-                            >
-                              Mở giấy phép pháp lý ↗
-                            </a>
-                          </li>
-                        )}
-                        {a.businessPhotoUrl && (
-                          <li>
-                            <a
-                              href={a.businessPhotoUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-block rounded-full border border-brand/30 bg-brand/8 px-3 py-1 text-xs font-semibold text-brand-deep hover:underline"
-                            >
-                              Xem ảnh kho bãi ↗
-                            </a>
-                          </li>
+                        {a.recyclerType === "Individual" ? (
+                          <>
+                            {a.identityCardFrontUrl && (
+                              <li>
+                                <a
+                                  href={a.identityCardFrontUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-block rounded-full border border-sky-300 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-900 hover:underline"
+                                >
+                                  Xem CCCD mặt trước ↗
+                                </a>
+                              </li>
+                            )}
+                            {a.identityCardBackUrl && (
+                              <li>
+                                <a
+                                  href={a.identityCardBackUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-block rounded-full border border-sky-300 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-900 hover:underline"
+                                >
+                                  Xem CCCD mặt sau ↗
+                                </a>
+                              </li>
+                            )}
+                            {!a.identityCardFrontUrl &&
+                              !a.identityCardBackUrl &&
+                              a.docs.map((d) => (
+                                <li
+                                  key={d}
+                                  className="rounded-full border border-line bg-surface-2 px-3 py-1 text-xs text-body"
+                                >
+                                  {d}
+                                </li>
+                              ))}
+                          </>
+                        ) : (
+                          <>
+                            {!a.legalPermitUrl &&
+                              !a.businessPhotoUrl &&
+                              (!a.businessPhotoUrls || a.businessPhotoUrls.length === 0) &&
+                              a.docs.map((d) => (
+                                <li
+                                  key={d}
+                                  className="rounded-full border border-line bg-surface-2 px-3 py-1 text-xs text-body"
+                                >
+                                  {d}
+                                </li>
+                              ))}
+                            {a.legalPermitUrl && (
+                              <li>
+                                <a
+                                  href={a.legalPermitUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-block rounded-full border border-brand/30 bg-brand/8 px-3 py-1 text-xs font-semibold text-brand-deep hover:underline"
+                                >
+                                  Mở giấy phép pháp lý ↗
+                                </a>
+                              </li>
+                            )}
+                            {(a.businessPhotoUrls && a.businessPhotoUrls.length > 0
+                              ? a.businessPhotoUrls
+                              : a.businessPhotoUrl
+                                ? [a.businessPhotoUrl]
+                                : []
+                            ).map((photoUrl, idx) => (
+                              <li key={`${photoUrl}-${idx}`}>
+                                <a
+                                  href={photoUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-block rounded-full border border-brand/30 bg-brand/8 px-3 py-1 text-xs font-semibold text-brand-deep hover:underline"
+                                >
+                                  Ảnh kho bãi {idx + 1} ↗
+                                </a>
+                              </li>
+                            ))}
+                          </>
                         )}
                       </ul>
                     </div>
@@ -422,7 +484,12 @@ export default function Applications() {
               pagedDone.map((a) => (
                 <tr key={a.id}>
                   <Td className="tabular-nums whitespace-nowrap">{a.id}</Td>
-                  <Td className="font-semibold text-ink">{a.name}</Td>
+                  <Td className="font-semibold text-ink">
+                    <span>{a.name}</span>
+                    <span className="mt-0.5 block text-[11px] font-medium text-muted">
+                      {a.recyclerType === "Individual" ? "Thu mua nhỏ lẻ (Lưu động)" : "Cơ sở cố định"}
+                    </span>
+                  </Td>
                   <Td>
                     <span className="block">{a.address}</span>
                     <span className="text-[11px] tabular-nums text-muted">

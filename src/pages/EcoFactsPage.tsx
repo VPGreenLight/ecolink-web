@@ -32,6 +32,7 @@ import {
 
 import {
   getDefaultFrameForStage,
+  getEcoFactLevelNumbers,
   getFrameSrc,
   saveLiveTreePreview,
   stageForBackendLevel,
@@ -1137,7 +1138,7 @@ export default function EcoFactsPage() {
                   >
                     Tất cả cấp
                   </button>
-                  {[1, 2, 3, 4, 5, 6].map((lv) => (
+                  {getEcoFactLevelNumbers(backendTree?.levels, unlockedFacts).map((lv) => (
                     <button
                       key={lv}
                       type="button"

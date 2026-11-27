@@ -2,7 +2,6 @@ import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import type * as LeafletTypes from "leaflet"
 import {
   filterAreaPresets,
-  resolveSearchCoordinates,
   searchPlacesOnSubmit,
   type GeocodingSuggestionDto,
 } from "@/lib/geocodingApi"
@@ -15,8 +14,6 @@ interface LocationPinPickerMapProps {
   readOnly?: boolean
   pinTitle?: string
   helperText?: string
-  allowPrivacyFuzz?: boolean
-  defaultPrivacyFuzz?: boolean
   heightClass?: string
 }
 
@@ -34,7 +31,7 @@ function escapeHtml(raw: string): string {
  * - U-17 (`JoinRecycler.tsx`): Chủ cơ sở chấm chính xác kho bãi thu mua khi nộp hồ sơ.
  * - R-01/R-02 (`recycler/Home.tsx`): Cơ sở xem & cập nhật vị trí kho bãi hiển thị trên `/map`.
  * - S-04 (`staff/Applications.tsx`): Nhân viên mở chế độ `readOnly` đối chiếu địa chỉ giấy phép với ghim thực tế.
- * - U-07 (`user/Handover.tsx`): Người dân chấm điểm hẹn đầu ngõ / sảnh chung cư (tách khỏi vị trí nhà riêng `BR-MTH-05`).
+ * - U-07 (`user/Handover.tsx`): Người dân chấm điểm hẹn đầu ngõ / sảnh chung cư.
  *
  * Tuyệt đối không dùng thẻ `<form>` bên trong để nhúng an toàn vào các biểu mẫu cha mà không gây lỗi lồng form SSR.
  */
@@ -45,8 +42,6 @@ export default function LocationPinPickerMap({
   readOnly = false,
   pinTitle = "Vị trí đã ghim",
   helperText,
-  allowPrivacyFuzz = false,
-  defaultPrivacyFuzz = false,
   heightClass = "h-[250px]",
 }: LocationPinPickerMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -60,16 +55,11 @@ export default function LocationPinPickerMap({
   const [locatingGps, setLocatingGps] = useState(false)
   const [notice, setNotice] = useState("")
   const [remoteResults, setRemoteResults] = useState<GeocodingSuggestionDto[]>([])
-  const [privacyFuzz, setPrivacyFuzz] = useState(defaultPrivacyFuzz)
 
   const onChangeRef = useRef(onChange)
-  const privacyFuzzRef = useRef(privacyFuzz)
   useEffect(() => {
     onChangeRef.current = onChange
   }, [onChange])
-  useEffect(() => {
-    privacyFuzzRef.current = privacyFuzz
-  }, [privacyFuzz])
 
   const presetMatches = useMemo(() => {
     if (!query.trim()) return []
@@ -78,12 +68,7 @@ export default function LocationPinPickerMap({
 
   const emitCoordinates = (rawLat: number, rawLng: number, addressHint?: string) => {
     if (readOnly || !onChangeRef.current) return
-    const resolved = resolveSearchCoordinates(
-      rawLat,
-      rawLng,
-      allowPrivacyFuzz && privacyFuzzRef.current,
-    )
-    onChangeRef.current(resolved.lat, resolved.lng, addressHint)
+    onChangeRef.current(Number(rawLat.toFixed(5)), Number(rawLng.toFixed(5)), addressHint)
   }
 
   // 1. Khởi tạo bản đồ Leaflet trên trình duyệt (SSR-safe)
@@ -165,18 +150,6 @@ export default function LocationPinPickerMap({
 
     group.clearLayers()
 
-    if (allowPrivacyFuzz && privacyFuzz) {
-      L.circle([lat, lng], {
-        radius: 300,
-        color: "#226b42",
-        weight: 1.5,
-        dashArray: "5 5",
-        fillColor: "#52b788",
-        fillOpacity: 0.14,
-        interactive: false,
-      }).addTo(group)
-    }
-
     const safeTitle = escapeHtml(pinTitle)
     const icon = L.divIcon({
       className: "ecolink-leaflet-pin",
@@ -212,7 +185,7 @@ export default function LocationPinPickerMap({
 
     map.setView([lat, lng], map.getZoom(), { animate: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReady, lat, lng, pinTitle, readOnly, allowPrivacyFuzz, privacyFuzz])
+  }, [mapReady, lat, lng, pinTitle, readOnly])
 
   async function runPlaceSearch() {
     const q = query.trim()
@@ -300,24 +273,6 @@ export default function LocationPinPickerMap({
             >
               {locatingGps ? "Đang định vị..." : "GPS hiện tại"}
             </button>
-            {allowPrivacyFuzz && (
-              <button
-                type="button"
-                onClick={() => {
-                  const next = !privacyFuzz
-                  setPrivacyFuzz(next)
-                  const resolved = resolveSearchCoordinates(lat, lng, next)
-                  onChange?.(resolved.lat, resolved.lng)
-                }}
-                className={`h-9 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors ${
-                  privacyFuzz
-                    ? "border-brand/40 bg-brand/10 text-brand-deep"
-                    : "border-line bg-white text-body hover:bg-surface-2"
-                }`}
-              >
-                {privacyFuzz ? "Làm mờ ~500m" : "Ghim chính xác đầu ngõ"}
-              </button>
-            )}
           </div>
 
           {presetMatches.length > 0 && (
