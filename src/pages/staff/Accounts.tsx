@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react"
+import { X } from "lucide-react"
 import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
 import { PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
+import SearchFilterBar from "@/components/SearchFilterBar"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { ACCOUNTS, type Account } from "@/data/ops"
 import { ApiError } from "@/lib/api"
@@ -284,23 +286,18 @@ export default function Accounts() {
         body="Tra cứu hồ sơ, cảnh cáo vi phạm và áp dụng chế tài (Khoá / Mở khoá / Vô hiệu hoá mềm). Mọi thao tác bắt buộc ghi rõ lý do kiểm toán tối thiểu 10 ký tự."
       />
 
-      <div className="card flex flex-col gap-4 p-4 md:flex-row md:items-end">
-        <div className="min-w-0 flex-1">
-          <label className="flex flex-col gap-2 text-[13px] font-semibold text-ink">
-            Tìm tài khoản
-            <input
-              className="input"
-              type="search"
-              value={q}
-              onChange={(e) => {
-                setQ(e.target.value)
-                setPage(1)
-              }}
-              placeholder="Tên, email, khu vực hoặc mã tài khoản"
-            />
-          </label>
-        </div>
-        <div className="flex flex-wrap gap-2">
+      <SearchFilterBar
+        value={q}
+        onChange={(v) => {
+          setQ(v)
+          setPage(1)
+        }}
+        label="Tìm tài khoản"
+        placeholder="Tên, email, khu vực hoặc mã tài khoản..."
+        totalCount={view.length}
+        countLabel="tài khoản"
+      >
+        <div className="flex flex-wrap gap-1.5">
           {(["all", "user", "recycler"] as const).map((r) => (
             <button
               key={r}
@@ -310,72 +307,67 @@ export default function Accounts() {
                 setPage(1)
               }}
               aria-pressed={role === r}
-              className={`h-12 rounded-lg border px-4 text-[13px] font-semibold transition-colors ${
+              className={`h-11 rounded-xl border px-3.5 text-sm font-semibold transition-colors ${
                 role === r
                   ? "border-brand bg-brand text-white"
-                  : "border-line bg-surface text-body hover:bg-surface-2"
+                  : "border-line bg-white text-body hover:bg-surface-2"
               }`}
             >
               {r === "all" ? "Tất cả" : r === "user" ? "Người dân" : "Cơ sở thu mua"}
             </button>
           ))}
         </div>
-      </div>
+      </SearchFilterBar>
 
       {actionErr && (
         <p
           role="alert"
-          className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+          className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-sm font-medium text-warn"
         >
           {actionErr}
         </p>
       )}
       {flash && (
-        <p role="status" className="text-[13px] font-semibold text-brand">
+        <p role="status" className="text-sm font-semibold text-brand">
           {flash}
         </p>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[1.65fr_1fr]">
-        <div className="min-w-0">
-          {loading ? (
-            <TableSkeleton rows={5} />
-          ) : (
-          <Table
-            head={["Mã", "Tên", "Vai trò", "Khu vực", "Giao dịch", "Cảnh cáo", "Trạng thái", ""]}
-          >
-            {pagedView.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-4 py-6 text-center text-xs text-muted">
+      <div className="min-w-0">
+        {loading ? (
+          <TableSkeleton rows={5} />
+        ) : (
+          <>
+            <ul className="flex flex-col gap-3 md:hidden">
+              {pagedView.length === 0 ? (
+                <li className="card px-4 py-8 text-center text-sm text-muted">
                   Không tìm thấy tài khoản nào khớp bộ lọc.
-                </td>
-              </tr>
-            ) : (
-              pagedView.map((a) => (
-                <tr key={a.backendId ?? a.id}>
-                  <Td className="tabular-nums whitespace-nowrap">{a.id}</Td>
-                  <Td className="font-semibold text-ink">{a.name}</Td>
-                  <Td className="whitespace-nowrap">
-                    {a.role === "user" ? "Người dân" : "Cơ sở thu mua"}
-                  </Td>
-                  <Td className="whitespace-nowrap">{a.area}</Td>
-                  <Td className="tabular-nums">{a.deals}</Td>
-                  <Td className="tabular-nums">
-                    {a.warningCount > 0 ? (
-                      <span className="font-semibold text-warn">{a.warningCount}</span>
-                    ) : (
-                      <span className="text-muted">0</span>
-                    )}
-                  </Td>
-                  <Td>
-                    <Status tone={a.status === "active" ? "ok" : "off"}>{statusLabel(a)}</Status>
-                  </Td>
-                  <Td>
-                    <span className="flex gap-2">
+                </li>
+              ) : (
+                pagedView.map((a) => (
+                  <li key={a.backendId ?? a.id} className="card flex flex-col gap-3 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold leading-snug text-ink break-words">{a.name}</p>
+                        <p className="mt-0.5 text-xs text-muted break-all">
+                          {a.id} · {a.email}
+                        </p>
+                      </div>
+                      <Status tone={a.status === "active" ? "ok" : "off"}>{statusLabel(a)}</Status>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+                      <span>{a.role === "user" ? "Người dân" : "Cơ sở thu mua"}</span>
+                      <span>{a.area}</span>
+                      <span className="tabular-nums">{a.deals} giao dịch</span>
+                      <span className={a.warningCount > 0 ? "font-semibold text-warn tabular-nums" : "tabular-nums"}>
+                        {a.warningCount} cảnh cáo
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-2.5">
                       <button
                         type="button"
                         onClick={() => selectAccount(a)}
-                        className="text-[13px] font-semibold text-brand hover:text-brand-deep"
+                        className="inline-flex min-h-9 items-center text-sm font-semibold text-brand hover:text-brand-deep"
                       >
                         Chi tiết
                       </button>
@@ -385,134 +377,213 @@ export default function Accounts() {
                           onClick={() =>
                             openModerationModal(a, a.status === "active" ? "lock" : "unlock")
                           }
-                          className="text-[13px] font-semibold text-warn hover:underline"
+                          className="inline-flex min-h-9 items-center text-sm font-semibold text-warn hover:underline"
                         >
-                          {a.status === "active" ? "Khoá" : "Mở khoá"}
+                          {a.status === "active" ? "Khoá tài khoản" : "Mở khoá"}
                         </button>
                       )}
-                    </span>
-                  </Td>
-                </tr>
-              ))
-            )}
-          </Table>
-          )}
-          <PaginationBar
-            page={page}
-            pageSize={pageSize}
-            totalCount={view.length}
-            onPageChange={setPage}
-            itemLabel="tài khoản"
-          />
-        </div>
+                    </div>
+                  </li>
+                ))
+              )}
+            </ul>
 
-        <aside className="card flex flex-col gap-4 p-5">
-          {!pick ? (
-            <p className="text-sm text-muted">
-              Chọn &ldquo;Chi tiết&rdquo; ở một dòng để xem hồ sơ hoạt động, số lần cảnh cáo và lịch sử chế tài.
-            </p>
-          ) : (
-            <>
-              <div>
-                <p className="text-base font-bold text-ink">{pick.name}</p>
-                <p className="mt-0.5 text-[13px] text-muted">
+            <div className="hidden md:block">
+              <Table
+                head={["Mã", "Tài khoản", "Vai trò", "Khu vực", "Giao dịch", "Cảnh cáo", "Trạng thái", "Thao tác"]}
+              >
+                {pagedView.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-muted">
+                      Không tìm thấy tài khoản nào khớp bộ lọc.
+                    </td>
+                  </tr>
+                ) : (
+                  pagedView.map((a) => (
+                    <tr key={a.backendId ?? a.id} className="transition-colors hover:bg-surface-2/50">
+                      <Td className="tabular-nums whitespace-nowrap text-muted">{a.id}</Td>
+                      <Td className="min-w-[180px]">
+                        <div className="font-semibold text-ink">{a.name}</div>
+                        <div className="text-xs text-muted">{a.email}</div>
+                      </Td>
+                      <Td className="whitespace-nowrap">
+                        {a.role === "user" ? "Người dân" : "Cơ sở thu mua"}
+                      </Td>
+                      <Td className="max-w-[200px] leading-snug break-words">{a.area}</Td>
+                      <Td className="tabular-nums whitespace-nowrap">{a.deals}</Td>
+                      <Td className="tabular-nums whitespace-nowrap">
+                        {a.warningCount > 0 ? (
+                          <span className="font-semibold text-warn">{a.warningCount}</span>
+                        ) : (
+                          <span className="text-muted">0</span>
+                        )}
+                      </Td>
+                      <Td className="whitespace-nowrap">
+                        <Status tone={a.status === "active" ? "ok" : "off"}>{statusLabel(a)}</Status>
+                      </Td>
+                      <Td className="whitespace-nowrap">
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => selectAccount(a)}
+                            className="text-sm font-semibold text-brand hover:text-brand-deep hover:underline"
+                          >
+                            Chi tiết
+                          </button>
+                          {a.rawStatus !== "Deactivated" && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openModerationModal(a, a.status === "active" ? "lock" : "unlock")
+                              }
+                              className="text-sm font-semibold text-warn hover:underline"
+                            >
+                              {a.status === "active" ? "Khoá" : "Mở khoá"}
+                            </button>
+                          )}
+                        </div>
+                      </Td>
+                    </tr>
+                  ))
+                )}
+              </Table>
+            </div>
+          </>
+        )}
+        <PaginationBar
+          page={page}
+          pageSize={pageSize}
+          totalCount={view.length}
+          onPageChange={setPage}
+          itemLabel="tài khoản"
+        />
+      </div>
+
+      {pick && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Chi tiết tài khoản ${pick.name}`}
+          onClick={() => setPick(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="card flex max-h-[90vh] w-full max-w-lg flex-col gap-4 overflow-y-auto bg-white p-5 shadow-xl sm:p-6"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-line-soft pb-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-bold text-ink break-words">{pick.name}</h2>
+                  <Status tone={pick.status === "active" ? "ok" : "off"}>{statusLabel(pick)}</Status>
+                </div>
+                <p className="mt-0.5 text-sm text-muted break-all">
                   {pick.id} · {pick.email}
                 </p>
               </div>
-              <dl className="flex flex-col gap-2 text-sm">
-                {[
-                  ["Vai trò", pick.role === "user" ? "Người dân" : "Cơ sở thu mua"],
-                  ["Khu vực", detail?.area ?? pick.area],
-                  ["Ngày tham gia", pick.joined],
-                  ["Giao dịch hoàn tất", String(detail?.completedDealsCount ?? pick.deals)],
-                  ["Số lần cảnh cáo", String(detail?.warningCount ?? pick.warningCount)],
-                  ...(detail
-                    ? [
-                        ["Điểm Mầm Xanh", detail.currentGreenPoints.toLocaleString("vi-VN")],
-                        ["Tổng khối lượng tái chế", `${detail.totalRecycledKg} kg`],
-                      ]
-                    : []),
-                ].map(([k, v]) => (
-                  <div
-                    key={k}
-                    className="flex justify-between gap-3 border-b border-line-soft pb-2"
-                  >
-                    <dt className="text-muted">{k}</dt>
-                    <dd className="font-semibold text-ink">{v}</dd>
-                  </div>
-                ))}
-              </dl>
+              <button
+                type="button"
+                onClick={() => setPick(null)}
+                aria-label="Đóng chi tiết tài khoản"
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
 
-              {(detail?.moderationReason || pick.moderationReason) && (
-                <div className="rounded-lg border border-line bg-surface-2 px-3 py-2 text-[12px] text-body">
-                  <span className="font-semibold text-ink">Lý do chế tài gần nhất: </span>
-                  {detail?.moderationReason || pick.moderationReason}
+            <dl className="flex flex-col gap-2 text-sm">
+              {[
+                ["Vai trò", pick.role === "user" ? "Người dân" : "Cơ sở thu mua"],
+                ["Khu vực", detail?.area ?? pick.area],
+                ["Ngày tham gia", pick.joined],
+                ["Giao dịch hoàn tất", String(detail?.completedDealsCount ?? pick.deals)],
+                ["Số lần cảnh cáo", String(detail?.warningCount ?? pick.warningCount)],
+                ...(detail
+                  ? [
+                      ["Điểm Mầm Xanh", detail.currentGreenPoints.toLocaleString("vi-VN")],
+                      ["Tổng khối lượng tái chế", `${detail.totalRecycledKg} kg`],
+                    ]
+                  : []),
+              ].map(([k, v]) => (
+                <div
+                  key={k}
+                  className="flex justify-between gap-3 border-b border-line-soft pb-2"
+                >
+                  <dt className="text-muted">{k}</dt>
+                  <dd className="text-right font-semibold text-ink">{v}</dd>
                 </div>
-              )}
+              ))}
+            </dl>
 
-              {pick.rawStatus !== "Deactivated" && (
-                <div className="flex flex-wrap gap-2 border-t border-line-soft pt-4">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      openModerationModal(pick, pick.status === "active" ? "lock" : "unlock")
-                    }
-                    className="btn-outline h-10 px-4 text-[13px]"
-                  >
-                    {pick.status === "active" ? "Khoá tài khoản" : "Mở khoá"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openModerationModal(pick, "deactivate")}
-                    className="btn-ghost h-10 px-4 text-[13px] text-warn"
-                  >
-                    Vô hiệu hoá
-                  </button>
-                </div>
-              )}
+            {(detail?.moderationReason || pick.moderationReason) && (
+              <div className="rounded-xl border border-line bg-surface-2 px-3.5 py-2.5 text-xs leading-5 text-body">
+                <span className="font-semibold text-ink">Lý do chế tài gần nhất: </span>
+                {detail?.moderationReason || pick.moderationReason}
+              </div>
+            )}
 
-              <p className="text-[13px] leading-5 text-muted">
-                Theo quy tắc BR-ADM-04, thao tác vô hiệu hoá chỉ chuyển trạng thái sang{" "}
-                <b>Vô hiệu hoá mềm (Deactivated)</b> kèm lý do kiểm toán bắt buộc, tuyệt đối không xóa vật lý bản ghi nhằm bảo toàn{" "}
-                {pick.deals > 0 ? `${pick.deals} giao dịch hoàn tất và dấu vết đối soát.` : "toàn bộ lịch sử kiểm toán."}
-              </p>
+            {pick.rawStatus !== "Deactivated" && (
+              <div className="flex flex-wrap gap-2 border-t border-line-soft pt-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    openModerationModal(pick, pick.status === "active" ? "lock" : "unlock")
+                  }
+                  className="btn-outline px-4 text-sm"
+                >
+                  {pick.status === "active" ? "Khoá tài khoản" : "Mở khoá"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openModerationModal(pick, "deactivate")}
+                  className="btn-ghost px-4 text-sm text-warn"
+                >
+                  Vô hiệu hoá
+                </button>
+              </div>
+            )}
 
-              {historyList.length > 0 && (
-                <div className="border-t border-line-soft pt-3">
-                  <p className="text-[11px] font-bold tracking-[0.08em] text-muted uppercase">
-                    Lịch sử chế tài ({historyList.length})
-                  </p>
-                  <ul className="mt-2 flex flex-col gap-2 text-[12px]">
-                    {historyList.slice(0, 4).map((h) => (
-                      <li
-                        key={h.id}
-                        className="rounded-md border border-line-soft bg-surface px-2.5 py-2"
-                      >
-                        <div className="flex justify-between font-semibold text-ink">
-                          <span>{h.actionType}</span>
-                          <span className="tabular-nums text-muted">
-                            {new Date(h.createdAt).toLocaleDateString("vi-VN")}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-body">{h.reason}</p>
-                        <p className="mt-0.5 text-[11px] text-muted">
-                          Bởi {h.performedByName} · Thu hồi {h.revokedTokensCount} token
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
-          )}
-        </aside>
-      </div>
+            <p className="text-xs leading-5 text-muted">
+              Theo quy tắc BR-ADM-04, thao tác vô hiệu hoá chỉ chuyển trạng thái sang{" "}
+              <b>Vô hiệu hoá mềm (Deactivated)</b> kèm lý do kiểm toán bắt buộc, tuyệt đối không xóa vật lý bản ghi nhằm bảo toàn{" "}
+              {pick.deals > 0 ? `${pick.deals} giao dịch hoàn tất và dấu vết đối soát.` : "toàn bộ lịch sử kiểm toán."}
+            </p>
+
+            {historyList.length > 0 && (
+              <div className="border-t border-line-soft pt-3">
+                <p className="text-[11px] font-bold tracking-[0.08em] text-muted uppercase">
+                  Lịch sử chế tài ({historyList.length})
+                </p>
+                <ul className="mt-2 flex flex-col gap-2 text-xs">
+                  {historyList.slice(0, 4).map((h) => (
+                    <li
+                      key={h.id}
+                      className="rounded-lg border border-line-soft bg-surface px-3 py-2"
+                    >
+                      <div className="flex justify-between font-semibold text-ink">
+                        <span>{h.actionType}</span>
+                        <span className="tabular-nums text-muted">
+                          {new Date(h.createdAt).toLocaleDateString("vi-VN")}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-body">{h.reason}</p>
+                      <p className="mt-0.5 text-[11px] text-muted">
+                        Bởi {h.performedByName} · Thu hồi {h.revokedTokensCount} token
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {modalAction && (
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/45 p-4"
         >
           <form
             noValidate

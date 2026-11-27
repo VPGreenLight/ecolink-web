@@ -667,6 +667,67 @@ export default function Receipt() {
               </div>
             </div>
 
+          <ul className="flex flex-col gap-3 md:hidden">
+            {rows.map((r, i) => {
+              const unitPrice = rowPriceOf(r, i)
+              return (
+                <li
+                  key={r.itemId || `${r.wasteId}-${i}`}
+                  className="flex flex-col gap-2.5 rounded-xl border border-line bg-surface-2/40 p-3.5"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-semibold text-ink break-words">
+                      {r.wasteName || nameOf(r.wasteId)}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted tabular-nums">
+                      Ước tính: {r.estimatedKg} kg
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-semibold text-ink">
+                      <span>Bạn cân được (kg) *</span>
+                      <input
+                        className="input min-h-11 w-full text-base tabular-nums"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        inputMode="decimal"
+                        aria-label={`Khối lượng cân thực tế ${r.wasteName || nameOf(r.wasteId)}`}
+                        value={r.rawKg ?? (Number.isFinite(r.kg) ? String(r.kg) : "")}
+                        disabled={sent || submitting}
+                        onChange={(e) => {
+                          const raw = e.target.value
+                          const parsed = raw.trim() === "" ? Number.NaN : Number(raw)
+                          setRows((rs) =>
+                            rs.map((x, n) =>
+                              n === i ? { ...x, rawKg: raw, kg: parsed } : x,
+                            ),
+                          )
+                        }}
+                        onBlur={() =>
+                          setRows((rs) =>
+                            rs.map((x, n) =>
+                              n === i && Number.isFinite(x.kg) && x.kg > 0
+                                ? { ...x, rawKg: undefined, kg: Number(x.kg.toFixed(2)) }
+                                : x,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                    <div className="text-right">
+                      <span className="block text-[11px] text-muted">Thành tiền</span>
+                      <span className="text-sm font-bold tabular-nums text-brand-deep">
+                        {VND(r.kg * unitPrice)}
+                      </span>
+                    </div>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+
+          <div className="hidden md:block">
           <Table head={["Loại rác", "Người dùng bỏ ra", "Bạn cân được (kg) *", "Thành tiền"]}>
                 {rows.map((r, i) => {
                   const unitPrice = rowPriceOf(r, i)
@@ -713,6 +774,7 @@ export default function Receipt() {
                   )
                 })}
               </Table>
+          </div>
 
               <label className="flex cursor-pointer flex-col gap-2 text-sm font-semibold text-ink">
                 <span className="flex items-center gap-1.5">

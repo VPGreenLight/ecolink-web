@@ -473,6 +473,41 @@ export default function Applications() {
       <section>
         <h2 className="text-base font-bold text-ink">Đã xử lý ({done.length})</h2>
         <div className="mt-3">
+          {pagedDone.length === 0 ? (
+            <p className="card px-4 py-6 text-center text-xs text-muted md:hidden">
+              Chưa có hồ sơ đã xử lý nào khớp bộ lọc.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-3 md:hidden">
+              {pagedDone.map((a) => (
+                <li key={a.id} className="card flex flex-col gap-2.5 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold leading-snug text-ink break-words">{a.name}</p>
+                      <p className="mt-0.5 text-xs text-muted">
+                        {a.id} · {a.recyclerType === "Individual" ? "Thu mua nhỏ lẻ (Lưu động)" : "Cơ sở cố định"}
+                      </p>
+                    </div>
+                    <Status tone={a.status === "approved" ? "ok" : "off"}>
+                      {a.status === "approved" ? "Đã duyệt" : "Từ chối"}
+                    </Status>
+                  </div>
+                  <p className="text-xs leading-relaxed text-body break-words">{a.address}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] tabular-nums text-muted">
+                    <span>GPS: {a.latitude.toFixed(4)}, {a.longitude.toFixed(4)}</span>
+                    <span>{a.date}</span>
+                  </div>
+                  {a.note && (
+                    <p className="rounded-lg bg-surface-2 px-3 py-2 text-xs text-body">
+                      <span className="font-semibold text-ink">Lý do: </span>
+                      {a.note}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="hidden md:block">
           <Table head={["Mã", "Tên cơ sở", "Địa chỉ & Toạ độ", "Ngày nộp", "Kết quả", "Lý do"]}>
             {pagedDone.length === 0 ? (
               <tr>
@@ -507,6 +542,7 @@ export default function Applications() {
               ))
             )}
           </Table>
+          </div>
           <PaginationBar
             page={donePage}
             pageSize={donePageSize}

@@ -421,6 +421,134 @@ export default function Gifts() {
               <p className="text-sm text-muted">Đang tải kho quà...</p>
             ) : (
               <>
+                <ul className="flex flex-col gap-3 md:hidden">
+                  {liveGifts.map((g) => {
+                    const active = g.status === "ACTIVE"
+                    return (
+                      <li key={g.id} className="card flex flex-col gap-3 p-4">
+                        <div className="flex items-start gap-3">
+                          {g.imageUrl ? (
+                            <img
+                              src={g.imageUrl}
+                              alt={g.name}
+                              className="size-12 shrink-0 rounded-lg border border-line object-cover"
+                            />
+                          ) : (
+                            <span className="grid size-12 shrink-0 place-items-center rounded-lg border border-dashed border-line text-[10px] text-muted">
+                              Trống
+                            </span>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="font-bold leading-snug text-ink break-words">{g.name}</p>
+                              <Status tone={active ? "ok" : "off"}>
+                                {active ? "Đang mở" : "Đang ẩn"}
+                              </Status>
+                            </div>
+                            <p className="mt-0.5 text-xs text-muted">
+                              {g.type === "Voucher" ? "E-Voucher" : "Quà vật lý"} · Tồn kho:{" "}
+                              <strong className="tabular-nums text-ink">
+                                {g.stockQuantity.toLocaleString("vi-VN")}
+                              </strong>
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="flex items-center gap-2 text-xs font-semibold text-ink">
+                            <span>Điểm đổi:</span>
+                            <input
+                              className="input h-9 w-24 tabular-nums"
+                              type="number"
+                              min={0}
+                              value={g.pointsRequired}
+                              onChange={(e) => {
+                                const nextPts = Number(e.target.value)
+                                setLiveGifts((prev) =>
+                                  prev.map((x) =>
+                                    x.id === g.id ? { ...x, pointsRequired: nextPts } : x,
+                                  ),
+                                )
+                              }}
+                              aria-label={`Điểm đổi của ${g.name}`}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setActionErr("")
+                              if (!Number.isInteger(g.pointsRequired) || g.pointsRequired <= 0) {
+                                setActionErr(`Điểm đổi của "${g.name}" phải lớn hơn 0.`)
+                                return
+                              }
+                              try {
+                                await updateStaffGift(g.id, {
+                                  name: g.name,
+                                  type: g.type === "Voucher" ? "Voucher" : "Physical",
+                                  description: g.description,
+                                  imageUrl: g.imageUrl,
+                                  pointsRequired: g.pointsRequired,
+                                  stockQuantity: g.stockQuantity,
+                                })
+                                setFlash(`Đã cập nhật điểm đổi cho "${g.name}".`)
+                                await loadAll()
+                              } catch (err) {
+                                setActionErr(err instanceof Error ? err.message : "Cập nhật thất bại.")
+                              }
+                            }}
+                            className="text-xs font-semibold text-brand-deep hover:underline"
+                          >
+                            Lưu giá
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-3 border-t border-line-soft pt-2.5 text-xs font-semibold">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditGift(g)
+                              setEditName(g.name)
+                              setEditType(g.type === "Voucher" ? "Voucher" : "Physical")
+                              setEditPoints(g.pointsRequired)
+                              setEditDesc(g.description ?? "")
+                              setEditImgUrl(g.imageUrl ?? "")
+                              setEditErr("")
+                            }}
+                            className="text-ink hover:underline"
+                          >
+                            Sửa chi tiết
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRestockGift(g)
+                              setRestockQty(10)
+                              setVoucherCodesText("")
+                              setRestockErr("")
+                            }}
+                            className="text-brand hover:underline"
+                          >
+                            {g.type === "Voucher" ? "Nhập mã / kho" : "Nhập thêm kho"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await setStaffGiftStatus(g.id, active ? "INACTIVE" : "ACTIVE")
+                                setFlash(`Đã ${active ? "ẩn" : "mở"} quà "${g.name}".`)
+                                await loadAll()
+                              } catch (err) {
+                                setActionErr(err instanceof Error ? err.message : "Đổi trạng thái thất bại.")
+                              }
+                            }}
+                            className="text-muted hover:text-ink"
+                          >
+                            {active ? "Ẩn" : "Mở"}
+                          </button>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+                <div className="hidden md:block">
                 <Table head={["Ảnh", "Quà", "Loại", "Điểm đổi", "Tồn kho", "Trạng thái", "Thao tác"]}>
                   {liveGifts.map((g) => {
                     const active = g.status === "ACTIVE"
@@ -547,6 +675,7 @@ export default function Gifts() {
                   )
                 })}
               </Table>
+              </div>
               <PaginationBar
                 page={giftPage}
                 pageSize={giftPageSize}
@@ -589,6 +718,67 @@ export default function Gifts() {
                 <option value="Cancelled">Đã hủy (Cancelled)</option>
               </select>
             </SearchFilterBar>
+            <ul className="flex flex-col gap-3 md:hidden">
+              {redemptions.map((r) => {
+                const actionable = r.status === "Pending" || r.status === "Redeemed"
+                return (
+                  <li key={r.id} className="card flex flex-col gap-2.5 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="font-mono text-xs text-muted">{r.redemptionCode}</span>
+                        <p className="mt-0.5 font-bold text-ink break-words">{r.gift?.name}</p>
+                        <p className="text-xs text-muted">{r.userName || "Thành viên"}</p>
+                      </div>
+                      <Status
+                        tone={
+                          r.status === "Delivered"
+                            ? "ok"
+                            : r.status === "Pending" || r.status === "Redeemed"
+                              ? "wait"
+                              : "off"
+                        }
+                      >
+                        {r.status}
+                      </Status>
+                    </div>
+                    <p className="text-xs text-body break-words">
+                      {r.voucherCode || r.deliveryAddress || "—"}
+                    </p>
+                    {actionable && (
+                      <div className="flex flex-wrap gap-3 border-t border-line-soft pt-2.5 text-xs font-semibold">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await fulfillStaffRedemption(r.id, { action: "Fulfill" })
+                              setFlash(`Đã xác nhận bàn giao đơn ${r.redemptionCode}.`)
+                              await loadAll()
+                            } catch (err) {
+                              setActionErr(err instanceof Error ? err.message : "Xử lý thất bại.")
+                            }
+                          }}
+                          className="text-brand hover:underline"
+                        >
+                          Đã giao
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCancelRedTarget(r)
+                            setCancelRedReason("Nhân viên hủy đơn và hoàn điểm")
+                            setCancelRedErr("")
+                          }}
+                          className="text-warn hover:underline"
+                        >
+                          Hủy &amp; hoàn điểm
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="hidden md:block">
             <Table head={["Mã đơn", "Người đổi", "Quà tặng", "Giao nhận / Mã", "Trạng thái", "Xử lý"]}>
               {redemptions.map((r) => {
                 const actionable = r.status === "Pending" || r.status === "Redeemed"
@@ -651,6 +841,7 @@ export default function Gifts() {
                 )
               })}
             </Table>
+            </div>
             <PaginationBar
               page={redPage}
               pageSize={redPageSize}
@@ -661,6 +852,70 @@ export default function Gifts() {
           </section>
         </>
       ) : (
+        <>
+        <ul className="flex flex-col gap-3 md:hidden">
+          {offlineList.map((g) => (
+            <li key={g.id} className="card flex flex-col gap-3 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-bold text-ink break-words">{g.name}</p>
+                  <p className="text-xs text-muted">
+                    {g.kind === "voucher" ? "Voucher" : "Quà vật lý"}
+                  </p>
+                </div>
+                <Status tone={g.active ? "ok" : "off"}>
+                  {g.active ? "Đang mở" : "Đang ẩn"}
+                </Status>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                <label className="flex items-center gap-1.5 font-semibold text-ink">
+                  <span>Điểm:</span>
+                  <input
+                    className="input h-9 w-24 tabular-nums"
+                    type="number"
+                    min={0}
+                    step={500}
+                    value={g.cost}
+                    onChange={(e) => updateOffline(g.id, { cost: Number(e.target.value) })}
+                    aria-label={`Điểm đổi của ${g.name}`}
+                  />
+                </label>
+                {g.stock === null ? (
+                  <span className="text-muted">Không giới hạn</span>
+                ) : (
+                  <label className="flex items-center gap-1.5 font-semibold text-ink">
+                    <span>Tồn:</span>
+                    <input
+                      className="input h-9 w-20 tabular-nums"
+                      type="number"
+                      min={0}
+                      value={g.stock}
+                      onChange={(e) => updateOffline(g.id, { stock: Number(e.target.value) })}
+                      aria-label={`Tồn kho của ${g.name}`}
+                    />
+                  </label>
+                )}
+              </div>
+              <div className="flex gap-3 border-t border-line-soft pt-2.5 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => updateOffline(g.id, { active: !g.active })}
+                  className="text-brand hover:text-brand-deep"
+                >
+                  {g.active ? "Ẩn" : "Hiện"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeOffline(g.id)}
+                  className="text-warn hover:underline"
+                >
+                  Xoá
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="hidden md:block">
         <Table head={["Quà", "Loại", "Điểm", "Tồn kho", "Trạng thái", ""]}>
           {offlineList.map((g) => (
             <tr key={g.id}>
@@ -719,6 +974,8 @@ export default function Gifts() {
             </tr>
           ))}
         </Table>
+        </div>
+        </>
       )}
 
       {editGift && (

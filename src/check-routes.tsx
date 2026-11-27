@@ -56,7 +56,6 @@ const BY_ROLE: Record<Role, [string, string][]> = {
     ["/staff/blog", "Soạn bài Blog"],
     ["/staff/ecofacts", "Quản lý Eco Fact"],
     ["/staff/gifts", "Quà tặng và voucher"],
-    ["/staff/checkin", "Điểm danh hằng ngày"],
     ["/staff/account", "Việc đang chờ"],
     ["/staff/account/password", "Đổi mật khẩu"],
   ],

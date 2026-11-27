@@ -831,6 +831,19 @@ export default function Complaints() {
                 <section>
                   <h2 className="text-base font-bold text-ink">Đã đóng ({filteredClosed.length})</h2>
                   <div className="mt-3">
+                    <ul className="flex flex-col gap-3 md:hidden">
+                      {pagedClosedOffline.map((c) => (
+                        <li key={c.id} className="card flex flex-col gap-2 p-4">
+                          <div className="flex items-center justify-between gap-2 text-xs text-muted">
+                            <span className="font-semibold tabular-nums">{c.id}</span>
+                            <span>{c.user}</span>
+                          </div>
+                          <p className="font-bold text-ink break-words">{c.title}</p>
+                          <p className="text-xs text-body break-words">{c.reply ?? "—"}</p>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="hidden md:block">
                     <Table head={["Mã", "Vấn đề", "Người báo", "Kết quả"]}>
                       {pagedClosedOffline.map((c) => (
                         <tr key={c.id}>
@@ -841,6 +854,7 @@ export default function Complaints() {
                         </tr>
                       ))}
                     </Table>
+                    </div>
                     <PaginationBar
                       page={offlineClosedPage}
                       pageSize={offlinePageSize}

@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
+import { Home, MessageSquare, X } from "lucide-react"
 import { PORTAL_NAV } from "@/data/portal"
 import { fetchCurrentUserProfile } from "@/lib/authApi"
 import { isSsrSmokeTest } from "@/lib/hydration"
@@ -13,7 +14,6 @@ import {
 } from "@/lib/notificationsApi"
 import { hasLiveBackendAuth, ROLE_LABEL, signOut, useSession } from "@/lib/session"
 import { openAuthPopup } from "@/lib/popupAuth"
-import Assistant from "@/components/admin/Assistant"
 import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
 import UserAvatar from "@/components/UserAvatar"
 
@@ -44,6 +44,13 @@ function hasStaffRouteAccess(path: string, permissions?: readonly string[]): boo
  *  gom, yêu cầu bàn giao) và bấm vào sẽ rời khỏi console ra trang có navbar.
  *  Trang riêng cho staff và admin nằm cùng khung `AdminShell`, ở `/{role}/account`. */
 const ACCOUNT_ITEMS = {
+  recycler: [
+    ["/", "Home"],
+    ["/recycler/facility", "Hồ sơ kho bãi"],
+    ["/recycler/packages", "Gói dịch vụ Pro"],
+    ["/account/profile", "Hồ sơ cá nhân"],
+    ["/account/password", "Đổi mật khẩu"],
+  ],
   staff: [
     ["/staff/account", "Hồ sơ và thông báo"],
     ["/staff/account/password", "Đổi mật khẩu"],
@@ -54,25 +61,12 @@ const ACCOUNT_ITEMS = {
   ],
 } as const
 
-/** Khung riêng cho hai vai trò làm việc trong hệ thống: STAFF và ADMIN.
+/** Khung làm việc dùng chung cho RECYCLER, STAFF và ADMIN.
  *
- *  CỐ TÌNH không dùng `Layout` của app công khai: đây là công cụ vận hành, không
- *  phải một trang trong app của người dân. Dùng chung khung thì nó mặc navbar
- *  bán hàng, tab-bar điều hướng và footer của người dùng — cả ba đều không liên
- *  quan tới việc thẩm định dữ liệu hay cấu hình hệ thống.
- *
- *  Khác biệt nhìn thấy được ngay:
- *  - không có navbar công khai, không có footer, không có thanh tab dưới
- *  - thanh trên cố định 56px (thấp hơn navbar 76px) để nhường chỗ cho dữ liệu
- *  - sidebar 232px, dùng chung bề rộng cho mọi trang nên khi đổi trang
- *    nội dung không nhảy
- *  - sidebar TỰ CUỘN, không cuộn cả trang: `<aside>` `sticky` chiếm đúng
- *    chiều cao khung nhìn, trong đó `<nav>` cuộn và nút Đăng xuất đứng yên ở
- *    đáy. Nếu để nút trong dòng cuộn của nav thì nó trôi mất khi trang dài.
- *
- *  Menu đọc từ `PORTAL_NAV[role]` nên staff và admin dùng chung component,
- *  chỉ khác con trỏ ngữ cảnh (role) và nhãn badge. */
-export default function AdminShell({ role }: { role: "staff" | "admin" }) {
+ *  Tách khỏi `Layout` công khai: không mang navbar công khai, footer hay tab-bar dưới
+ *  trên mobile; thay bằng một thanh đầu trang 56px gọn nhẹ, sidebar sticky ở desktop
+ *  và slide-over drawer đồng bộ trên mobile. */
+export default function AdminShell({ role }: { role: "recycler" | "staff" | "admin" }) {
   const session = useSession()
   const navigate = useNavigate()
   const location = useLocation()
@@ -84,6 +78,19 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
       void fetchCurrentUserProfile()
     }
   }, [role, session?.fromBackend, session?.permissions])
+
+  useEffect(() => {
+    setOpen(false)
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [open])
 
   const enforceStaffRbac =
     role === "staff" && Boolean(session?.fromBackend) && Array.isArray(session?.permissions)
@@ -115,13 +122,13 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
   return (
     <div className="min-h-dvh bg-page">
       <header className="sticky top-0 z-40 h-14 border-b border-line-soft bg-white/90 backdrop-blur-xl">
-        <div className="flex h-full items-center gap-3 px-4 lg:px-6">
+        <div className="flex h-full items-center gap-2.5 px-3 sm:gap-3 sm:px-4 lg:px-6">
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-controls="admin-nav"
-            className="grid size-10 place-items-center rounded-lg text-ink transition-colors hover:bg-surface-2 lg:hidden"
+            className="grid size-10 shrink-0 place-items-center rounded-lg text-ink transition-colors hover:bg-surface-2 lg:hidden"
           >
             <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
               <path d="M4 7h16M4 12h16M4 17h16" />
@@ -129,12 +136,39 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
             <span className="sr-only">Mở menu</span>
           </button>
 
-          <img src="/assets/brand/logo1.png" alt="EcoLink" className="h-7 w-auto" />
-          <span className="rounded-md bg-brand/10 px-2 py-1 text-[11px] font-bold tracking-[0.1em] text-brand uppercase">
+          {role === "recycler" ? (
+            <Link to="/" aria-label="EcoLink - Trang chủ" className="shrink-0">
+              <img src="/assets/brand/logo1.png" alt="EcoLink" className="h-6 w-auto sm:h-7" />
+            </Link>
+          ) : (
+            <img src="/assets/brand/logo1.png" alt="EcoLink" className="h-6 w-auto shrink-0 sm:h-7" />
+          )}
+          <span className="shrink-0 rounded-md bg-brand/10 px-2 py-1 text-[10px] font-bold tracking-[0.08em] text-brand uppercase sm:text-[11px]">
             {ROLE_LABEL[role]}
           </span>
 
-          <div className="ml-auto flex items-center gap-2.5">
+          <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-2.5">
+            {role === "recycler" && (
+              <>
+                <Link
+                  to="/"
+                  title="Home"
+                  aria-label="Home"
+                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full border border-line bg-white px-2.5 text-xs font-semibold text-body transition-colors hover:border-sage-line hover:bg-surface-2 hover:text-ink sm:px-3"
+                >
+                  <Home className="size-4 shrink-0 text-brand" aria-hidden="true" />
+                  <span className="hidden sm:inline">Home</span>
+                </Link>
+                <Link
+                  to="/chat"
+                  title="Chat thương lượng"
+                  aria-label="Chat thương lượng"
+                  className="grid size-10 place-items-center rounded-full border border-line bg-white text-muted transition-colors hover:border-sage-line hover:bg-surface-2 hover:text-ink"
+                >
+                  <MessageSquare className="size-4" aria-hidden="true" />
+                </Link>
+              </>
+            )}
             <NotificationBellPopover role={role} />
             <AccountMenu
               name={session?.name ?? ""}
@@ -146,17 +180,48 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
         </div>
       </header>
 
-      <div className="flex">
-        {/* `sticky` + chiều cao khung nhìn: cột này đứng yên khi cuộn trang,
-            chỉ phần menu bên trong mới cuộn. */}
-        <aside className="flex w-58 shrink-0 flex-col border-r border-line-soft bg-white lg:sticky lg:top-14 lg:h-[calc(100dvh-3.5rem)]">
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          aria-hidden="true"
+          className="fixed inset-0 z-40 bg-ink/40 backdrop-blur-[1px] lg:hidden"
+        />
+      )}
+
+      <div className="flex min-w-0">
+        {/* Mobile (< lg): slide-over drawer khi `open`, ẩn hoàn toàn khi đóng để `<main>` chiếm 100% chiều rộng.
+            Desktop (>= lg): sidebar sticky 232px bên trái, menu tự cuộn độc lập. */}
+        <aside
+          className={`${
+            open
+              ? "fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] shadow-2xl"
+              : "hidden"
+          } flex-col border-r border-line-soft bg-white lg:sticky lg:top-14 lg:z-auto lg:flex lg:h-[calc(100dvh-3.5rem)] lg:w-58 lg:shrink-0 lg:shadow-none`}
+        >
+          <div className="flex h-14 shrink-0 items-center justify-between border-b border-line-soft px-4 lg:hidden">
+            <div className="flex items-center gap-2">
+              <img src="/assets/brand/logo1.png" alt="EcoLink" className="h-6 w-auto" />
+              <span className="rounded-md bg-brand/10 px-2 py-0.5 text-[10px] font-bold tracking-[0.08em] text-brand uppercase">
+                {ROLE_LABEL[role]}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Đóng menu"
+              className="grid size-9 place-items-center rounded-lg text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+
           <nav
             id="admin-nav"
             aria-label="Điều hướng khu vực quản trị"
-            className={`${open ? "block" : "hidden"} lg:block lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-4 lg:py-6`}
+            className="min-h-0 flex-1 overflow-y-auto px-4 py-5 lg:py-6"
           >
             {navSections.map((sec) => (
-              <div key={sec.title} className="px-4 pb-5 lg:px-0">
+              <div key={sec.title} className="pb-5">
                 <h2 className="px-3 text-[11px] font-bold tracking-[0.12em] text-brand uppercase">
                   {sec.title}
                 </h2>
@@ -166,6 +231,7 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
                       <NavLink
                         to={item.to}
                         end={item.to.split("/").length <= 2}
+                        onClick={() => setOpen(false)}
                         className={({ isActive }) =>
                           `flex min-h-10 items-center rounded-md px-3 py-2 text-sm leading-5 font-medium transition-colors ${
                             isActive
@@ -184,18 +250,26 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
           </nav>
 
           {/* Ngoài `<nav>` để không cuộn theo menu. Đỏ khi hover: đây là hành
-              động phá phiến phiên làm việc, màu khác hẳn các nút khác trong
-              khung để không bấm nhầm. */}
+              động phá phiên làm việc, màu khác hẳn các nút khác trong khung. */}
           <button
             type="button"
-            onClick={logout}
-            className="mx-4 mb-4 min-h-11 w-[calc(100%-2rem)] shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 hover:text-red-800 lg:mt-auto"
+            onClick={() => {
+              setOpen(false)
+              logout()
+            }}
+            className="mx-4 mt-auto mb-4 min-h-11 w-[calc(100%-2rem)] shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 hover:text-red-800"
           >
             Đăng xuất
           </button>
         </aside>
 
-        <main className="min-w-0 flex-1 px-4 py-6 lg:px-8 lg:py-8">
+        <main
+          className={`min-w-0 flex-1 ${
+            location.pathname === "/chat"
+              ? "p-0"
+              : "px-4 py-5 sm:py-6 lg:px-8 lg:py-8"
+          }`}
+        >
           {!staffRouteAllowed ? (
             <div
               role="alert"
@@ -222,8 +296,6 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
           )}
         </main>
       </div>
-
-      <Assistant />
 
       <ConfirmLogoutDialog
         open={confirmLogout}
@@ -281,10 +353,9 @@ function AccountMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex min-h-10 items-center gap-1.5 rounded-full border border-line bg-white py-1 pr-2.5 pl-1 transition-colors hover:border-sage-line hover:bg-surface-2"
+        className="flex min-h-10 items-center gap-1.5 rounded-full border border-line bg-white py-1 pr-2 pl-1 transition-colors hover:border-sage-line hover:bg-surface-2"
       >
         <UserAvatar name={name} avatarUrl={avatarUrl} size="sm" />
-        <span className="hidden text-sm font-medium text-muted sm:block">{name}</span>
         <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-3.5 text-muted">
           <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -339,7 +410,7 @@ function AccountMenu({
   )
 }
 
-function NotificationBellPopover({ role }: { role: "staff" | "admin" }) {
+function NotificationBellPopover({ role }: { role: "recycler" | "staff" | "admin" }) {
   const session = useSession()
   const live = Boolean(session) && !isSsrSmokeTest() && hasLiveBackendAuth()
   const [open, setOpen] = useState(false)
@@ -485,7 +556,7 @@ function NotificationBellPopover({ role }: { role: "staff" | "admin" }) {
         <div
           role="dialog"
           aria-label="Hộp thông báo nội bộ"
-          className="absolute top-full right-0 mt-2 w-80 overflow-hidden rounded-2xl border border-line bg-white shadow-[0_18px_44px_-8px_rgba(15,31,21,0.18)] sm:w-96"
+          className="fixed inset-x-3 top-16 z-50 overflow-hidden rounded-2xl border border-line bg-white shadow-[0_18px_44px_-8px_rgba(15,31,21,0.18)] sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-96"
         >
           <div className="flex items-center justify-between border-b border-line-soft bg-surface-2/70 px-4 py-3">
             <div>
@@ -549,7 +620,7 @@ function NotificationBellPopover({ role }: { role: "staff" | "admin" }) {
 
           <div className="border-t border-line-soft bg-surface-2/40 px-4 py-2.5 text-right">
             <Link
-              to={`/${role}/account`}
+              to={role === "recycler" ? "/account/profile" : `/${role}/account`}
               onClick={() => setOpen(false)}
               className="inline-flex min-h-10 items-center text-sm font-semibold text-brand-deep hover:underline"
             >

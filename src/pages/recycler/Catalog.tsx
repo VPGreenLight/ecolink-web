@@ -349,6 +349,86 @@ export default function Catalog() {
               <TableSkeleton rows={5} />
             ) : (
             <>
+            <ul className="flex flex-col gap-3 md:hidden">
+              {pagedRows.length === 0 ? (
+                <li className="card px-4 py-6 text-center text-sm text-muted">
+                  Không có danh mục phế liệu nào khớp bộ lọc hiện tại.
+                </li>
+              ) : (
+                pagedRows.map((r) => (
+                  <li
+                    key={r.wasteCategoryId}
+                    className={`card flex flex-col gap-3 p-4 ${!r.on ? "opacity-75" : ""}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-ink break-words">{r.name}</p>
+                        <p className="mt-0.5 text-xs text-muted">
+                          Mã: <code>{r.code}</code> · Thùng {r.standardBinColor}
+                        </p>
+                      </div>
+                      <label className="inline-flex min-h-9 shrink-0 items-center gap-2 text-sm font-medium text-body">
+                        <input
+                          type="checkbox"
+                          className="size-4 shrink-0 accent-brand"
+                          checked={r.on}
+                          onChange={(e) => set(r.wasteCategoryId, { on: e.target.checked })}
+                        />
+                        <span>{r.on ? "Đang mua" : "Tạm ngưng"}</span>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+                        <span>Đơn giá (đ/kg)</span>
+                        <input
+                          className="input min-h-11 w-full text-base tabular-nums"
+                          type="number"
+                          min={100}
+                          step={100}
+                          disabled={!r.on}
+                          value={r.price}
+                          onChange={(e) =>
+                            set(r.wasteCategoryId, { price: Number(e.target.value) })
+                          }
+                          aria-label={`Giá thu mua ${r.name}`}
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+                        <span>Tối thiểu (kg)</span>
+                        <input
+                          className="input min-h-11 w-full text-base tabular-nums"
+                          type="number"
+                          min={0.1}
+                          step={0.5}
+                          disabled={!r.on}
+                          value={r.minQuantityKg}
+                          onChange={(e) =>
+                            set(r.wasteCategoryId, { minQuantityKg: Number(e.target.value) })
+                          }
+                          aria-label={`Khối lượng tối thiểu ${r.name}`}
+                        />
+                      </label>
+                    </div>
+                    <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+                      <span>Điều kiện thu mua</span>
+                      <input
+                        className="input min-h-11 w-full text-base"
+                        type="text"
+                        maxLength={200}
+                        disabled={!r.on}
+                        value={r.collectionConditions}
+                        onChange={(e) =>
+                          set(r.wasteCategoryId, { collectionConditions: e.target.value })
+                        }
+                        placeholder="Ví dụ: Khô ráo, gập phẳng..."
+                        aria-label={`Điều kiện thu gom ${r.name}`}
+                      />
+                    </label>
+                  </li>
+                ))
+              )}
+            </ul>
+            <div className="hidden md:block">
             <Table head={["Danh mục phế liệu", "Thu mua", "Đơn giá (đ/kg)", "Tối thiểu (kg)", "Điều kiện thu mua"]}>
               {pagedRows.length === 0 ? (
                 <tr>
@@ -424,6 +504,7 @@ export default function Catalog() {
                 ))
               )}
             </Table>
+            </div>
 
             <PaginationBar
               page={page}

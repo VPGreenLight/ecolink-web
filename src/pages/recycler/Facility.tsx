@@ -625,7 +625,7 @@ export default function RecyclerFacility() {
                     />
                     <span>{day.isClosed ? "Nghỉ" : "Mở cửa"}</span>
                   </label>
-                  <div className="flex items-center gap-2">
+                  <div className="flex w-full items-center gap-2 sm:w-auto">
                     <input
                       type="time"
                       disabled={day.isClosed}
@@ -639,10 +639,10 @@ export default function RecyclerFacility() {
                         )
                         setScheduleErr("")
                       }}
-                      className="input min-h-11 w-32 text-base tabular-nums sm:text-[15px] disabled:opacity-50"
+                      className="input min-h-11 min-w-0 flex-1 text-base tabular-nums sm:w-32 sm:flex-none sm:text-[15px] disabled:opacity-50"
                       aria-label={`Giờ mở cửa ${WEEKDAY_LABELS[day.dayOfWeek]}`}
                     />
-                    <span className="text-muted">đến</span>
+                    <span className="shrink-0 text-muted">đến</span>
                     <input
                       type="time"
                       disabled={day.isClosed}
@@ -656,7 +656,7 @@ export default function RecyclerFacility() {
                         )
                         setScheduleErr("")
                       }}
-                      className="input min-h-11 w-32 text-base tabular-nums sm:text-[15px] disabled:opacity-50"
+                      className="input min-h-11 min-w-0 flex-1 text-base tabular-nums sm:w-32 sm:flex-none sm:text-[15px] disabled:opacity-50"
                       aria-label={`Giờ đóng cửa ${WEEKDAY_LABELS[day.dayOfWeek]}`}
                     />
                   </div>

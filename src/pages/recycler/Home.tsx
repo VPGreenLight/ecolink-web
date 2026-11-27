@@ -833,24 +833,57 @@ export default function RecyclerHome() {
               )
             }
             return (
-              <Table head={["Mã biên nhận", "Người dân", "Loại phế liệu", "Khối lượng", "Giá trị", "Thời điểm"]}>
-                {filteredTx.map((it) => (
-                  <tr key={it.receiptId || it.requestId}>
-                    <Td className="font-mono text-sm font-semibold whitespace-nowrap text-ink">
-                      {it.receiptCode || it.requestCode}
-                    </Td>
-                    <Td>{it.counterpartName}</Td>
-                    <Td className="text-sm">{it.categories.join(", ") || "—"}</Td>
-                    <Td className="tabular-nums whitespace-nowrap">{it.totalWeightKg} kg</Td>
-                    <Td className="font-semibold tabular-nums whitespace-nowrap text-brand-deep">
-                      {fmtVnd(it.totalAmountCash)}
-                    </Td>
-                    <Td className="text-sm tabular-nums whitespace-nowrap text-muted">
-                      {new Date(it.completedAt).toLocaleString("vi-VN")}
-                    </Td>
-                  </tr>
-                ))}
-              </Table>
+              <>
+                <ul className="flex flex-col gap-3 md:hidden">
+                  {filteredTx.map((it) => (
+                    <li
+                      key={it.receiptId || it.requestId}
+                      className="flex flex-col gap-2 rounded-xl border border-line-soft bg-surface-2/45 p-3.5"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <span className="font-mono text-xs font-bold text-ink">
+                            {it.receiptCode || it.requestCode}
+                          </span>
+                          <p className="mt-0.5 font-semibold text-ink break-words">
+                            {it.counterpartName}
+                          </p>
+                        </div>
+                        <span className="shrink-0 font-bold tabular-nums text-brand-deep">
+                          {fmtVnd(it.totalAmountCash)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-body break-words">
+                        {it.categories.join(", ") || "—"}
+                      </p>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted tabular-nums">
+                        <span>{it.totalWeightKg} kg</span>
+                        <span>{new Date(it.completedAt).toLocaleString("vi-VN")}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <div className="hidden md:block">
+                <Table head={["Mã biên nhận", "Người dân", "Loại phế liệu", "Khối lượng", "Giá trị", "Thời điểm"]}>
+                  {filteredTx.map((it) => (
+                    <tr key={it.receiptId || it.requestId}>
+                      <Td className="font-mono text-sm font-semibold whitespace-nowrap text-ink">
+                        {it.receiptCode || it.requestCode}
+                      </Td>
+                      <Td>{it.counterpartName}</Td>
+                      <Td className="text-sm">{it.categories.join(", ") || "—"}</Td>
+                      <Td className="tabular-nums whitespace-nowrap">{it.totalWeightKg} kg</Td>
+                      <Td className="font-semibold tabular-nums whitespace-nowrap text-brand-deep">
+                        {fmtVnd(it.totalAmountCash)}
+                      </Td>
+                      <Td className="text-sm tabular-nums whitespace-nowrap text-muted">
+                        {new Date(it.completedAt).toLocaleString("vi-VN")}
+                      </Td>
+                    </tr>
+                  ))}
+                </Table>
+                </div>
+              </>
             )
           })()}
         </section>

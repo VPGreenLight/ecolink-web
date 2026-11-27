@@ -55,7 +55,6 @@ const loaders = {
   BlogEditor: () => import("@/pages/staff/BlogEditor"),
   EcoFacts: () => import("@/pages/staff/EcoFacts"),
   Gifts: () => import("@/pages/staff/Gifts"),
-  StaffCheckIn: () => import("@/pages/staff/CheckIn"),
 
   AdminHome: () => import("@/pages/admin/Home"),
   Reports: () => import("@/pages/admin/Reports"),

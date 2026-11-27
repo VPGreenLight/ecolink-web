@@ -184,7 +184,47 @@ export default function Permissions() {
       {loading ? (
         <TableSkeleton rows={4} />
       ) : (
-      <div className="card overflow-x-auto">
+      <>
+      <ul className="flex flex-col gap-4 md:hidden">
+        {list.map((s) => (
+          <li key={s.backendUserId ?? s.id} className="card flex flex-col gap-3 p-4">
+            <div className="flex items-start justify-between gap-2 border-b border-line-soft pb-2.5">
+              <div>
+                <p className="font-bold text-ink">{s.name}</p>
+                <p className="text-xs text-muted">
+                  {s.id}
+                  {s.dirty ? " · Chưa lưu" : ""}
+                </p>
+              </div>
+              <Status tone={s.status === "active" ? "ok" : "off"}>
+                {s.status === "active" ? "Hoạt động" : "Đã khoá"}
+              </Status>
+            </div>
+            <div className="grid gap-1.5">
+              {catalog.map((p) => (
+                <label
+                  key={p.id}
+                  className="flex min-h-10 cursor-pointer items-center justify-between gap-3 rounded-lg border border-line-soft bg-surface-2/40 px-3 py-2"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-xs font-semibold text-ink">{p.label}</span>
+                    <span className="block font-mono text-[10px] text-muted">{p.code}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    className="size-4 shrink-0 accent-brand"
+                    checked={s.perms.includes(p.id)}
+                    onChange={() => flip(s.id, p.id)}
+                    aria-label={`${p.label} cho ${s.name}`}
+                  />
+                </label>
+              ))}
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <div className="card hidden overflow-x-auto md:block">
         <table className="w-full min-w-[760px] border-collapse text-left text-sm">
           <thead>
             <tr className="border-b border-line bg-surface-2">
@@ -235,6 +275,7 @@ export default function Permissions() {
           </tbody>
         </table>
       </div>
+      </>
       )}
 
       <form
@@ -295,6 +336,43 @@ export default function Permissions() {
       <section>
         <h2 className="text-base font-bold text-ink">Trạng thái hiện tại</h2>
         <div className="mt-3">
+          <ul className="flex flex-col gap-3 md:hidden">
+            {list.map((s) => (
+              <li key={s.backendUserId ?? s.id} className="card flex flex-col gap-2 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-bold text-ink">{s.name}</p>
+                    <p className="text-xs text-muted tabular-nums">
+                      {s.perms.length} / {PERMS.length} quyền
+                    </p>
+                  </div>
+                  <Status tone={s.status === "active" ? "ok" : "off"}>
+                    {s.status === "active" ? "Hoạt động" : "Đã khoá"}
+                  </Status>
+                </div>
+                <p className="text-xs leading-5 text-body">
+                  {s.perms.length === 0
+                    ? "Chưa có quyền nào"
+                    : s.perms.length === PERMS.length
+                      ? "Toàn quyền (7/7)"
+                      : PERMS.filter((p) => s.perms.includes(p.id))
+                          .map((p) => p.label)
+                          .join(", ")}
+                </p>
+                {s.backendUserId && (
+                  <button
+                    type="button"
+                    disabled={refreshingId === s.backendUserId}
+                    onClick={() => void refreshRowPermissions(s)}
+                    className="btn-outline min-h-9 w-full justify-center text-xs font-semibold"
+                  >
+                    {refreshingId === s.backendUserId ? "Đang tải..." : "Đồng bộ quyền"}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          <div className="hidden md:block">
           <Table head={["Nhân viên", "Tài khoản", "Số quyền", "Tóm tắt quyền hạn"]}>
             {list.map((s) => (
               <tr key={s.backendUserId ?? s.id}>
@@ -331,6 +409,7 @@ export default function Permissions() {
               </tr>
             ))}
           </Table>
+          </div>
         </div>
       </section>
 

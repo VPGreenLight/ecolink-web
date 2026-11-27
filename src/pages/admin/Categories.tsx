@@ -181,6 +181,72 @@ export default function Categories() {
       {loading ? (
         <TableSkeleton rows={5} />
       ) : (
+      <>
+      <ul className="flex flex-col gap-3 md:hidden">
+        {rows.map((w) => (
+          <li
+            key={w.id}
+            className={`card flex flex-col gap-3 p-4 ${w.status === "Inactive" ? "opacity-70" : ""}`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <code className="rounded bg-surface-2 px-2 py-1 font-mono text-xs font-semibold text-ink">
+                {w.code}
+              </code>
+              <button
+                type="button"
+                onClick={() => void handleToggleStatus(w)}
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  w.status === "Active"
+                    ? "bg-brand/10 text-brand-deep hover:bg-brand/20"
+                    : "bg-surface-2 text-muted hover:bg-line-soft"
+                }`}
+              >
+                {w.status === "Active" ? "Active · Tạm ngưng" : "Inactive · Mở lại"}
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
+                <span>Tên loại rác</span>
+                <input
+                  className="input h-10 font-semibold text-ink"
+                  value={w.name}
+                  onChange={(e) => set(w.id, { name: e.target.value })}
+                  aria-label={`Tên loại rác ${w.code}`}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
+                <span>Màu thùng chuẩn</span>
+                <input
+                  className="input h-10 text-sm"
+                  value={w.standardBinColor}
+                  onChange={(e) => set(w.id, { standardBinColor: e.target.value })}
+                  aria-label={`Màu thùng của ${w.name}`}
+                  placeholder="Màu thùng"
+                />
+              </label>
+            </div>
+            <label className="flex min-h-9 items-center gap-2 text-sm text-body">
+              <input
+                type="checkbox"
+                className="size-4 accent-brand"
+                checked={w.recyclable}
+                onChange={(e) => set(w.id, { recyclable: e.target.checked })}
+              />
+              <span>{w.recyclable ? "Có thu mua tái chế" : "Rác hướng dẫn xử lý"}</span>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
+              <span>Mô tả / Luật xử lý</span>
+              <input
+                className="input h-10"
+                value={w.description || w.rule}
+                onChange={(e) => set(w.id, { description: e.target.value, rule: e.target.value })}
+                aria-label={`Luật xử lý của ${w.name}`}
+              />
+            </label>
+          </li>
+        ))}
+      </ul>
+      <div className="hidden md:block">
       <Table head={["Mã danh mục", "Tên loại rác", "Màu thùng chuẩn", "Phân loại & Trạng thái", "Mô tả / Luật xử lý"]}>
         {rows.map((w) => (
           <tr key={w.id} className={w.status === "Inactive" ? "opacity-60" : undefined}>
@@ -243,6 +309,8 @@ export default function Categories() {
           </tr>
         ))}
       </Table>
+      </div>
+      </>
       )}
 
       <div className="flex flex-wrap items-center gap-4">

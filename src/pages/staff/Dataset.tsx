@@ -207,6 +207,34 @@ export default function Dataset() {
         </div>
       )}
 
+      <ul className="flex flex-col gap-3 md:hidden">
+        {[...byCategory]
+          .sort((a, b) => a.accuracyPercent - b.accuracyPercent || a.totalVerified - b.totalVerified)
+          .map((c) => (
+            <li key={c.categoryCode} className="card flex flex-col gap-2 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-bold text-ink">{c.categoryName}</span>
+                <span className="text-sm font-bold tabular-nums text-ink">{c.accuracyPercent}%</span>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted tabular-nums">
+                <span>Đã chuẩn hóa: {fmtInt(c.totalVerified)}</span>
+                <span>
+                  {c.trainCount}/{c.valCount}/{c.testCount}
+                  {c.unassignedCount > 0 ? ` (+${c.unassignedCount})` : ""}
+                </span>
+              </div>
+              <div className="text-xs font-semibold">
+                {c.needsMoreSamples || c.accuracyPercent < 90 ? (
+                  <span className="text-brand">Cần ưu tiên thu thập</span>
+                ) : (
+                  <span className="text-muted">Đạt</span>
+                )}
+              </div>
+            </li>
+          ))}
+      </ul>
+
+      <div className="hidden md:block">
       <Table head={["Lớp vật liệu", "Đã chuẩn hóa", "Train / Val / Test", "Độ chính xác", "Trạng thái"]}>
         {[...byCategory]
           .sort((a, b) => a.accuracyPercent - b.accuracyPercent || a.totalVerified - b.totalVerified)
@@ -229,6 +257,7 @@ export default function Dataset() {
             </tr>
           ))}
       </Table>
+      </div>
 
       <form noValidate onSubmit={handleCreateVersion} className="card flex flex-col gap-4 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -313,6 +342,46 @@ export default function Dataset() {
       </form>
 
       {versions.length > 0 && (
+        <>
+        <ul className="flex flex-col gap-3 md:hidden">
+          {versions.map((v) => (
+            <li key={v.id} className="card flex flex-col gap-2.5 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="font-mono text-xs font-bold text-ink">{v.versionCode}</span>
+                  <p className="text-sm font-semibold text-ink">{v.versionName}</p>
+                </div>
+                <Status tone={v.status === "SyncedToAi" ? "ok" : "wait"}>
+                  {v.status === "SyncedToAi" ? "Đã sync AI" : v.status}
+                </Status>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted tabular-nums">
+                <span>Tổng: {fmtInt(v.totalSamples)}</span>
+                <span>Split: {v.trainCount}/{v.valCount}/{v.testCount}</span>
+                <span>Lệch: {v.imbalanceRatio}x {v.isBalanced ? "(Cân bằng)" : "(Lệch)"}</span>
+              </div>
+              <div className="flex flex-wrap gap-2 border-t border-line-soft pt-2.5">
+                <button
+                  type="button"
+                  disabled={exportingId === `${v.id}-yolo`}
+                  onClick={() => void handleDownloadZip(v.id, "yolo")}
+                  className="btn-outline min-h-9 px-3 text-xs"
+                >
+                  YOLO (.zip)
+                </button>
+                <button
+                  type="button"
+                  disabled={exportingId === `${v.id}-imagefolder`}
+                  onClick={() => void handleDownloadZip(v.id, "imagefolder")}
+                  className="btn-outline min-h-9 px-3 text-xs"
+                >
+                  ImageFolder
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="hidden md:block">
         <Table head={["Phiên bản", "Tổng mẫu", "Train/Val/Test", "Lệch lớp", "Trạng thái", "Xuất gói (.zip)"]}>
           {versions.map((v) => (
             <tr key={v.id}>
@@ -355,6 +424,8 @@ export default function Dataset() {
             </tr>
           ))}
         </Table>
+        </div>
+        </>
       )}
     </div>
   )

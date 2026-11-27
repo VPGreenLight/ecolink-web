@@ -56,7 +56,6 @@ import Accounts from "@/pages/staff/Accounts"
 import BlogEditor from "@/pages/staff/BlogEditor"
 import EcoFacts from "@/pages/staff/EcoFacts"
 import Gifts from "@/pages/staff/Gifts"
-import StaffCheckIn from "@/pages/staff/CheckIn"
 
 import AdminHome from "@/pages/admin/Home"
 import Reports from "@/pages/admin/Reports"
@@ -129,7 +128,6 @@ const CASES = [
   ["staff/BlogEditor", BlogEditor, "Soạn bài Blog"],
   ["staff/EcoFacts", EcoFacts, "Quản lý Eco Fact"],
   ["staff/Gifts", Gifts, "Quà tặng và voucher"],
-  ["staff/CheckIn", StaffCheckIn, "Điểm danh hằng ngày"],
   ["staff/account", AccountProfile, "Thông tin được cấp"],
   ["staff/account/password", AccountPassword, "Đổi mật khẩu"],
 

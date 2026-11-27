@@ -606,6 +606,38 @@ export default function BlogReview() {
       <section>
         <h2 className="text-base font-bold text-ink">Đã xử lý ({doneRows.length})</h2>
         <div className="mt-3">
+          {pagedDoneRows.length === 0 ? (
+            <p className="card px-4 py-6 text-center text-[13px] text-muted md:hidden">
+              Chưa có bài viết nào đã xuất bản hoặc bị hủy.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-3 md:hidden">
+              {pagedDoneRows.map((p) => (
+                <li key={p.id} className="card flex flex-col gap-2 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-xs font-semibold tabular-nums text-muted">{p.code}</span>
+                      <p className="mt-0.5 font-bold leading-snug text-ink break-words">
+                        {p.slug && p.status === "published" ? (
+                          <Link to={`/blog/${p.slug}`} className="hover:text-brand hover:underline">
+                            {p.title}
+                          </Link>
+                        ) : (
+                          p.title
+                        )}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted">{p.author}</p>
+                    </div>
+                    <Status tone={p.status === "published" ? "ok" : "off"}>
+                      {p.status === "published" ? "Đã xuất bản" : "Đã hủy"}
+                    </Status>
+                  </div>
+                  {p.note && <p className="text-xs text-body break-words">{p.note}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="hidden md:block">
           <Table head={["Mã", "Tiêu đề", "Tác giả", "Kết quả", "Lý do"]}>
             {pagedDoneRows.length === 0 ? (
               <tr>
@@ -637,6 +669,7 @@ export default function BlogReview() {
               ))
             )}
           </Table>
+          </div>
           <PaginationBar
             page={donePage}
             pageSize={donePageSize}

@@ -228,7 +228,7 @@ export default function RecyclerPackages() {
   }
 
   return (
-    <div className="page flex flex-col gap-6 py-6">
+    <div className="flex flex-col gap-6">
       <PageHead
         eyebrow="GÓI DỊCH VỤ"
         title="Gói dịch vụ"

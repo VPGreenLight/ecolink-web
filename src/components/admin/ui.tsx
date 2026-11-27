@@ -31,34 +31,31 @@ export function PageHead({
   action?: React.ReactNode
 }) {
   return (
-    <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div className="min-w-0">
+    <header className="mb-2 flex flex-col gap-4 border-b border-line/80 pb-5 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0 flex-1">
         <p className="text-[11px] font-bold tracking-[0.14em] text-brand uppercase">
           {eyebrow}
         </p>
-        <h1 className="mt-1 text-xl leading-7 font-bold tracking-tight text-ink">
+        <h1 className="mt-1 text-xl leading-7 font-bold tracking-tight text-ink sm:text-[24px] sm:leading-8">
           {title}
         </h1>
-        <p className="mt-1.5 max-w-[68ch] text-[13px] leading-5 text-muted">
+        <p className="mt-1.5 max-w-[68ch] text-sm leading-6 text-muted">
           {body}
         </p>
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </header>
   )
 }
 
-/** Dải số liệu tổng quan. Lõi trắng trong vỏ mint (double-bezel) để sáng và có
- *  chủ đề mà không thành một tấm xanh đậm nặng nề. */
+/** Dải số liệu tổng quan theo cấu trúc Double-Bezel + chia cột mượt trên desktop/mobile. */
 export function StatRow({ children }: { children: React.ReactNode }) {
-  // Cột không chia đều: "1.842.000.000 ₫" dài hơn hẳn "1.284", chia đều thì
-  // đơn vị rớt xuống dòng. Bề rộng cột đặt theo độ dài nội dung.
   const grid =
-    "grid gap-x-6 gap-y-5 sm:grid-cols-2 lg:grid-cols-[1fr_0.8fr_1.15fr_1.5fr]"
+    "grid gap-5 sm:grid-cols-2 lg:grid-cols-[1fr_0.85fr_1.15fr_1.45fr] lg:divide-x lg:divide-line-soft"
   return (
-    <div className="mb-6 rounded-2xl bg-mint/30 p-1.5 ring-1 ring-brand/12">
+    <div className="rounded-3xl border border-line/80 bg-surface-2/50 p-1.5">
       <div
-        className={`${grid} rounded-xl bg-white px-5 py-6 shadow-[0_24px_48px_-28px_rgba(15,31,21,0.26)]`}
+        className={`${grid} rounded-2xl border border-line-soft bg-white p-5 shadow-[0_14px_34px_-16px_rgba(15,31,21,0.12)] sm:px-6`}
       >
         {children}
       </div>
@@ -71,32 +68,38 @@ export function Stat({
   value,
   unit,
   note,
+  loading,
 }: {
   label: string
   value: string
   unit?: string
   note?: string
+  loading?: boolean
 }) {
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 lg:px-4 first:lg:pl-0 last:lg:pr-0">
       <p className="text-[11px] font-semibold tracking-[0.1em] text-brand uppercase">
         {label}
       </p>
-      <p className="mt-1.5 flex items-baseline gap-1.5 text-[26px] leading-9 font-bold tracking-tight text-ink xl:text-[28px]">
-        <span className="tabular-nums">{value}</span>
-        {unit && (
-          <span className="text-sm font-semibold text-brand-deep">{unit}</span>
-        )}
-      </p>
-      {note && <p className="mt-1 text-[13px] leading-5 text-muted">{note}</p>}
+      {loading ? (
+        <span
+          className="mt-2 block h-8 w-24 animate-pulse rounded-lg bg-surface-2"
+          aria-label="Đang tải số liệu"
+        />
+      ) : (
+        <p className="mt-1.5 flex items-baseline gap-1.5 text-2xl leading-8 font-bold tracking-tight text-ink xl:text-[26px] xl:leading-9">
+          <span className="truncate whitespace-nowrap tabular-nums">{value}</span>
+          {unit && (
+            <span className="shrink-0 text-sm font-semibold text-brand-deep">{unit}</span>
+          )}
+        </p>
+      )}
+      {note && <p className="mt-1 text-xs leading-5 text-muted">{note}</p>}
     </div>
   )
 }
 
-/** Bảng dữ liệu của console: KHÔNG bọc khung bo tròn như bảng của khu vực
- *  người dân. Bảng console thường dài và nhiều cột, viền bao quanh chỉ thêm
- *  một vòng nữa mà không giúp gì — dùng đường kẻ hàng ngang để mắt đọc theo
- *  cột dễ hơn. */
+/** Bảng dữ liệu của console: nền trắng sáng, viền mềm đồng bộ Double-Bezel & header tinh gọn. */
 export function Table({
   head,
   children,
@@ -105,15 +108,15 @@ export function Table({
   children: React.ReactNode
 }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-2xl border border-line/80 bg-white shadow-[0_10px_28px_-16px_rgba(15,31,21,0.08)]">
       <table className="w-full min-w-[640px] border-collapse text-left text-sm">
         <thead>
-          <tr className="border-b border-line">
+          <tr className="border-b border-line bg-surface-2/65">
             {head.map((h) => (
               <th
                 key={h}
                 scope="col"
-                className="px-3 py-2.5 text-[10px] font-bold tracking-[0.1em] text-muted uppercase"
+                className="px-4 py-3 text-[11px] font-bold tracking-[0.08em] text-muted uppercase"
               >
                 {h}
               </th>
@@ -134,7 +137,7 @@ export function Td({
   className?: string
 }) {
   return (
-    <td className={`px-3 py-2.5 align-middle text-[13px] text-body ${className}`}>
+    <td className={`px-4 py-3 align-middle text-[13px] text-body ${className}`}>
       {children}
     </td>
   )
@@ -167,7 +170,7 @@ export function Status({
 export function RequiredMark() {
   return (
     <span
-      className="ml-1 font-bold text-red-600"
+      className="ml-0.5 font-bold text-red-600"
       aria-hidden="true"
       title="Trường bắt buộc"
     >
@@ -209,8 +212,8 @@ export function Field({
   children: React.ReactNode
 }) {
   return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-[11px] font-bold tracking-[0.1em] text-muted uppercase">
+    <label className="flex min-w-0 flex-col gap-1.5">
+      <span className="text-[11px] leading-4 font-bold tracking-[0.08em] text-muted uppercase">
         {label}
         {required && <RequiredMark />}
       </span>

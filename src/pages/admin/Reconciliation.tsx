@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { Download, FileJson, RefreshCw, ShieldCheck, Wrench, X } from "lucide-react"
 import PaginationBar, { extractPagedMeta, FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
-import { Empty, Field, FormRequiredLegend, PageHead, Stat, Status, Table, Td } from "@/components/admin/ui"
+import { Empty, Field, FormRequiredLegend, PageHead, Stat, StatRow, Status, Table, Td } from "@/components/admin/ui"
 import { fmtInt, fmtVnd } from "@/data/ops"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { initApiLoading, initApiState } from "@/lib/hydration"
@@ -531,7 +531,7 @@ export default function Reconciliation() {
       />
 
       {/* Dải 4 Stat tài chính chuẩn A-11 */}
-      <div className="grid gap-6 border-b border-line-soft pb-6 sm:grid-cols-2 lg:grid-cols-4">
+      <StatRow>
         <Stat
           label="Doanh thu khớp lệnh"
           value={fmtVnd(summary.totalMatchedRevenueVnd)}
@@ -552,7 +552,7 @@ export default function Reconciliation() {
           value={fmtVnd(summary.totalRefundedVnd)}
           note={`Đơn chờ chuyển: ${fmtInt(summary.pendingOrdersCount)}`}
         />
-      </div>
+      </StatRow>
 
       {flash && (
         <p role="status" className="flex items-center gap-2 rounded-lg border border-brand/30 bg-brand/8 px-3.5 py-2.5 text-xs font-semibold text-brand-deep">
@@ -591,7 +591,7 @@ export default function Reconciliation() {
         <div className="grid gap-3 sm:grid-cols-[1fr_160px_160px]">
           <input
             type="search"
-            className="input h-9 text-xs"
+            className="input h-10 text-xs"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -602,7 +602,7 @@ export default function Reconciliation() {
           <input
             type="date"
             aria-label="Từ ngày"
-            className="input h-9 text-xs"
+            className="input h-10 text-xs"
             value={fromDate}
             onChange={(e) => {
               setFromDate(e.target.value)
@@ -612,7 +612,7 @@ export default function Reconciliation() {
           <input
             type="date"
             aria-label="Đến ngày"
-            className="input h-9 text-xs"
+            className="input h-10 text-xs"
             value={toDate}
             onChange={(e) => {
               setToDate(e.target.value)
@@ -626,6 +626,83 @@ export default function Reconciliation() {
         <Empty>Không có giao dịch đối soát nào khớp với bộ lọc hiện tại.</Empty>
       ) : (
         <>
+        <ul className="flex flex-col gap-3 md:hidden">
+          {displayedRows.map((item) => {
+            const st = reconciliationBadge(item.reconciliationStatus)
+            const sUpper = item.reconciliationStatus.toUpperCase()
+            const needsResolve =
+              sUpper === "UNDERPAID" ||
+              sUpper === "OVERPAID" ||
+              sUpper === "LATETRANSFER" ||
+              sUpper === "UNMATCHEDREFERENCE"
+
+            return (
+              <li key={`${item.recordType}-${item.referenceCode}`} className="card flex flex-col gap-2.5 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-mono text-xs font-bold text-ink break-all">
+                      {item.referenceCode}
+                    </p>
+                    <p className="text-[11px] text-muted">
+                      {item.bankCode} {item.paymentReference ? `· ${item.paymentReference}` : ""}
+                    </p>
+                  </div>
+                  <Status tone={st.tone}>{st.label}</Status>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink">{item.payerName}</p>
+                    <p className="text-[11px] text-muted">{item.packageName || "—"}</p>
+                  </div>
+                  <div className="text-right tabular-nums">
+                    <p className="font-bold text-ink">{fmtVnd(item.paidAmountVnd)}</p>
+                    <p
+                      className={`text-[11px] font-bold ${
+                        item.discrepancyVnd === 0
+                          ? "text-muted"
+                          : item.discrepancyVnd < 0
+                            ? "text-warn"
+                            : "text-amber-700"
+                      }`}
+                    >
+                      Lệch: {item.discrepancyVnd > 0 ? `+${fmtVnd(item.discrepancyVnd)}` : fmtVnd(item.discrepancyVnd)}
+                    </p>
+                  </div>
+                </div>
+                {(item.anomalyNote || item.resolutionNote) && (
+                  <p className="rounded-lg bg-surface-2/70 px-3 py-2 text-[11px] leading-4 text-body">
+                    {item.resolutionNote ? `Biên bản (${item.resolvedByName ?? "Admin"}): ${item.resolutionNote}` : item.anomalyNote}
+                  </p>
+                )}
+                {(item.rawWebhookJson || needsResolve) && (
+                  <div className="flex flex-wrap gap-2 border-t border-line-soft pt-2.5">
+                    {item.rawWebhookJson && (
+                      <button
+                        type="button"
+                        onClick={() => setInspectItem(item)}
+                        className="btn-outline inline-flex min-h-9 flex-1 items-center justify-center gap-1 px-3 text-xs font-semibold"
+                      >
+                        <FileJson className="size-3.5" />
+                        Log NH
+                      </button>
+                    )}
+                    {needsResolve && (
+                      <button
+                        type="button"
+                        onClick={() => openResolveModal(item)}
+                        className="btn-primary inline-flex min-h-9 flex-1 items-center justify-center gap-1 px-3 text-xs font-semibold"
+                      >
+                        <Wrench className="size-3.5" />
+                        Xử lý lệch
+                      </button>
+                    )}
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+        <div className="hidden md:block">
         <Table
           head={[
             "Mã tham chiếu & NH",
@@ -729,6 +806,7 @@ export default function Reconciliation() {
             )
           })}
         </Table>
+        </div>
         <PaginationBar
           page={page}
           pageSize={pageSize}

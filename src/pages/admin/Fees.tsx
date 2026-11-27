@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { CheckCircle2, Lock, Pencil, Plus, RefreshCw, ShieldAlert, X } from "lucide-react"
-import { Field, FormRequiredLegend, PageHead, Stat, Status, Table, Td } from "@/components/admin/ui"
+import { Field, FormRequiredLegend, PageHead, Stat, StatRow, Status, Table, Td } from "@/components/admin/ui"
 import { fmtInt, fmtVnd } from "@/data/ops"
 import { initApiLoading, initApiState } from "@/lib/hydration"
 import {
@@ -332,12 +332,12 @@ export default function Fees() {
       />
 
       {/* Dải KPI tổng quan biểu phí */}
-      <div className="grid gap-6 border-b border-line-soft pb-6 sm:grid-cols-2 lg:grid-cols-4">
+      <StatRow>
         <Stat label="Số gói trong catalog" value={fmtInt(packages.length)} note="Gồm gói mặc định & trả phí" />
         <Stat label="Thuê bao đang hoạt động" value={fmtInt(totalSubscribers)} note="Tất cả vai trò" />
         <Stat label="Đơn thanh toán thành công" value={fmtInt(totalPaidOrders)} note="Qua VietQR Động" />
         <Stat label="Doanh thu gói nội bộ" value={fmtVnd(totalRevenue)} note="Đã đối soát" />
-      </div>
+      </StatRow>
 
       {/* Khuyến cáo Grandfathering BR-PAY-05 */}
       <div className="flex items-start gap-3 rounded-xl border border-brand/25 bg-brand/6 px-4 py-3 text-xs leading-5 text-brand-deep">
@@ -384,6 +384,101 @@ export default function Fees() {
         ))}
       </div>
 
+      <ul className="flex flex-col gap-3 md:hidden">
+        {filteredPackages.map((pkg) => {
+          const isBasicLocked = pkg.isDefaultFree || pkg.packageCode.toUpperCase() === "BASIC"
+          return (
+            <li key={pkg.id} className="card flex flex-col gap-3 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5 font-semibold text-ink">
+                    <span className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-brand-deep">
+                      {pkg.packageCode}
+                    </span>
+                    <span>{pkg.packageName}</span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted">
+                    {ROLE_LABEL[pkg.targetRole] ?? pkg.targetRole}
+                    {pkg.requiresVerifiedKyb ? " · Bắt buộc KYB Verified" : ""}
+                  </p>
+                </div>
+                <Status tone={pkg.isActive ? "ok" : "off"}>
+                  {pkg.isActive ? "Đang mở bán" : "Tạm ngừng"}
+                </Status>
+              </div>
+              {pkg.description && (
+                <p className="text-xs leading-5 text-muted">{pkg.description}</p>
+              )}
+              <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
+                <span className="text-base font-bold text-ink tabular-nums">
+                  {pkg.priceVnd === 0 ? "0 đ (Mặc định)" : fmtVnd(pkg.priceVnd)}
+                  <span className="ml-1 text-xs font-normal text-muted">
+                    / {pkg.durationDays === 0 ? "Vĩnh viễn" : `${pkg.durationDays} ngày`}
+                  </span>
+                </span>
+                <span className="text-muted tabular-nums">
+                  {fmtInt(pkg.activeSubscribersCount)} dùng · {fmtVnd(pkg.totalRevenueVnd)}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1 text-[11px]">
+                {pkg.features.adFree && (
+                  <span className="rounded bg-brand/10 px-1.5 py-0.5 font-semibold text-brand-deep">
+                    Tắt QC
+                  </span>
+                )}
+                {pkg.features.dailyPointMultiplier > 1 && (
+                  <span className="rounded bg-surface-2 px-1.5 py-0.5 font-semibold text-ink">
+                    x{pkg.features.dailyPointMultiplier} điểm
+                  </span>
+                )}
+                {pkg.features.verifiedBlueBadge && (
+                  <span className="rounded bg-sky-100 px-1.5 py-0.5 font-semibold text-sky-800">
+                    Tích xanh
+                  </span>
+                )}
+                {pkg.features.featuredMapMarker && (
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800">
+                    Ghim +{pkg.features.mapPriorityBoost}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 border-t border-line-soft pt-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormErr("")
+                    setEditing(emptyFormState(pkg))
+                  }}
+                  className="btn-outline inline-flex min-h-9 flex-1 items-center justify-center gap-1.5 px-3 text-xs font-semibold"
+                >
+                  <Pencil className="size-3.5" />
+                  Sửa gói
+                </button>
+                {isBasicLocked ? (
+                  <span className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-line bg-surface-2 px-3 text-xs font-medium text-muted">
+                    <Lock className="size-3.5" />
+                    Khóa
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void handleToggleStatus(pkg)}
+                    className={`inline-flex min-h-9 items-center justify-center rounded-lg border px-3 text-xs font-semibold ${
+                      pkg.isActive
+                        ? "border-warn/30 text-warn hover:bg-warn/10"
+                        : "border-brand/30 text-brand-deep hover:bg-brand/10"
+                    }`}
+                  >
+                    {pkg.isActive ? "Tạm ngừng" : "Mở bán"}
+                  </button>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+
+      <div className="hidden md:block">
       <Table
         head={[
           "Mã & Tên gói",
@@ -509,6 +604,7 @@ export default function Fees() {
           )
         })}
       </Table>
+      </div>
 
       {/* Modal tạo / cập nhật gói dịch vụ */}
       {editing && (

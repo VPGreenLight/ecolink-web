@@ -436,6 +436,49 @@ export default function BlogEditor() {
                 <p className="text-sm text-muted">Đang tải danh sách bài viết...</p>
               ) : (
                 <>
+                  {pagedPendingLive.length === 0 ? (
+                    <p className="card px-4 py-6 text-center text-xs text-muted md:hidden">
+                      Không có bài chờ duyệt nào khớp bộ lọc.
+                    </p>
+                  ) : (
+                    <ul className="flex flex-col gap-3 md:hidden">
+                      {pagedPendingLive.map((p) => (
+                        <li key={p.id} className="card flex flex-col gap-2.5 p-4">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <span className="font-mono text-xs tabular-nums text-muted">
+                                {formatBlogCode(p.id)}
+                              </span>
+                              <p className="mt-0.5 font-bold leading-snug text-ink break-words">{p.title}</p>
+                            </div>
+                            <Status tone="wait">Chờ duyệt</Status>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 border-t border-line-soft pt-2.5 text-xs">
+                            <span className="tabular-nums text-muted">
+                              {formatViDate(p.submittedAt || p.updatedAt)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await recallStaffBlog(p.id)
+                                  setFlash("Đã thu hồi bài viết về bản nháp.")
+                                  setErrMsg("")
+                                  await loadStaffPosts()
+                                } catch (err) {
+                                  setErrMsg(err instanceof Error ? err.message : "Thu hồi thất bại.")
+                                }
+                              }}
+                              className="font-semibold text-brand hover:underline"
+                            >
+                              Thu hồi
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="hidden md:block">
                   <Table head={["Mã", "Tiêu đề", "Ngày gửi", "Trạng thái", "Thao tác"]}>
                     {pagedPendingLive.length === 0 ? (
                       <tr>
@@ -478,6 +521,7 @@ export default function BlogEditor() {
                       ))
                     )}
                   </Table>
+                  </div>
                   <PaginationBar
                     page={pendingPage}
                     pageSize={pageSize}
@@ -495,6 +539,89 @@ export default function BlogEditor() {
               Bản nháp &amp; Đã xuất bản ({restLive.length})
             </h2>
             <div className="mt-3">
+              {pagedRestLive.length === 0 ? (
+                <p className="card px-4 py-6 text-center text-xs text-muted md:hidden">
+                  Không có bài viết nào khớp bộ lọc.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-3 md:hidden">
+                  {pagedRestLive.map((p) => {
+                    const meta = BLOG_STATUS_META[p.status] ?? {
+                      label: p.status,
+                      tone: "off" as const,
+                    }
+                    const isDraft = p.status === "Draft"
+                    return (
+                      <li key={p.id} className="card flex flex-col gap-2.5 p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <span className="font-mono text-xs tabular-nums text-muted">
+                              {formatBlogCode(p.id)}
+                            </span>
+                            <p className="mt-0.5 font-bold leading-snug text-ink break-words">{p.title}</p>
+                          </div>
+                          <Status tone={meta.tone}>{meta.label}</Status>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line-soft pt-2.5 text-xs">
+                          <span className="tabular-nums text-muted">
+                            {formatViDate(p.publishedAt || p.updatedAt)}
+                          </span>
+                          {isDraft ? (
+                            <div className="flex flex-wrap gap-3 font-semibold">
+                              <button
+                                type="button"
+                                onClick={() => void handleEdit(p.id)}
+                                className="text-brand hover:underline"
+                              >
+                                Sửa
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await submitStaffBlog(p.id)
+                                    setFlash("Đã nộp bài lên hàng đợi Admin.")
+                                    setErrMsg("")
+                                    await loadStaffPosts()
+                                  } catch (err) {
+                                    setErrMsg(
+                                      err instanceof Error
+                                        ? err.message
+                                        : "Bài cần có ảnh bìa và nội dung trước khi nộp duyệt.",
+                                    )
+                                  }
+                                }}
+                                className="text-brand-deep hover:underline"
+                              >
+                                Nộp duyệt
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await deleteStaffBlog(p.id)
+                                    setFlash("Đã xóa bản nháp.")
+                                    setErrMsg("")
+                                    await loadStaffPosts()
+                                  } catch (err) {
+                                    setErrMsg(err instanceof Error ? err.message : "Không thể xóa.")
+                                  }
+                                }}
+                                className="text-warn hover:underline"
+                              >
+                                Xóa
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-muted">/{p.slug}</span>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              <div className="hidden md:block">
               <Table head={["Mã", "Tiêu đề", "Cập nhật", "Trạng thái", "Thao tác"]}>
                 {pagedRestLive.length === 0 ? (
                   <tr>
@@ -577,6 +704,7 @@ export default function BlogEditor() {
                 })
                 )}
               </Table>
+              </div>
               <PaginationBar
                 page={restPage}
                 pageSize={pageSize}
@@ -592,6 +720,23 @@ export default function BlogEditor() {
           <section>
             <h2 className="text-base font-bold text-ink">Chờ duyệt ({pendingOffline.length})</h2>
             <div className="mt-3">
+              <ul className="flex flex-col gap-3 md:hidden">
+                {pagedPendingOffline.map((p) => (
+                  <li key={p.id} className="card flex flex-col gap-2 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-xs font-semibold tabular-nums text-muted">{p.id}</span>
+                        <p className="mt-0.5 font-bold leading-snug text-ink break-words">{p.title}</p>
+                      </div>
+                      <Status tone="wait">Chờ duyệt</Status>
+                    </div>
+                    <p className="text-xs text-muted">
+                      {p.author} · {p.date}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              <div className="hidden md:block">
               <Table head={["Mã", "Tiêu đề", "Tác giả", "Ngày", "Trạng thái"]}>
                 {pagedPendingOffline.map((p) => (
                   <tr key={p.id}>
@@ -605,6 +750,7 @@ export default function BlogEditor() {
                   </tr>
                 ))}
               </Table>
+              </div>
               <PaginationBar
                 page={pendingPage}
                 pageSize={pageSize}
@@ -618,6 +764,24 @@ export default function BlogEditor() {
           <section>
             <h2 className="text-base font-bold text-ink">Đã xử lý ({restOffline.length})</h2>
             <div className="mt-3">
+              <ul className="flex flex-col gap-3 md:hidden">
+                {pagedRestOffline.map((p) => (
+                  <li key={p.id} className="card flex flex-col gap-2 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-xs font-semibold tabular-nums text-muted">{p.id}</span>
+                        <p className="mt-0.5 font-bold leading-snug text-ink break-words">{p.title}</p>
+                      </div>
+                      <Status tone={p.status === "published" ? "ok" : "off"}>
+                        {p.status === "published" ? "Đã xuất bản" : "Bị từ chối"}
+                      </Status>
+                    </div>
+                    <p className="text-xs text-muted">{p.date}</p>
+                    {p.note && <p className="text-xs text-body">{p.note}</p>}
+                  </li>
+                ))}
+              </ul>
+              <div className="hidden md:block">
               <Table head={["Mã", "Tiêu đề", "Ngày", "Kết quả", "Lý do"]}>
                 {pagedRestOffline.map((p) => (
                   <tr key={p.id}>
@@ -633,6 +797,7 @@ export default function BlogEditor() {
                   </tr>
                 ))}
               </Table>
+              </div>
               <PaginationBar
                 page={restPage}
                 pageSize={pageSize}

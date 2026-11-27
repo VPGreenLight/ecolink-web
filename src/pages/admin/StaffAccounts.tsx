@@ -457,7 +457,7 @@ export default function StaffAccounts() {
             </Field>
             <Field label="Nhân viên">
               <select
-                className="input h-10 w-56 text-xs"
+                className="input h-10 w-full text-xs sm:w-56"
                 value={attStaffId}
                 onChange={(e) => {
                   setAttStaffId(e.target.value)
@@ -477,7 +477,7 @@ export default function StaffAccounts() {
             <Field label="Tìm từ khóa">
               <input
                 type="search"
-                className="input h-10 w-56 text-xs"
+                className="input h-10 w-full text-xs sm:w-56"
                 value={attSearch}
                 onChange={(e) => {
                   setAttSearch(e.target.value)
@@ -520,6 +520,44 @@ export default function StaffAccounts() {
             }
             return (
               <>
+                <ul className="flex flex-col gap-3 md:hidden">
+                  {displayRows.map((r) => (
+                    <li key={r.attendanceId} className="card flex flex-col gap-2 p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-bold text-ink">{r.staffName}</p>
+                          <p className="text-xs text-muted">
+                            {r.staffCode} · {r.department || "Vận hành"}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-xs font-semibold tabular-nums text-ink">
+                          {r.workDate}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-body tabular-nums">
+                        <span>
+                          {new Date(r.checkInAt).toLocaleTimeString("vi-VN", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}{" "}
+                          →{" "}
+                          {r.checkOutAt
+                            ? new Date(r.checkOutAt).toLocaleTimeString("vi-VN", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "Đang trực"}
+                          {r.workedMinutes != null ? ` (${r.workedMinutes} phút)` : ""}
+                        </span>
+                        <span className="font-semibold text-brand-deep">
+                          {r.streakDay} ngày · +{r.workPointsEarned}
+                        </span>
+                      </div>
+                      {r.shiftNote && <p className="text-xs text-muted">{r.shiftNote}</p>}
+                    </li>
+                  ))}
+                </ul>
+                <div className="hidden md:block">
                 <Table
                   head={[
                     "Ngày trực",
@@ -566,6 +604,7 @@ export default function StaffAccounts() {
                     </tr>
                   ))}
                 </Table>
+                </div>
                 <PaginationBar
                   page={attPage}
                   pageSize={FIXED_PAGE_SIZE}
@@ -685,6 +724,51 @@ export default function StaffAccounts() {
           <TableSkeleton rows={5} />
         ) : (
         <>
+        {pagedStaff.length === 0 ? (
+          <p className="card px-4 py-6 text-center text-xs text-muted md:hidden">
+            Không có tài khoản nhân viên nào khớp bộ lọc.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-3 md:hidden">
+            {pagedStaff.map((s) => (
+              <li key={s.backendUserId ?? s.id} className="card flex flex-col gap-2.5 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-ink break-words">{s.name}</p>
+                    <p className="text-xs text-muted break-all">
+                      {s.id} · {s.email}
+                    </p>
+                  </div>
+                  <Status tone={s.status === "active" ? "ok" : "off"}>
+                    {s.status === "active" ? "Hoạt động" : "Đã khoá"}
+                  </Status>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+                  <span>{s.department}</span>
+                  <span>{s.position}</span>
+                  <span className="tabular-nums">{s.perms.length} quyền</span>
+                </div>
+                <div className="flex gap-4 border-t border-line-soft pt-2.5">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(s)}
+                    className="inline-flex min-h-9 items-center text-sm font-semibold text-brand hover:underline"
+                  >
+                    Sửa
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openLockModal(s)}
+                    className="inline-flex min-h-9 items-center text-sm font-semibold text-warn hover:underline"
+                  >
+                    {s.status === "active" ? "Khoá" : "Mở khoá"}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="hidden md:block">
         <Table head={["Mã NV", "Họ tên", "Email", "Phòng ban", "Số quyền", "Trạng thái", ""]}>
           {pagedStaff.length === 0 ? (
             <tr>
@@ -730,6 +814,7 @@ export default function StaffAccounts() {
             ))
           )}
         </Table>
+        </div>
         <PaginationBar
           page={page}
           pageSize={pageSize}

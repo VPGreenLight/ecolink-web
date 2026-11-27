@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
+import { X } from "lucide-react"
 import PaginationBar, { extractPagedMeta, FIXED_PAGE_SIZE } from "@/components/PaginationBar"
-import { Empty, Field, PageHead, Stat, Status, Table, Td } from "@/components/admin/ui"
+import { Empty, Field, PageHead, Stat, StatRow, Status, Table, Td } from "@/components/admin/ui"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { MY_HANDOVERS } from "@/data/handover"
 import { ACCOUNTS, STATS, fmtInt, fmtVnd } from "@/data/ops"
@@ -320,12 +321,12 @@ export default function Reports() {
         body="Trích xuất dữ liệu vận hành ra chuẩn CSV (UTF-8 BOM) hoặc Excel (.xlsx) có che dấu thông tin định danh cá nhân (PII), đồng thời tra cứu sổ cái kiểm toán bất biến."
       />
 
-      <div className="grid gap-4 sm:grid-cols-4">
+      <StatRow>
         <Stat label="Tài khoản hệ thống" value={fmtInt(kpi.users)} />
         <Stat label="Giao dịch 30 ngày" value={fmtInt(kpi.handovers30d)} />
         <Stat label="Giá trị 30 ngày" value={fmtVnd(kpi.gross30d)} />
         <Stat label="Doanh thu & phí" value={fmtVnd(kpi.fee30d)} />
-      </div>
+      </StatRow>
 
       <div className="flex flex-wrap gap-2 border-b border-line pb-3" role="tablist">
         <button
@@ -333,7 +334,7 @@ export default function Reports() {
           role="tab"
           aria-selected={tab === "export"}
           onClick={() => setTab("export")}
-          className={`h-10 rounded-lg px-4 text-[13px] font-semibold transition-colors ${
+          className={`min-h-10 rounded-xl px-4 text-xs font-semibold transition-colors sm:text-[13px] ${
             tab === "export"
               ? "bg-brand text-white"
               : "border border-line bg-white text-body hover:bg-surface-2"
@@ -346,7 +347,7 @@ export default function Reports() {
           role="tab"
           aria-selected={tab === "audit"}
           onClick={() => setTab("audit")}
-          className={`h-10 rounded-lg px-4 text-[13px] font-semibold transition-colors ${
+          className={`min-h-10 rounded-xl px-4 text-xs font-semibold transition-colors sm:text-[13px] ${
             tab === "audit"
               ? "bg-brand text-white"
               : "border border-line bg-white text-body hover:bg-surface-2"
@@ -358,22 +359,22 @@ export default function Reports() {
 
       {tab === "export" ? (
         <>
-          <section className="card flex flex-col gap-4 p-5 md:p-6">
-            <div className="flex flex-wrap items-end gap-5">
+          <section className="card flex flex-col gap-4 p-4 sm:p-5 md:p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end lg:gap-5">
               <Field
                 label="Khoảng thời gian trích xuất"
                 hint="Áp dụng lọc dữ liệu trên máy chủ và ghi dấu vào Nhật ký kiểm toán."
               >
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                   <input
-                    className="input w-44"
+                    className="input h-11 w-full sm:w-44"
                     type="date"
                     value={fromDate}
                     onChange={(e) => setFromDate(e.target.value)}
                     aria-label="Từ ngày"
                   />
                   <input
-                    className="input w-44"
+                    className="input h-11 w-full sm:w-44"
                     type="date"
                     value={toDate}
                     onChange={(e) => setToDate(e.target.value)}
@@ -390,7 +391,7 @@ export default function Reports() {
                       type="button"
                       onClick={() => setFormat(fmt)}
                       aria-pressed={format === fmt}
-                      className={`h-12 rounded-lg border px-4 text-[13px] font-semibold uppercase transition-colors ${
+                      className={`h-11 rounded-xl border px-4 text-[13px] font-semibold uppercase transition-colors ${
                         format === fmt
                           ? "border-brand bg-brand text-white"
                           : "border-line bg-surface text-body hover:bg-surface-2"
@@ -411,7 +412,7 @@ export default function Reports() {
                   return (
                     <li
                       key={key}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-3.5"
+                      className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-ink">{s.label}</p>
@@ -421,7 +422,7 @@ export default function Reports() {
                         type="button"
                         disabled={loading}
                         onClick={() => handleExport(key)}
-                        className="btn-outline h-10 shrink-0 px-4 text-[13px]"
+                        className="btn-outline h-10 w-full shrink-0 px-4 text-[13px] sm:w-auto"
                       >
                         {loading ? "Đang xuất..." : `Tải ${format.toUpperCase()}`}
                       </button>
@@ -465,41 +466,76 @@ export default function Reports() {
               {ledgerPreview.length === 0 ? (
                 <Empty>Chưa có bản ghi đối soát dòng tiền nào từ Backend.</Empty>
               ) : (
-                <Table head={["Mã đối soát", "Người thanh toán", "Gói dịch vụ", "Số tiền nhận", "Trạng thái"]}>
-                  {ledgerPreview.map((r, i) => (
-                    <tr key={r.referenceCode || String(i)}>
-                      <Td className="font-mono text-xs font-semibold whitespace-nowrap text-ink">
-                        {r.referenceCode}
-                      </Td>
-                      <Td>{r.payerName || "—"}</Td>
-                      <Td className="whitespace-nowrap">{r.packageName || r.packageCode}</Td>
-                      <Td className="tabular-nums whitespace-nowrap">{fmtVnd(r.paidAmountVnd)}</Td>
-                      <Td className="whitespace-nowrap">
-                        <Status
-                          tone={
-                            r.reconciliationStatus === "Matched"
-                              ? "ok"
-                              : r.reconciliationStatus === "Anomaly"
-                                ? "off"
-                                : "wait"
-                          }
-                        >
-                          {r.reconciliationStatus}
-                        </Status>
-                      </Td>
-                    </tr>
-                  ))}
-                </Table>
+                <>
+                  <ul className="flex flex-col gap-3 md:hidden">
+                    {ledgerPreview.map((r, i) => (
+                      <li key={r.referenceCode || String(i)} className="card flex flex-col gap-2 p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-mono text-xs font-bold text-ink">{r.referenceCode}</p>
+                            <p className="mt-0.5 font-semibold text-ink break-words">
+                              {r.payerName || "—"}
+                            </p>
+                          </div>
+                          <Status
+                            tone={
+                              r.reconciliationStatus === "Matched"
+                                ? "ok"
+                                : r.reconciliationStatus === "Anomaly"
+                                  ? "off"
+                                  : "wait"
+                            }
+                          >
+                            {r.reconciliationStatus}
+                          </Status>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-xs text-muted">
+                          <span>{r.packageName || r.packageCode}</span>
+                          <span className="font-bold tabular-nums text-brand-deep">
+                            {fmtVnd(r.paidAmountVnd)}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="hidden md:block">
+                    <Table head={["Mã đối soát", "Người thanh toán", "Gói dịch vụ", "Số tiền nhận", "Trạng thái"]}>
+                      {ledgerPreview.map((r, i) => (
+                        <tr key={r.referenceCode || String(i)}>
+                          <Td className="font-mono text-xs font-semibold whitespace-nowrap text-ink">
+                            {r.referenceCode}
+                          </Td>
+                          <Td>{r.payerName || "—"}</Td>
+                          <Td className="whitespace-nowrap">{r.packageName || r.packageCode}</Td>
+                          <Td className="tabular-nums whitespace-nowrap">{fmtVnd(r.paidAmountVnd)}</Td>
+                          <Td className="whitespace-nowrap">
+                            <Status
+                              tone={
+                                r.reconciliationStatus === "Matched"
+                                  ? "ok"
+                                  : r.reconciliationStatus === "Anomaly"
+                                    ? "off"
+                                    : "wait"
+                              }
+                            >
+                              {r.reconciliationStatus}
+                            </Status>
+                          </Td>
+                        </tr>
+                      ))}
+                    </Table>
+                  </div>
+                </>
               )}
             </div>
           </section>
         </>
       ) : (
         <section className="flex flex-col gap-5">
-          <div className="card flex flex-wrap items-end gap-3 p-4">
+          <div className="card grid gap-3 p-4 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
             <Field label="Tìm từ khoá">
               <input
-                className="input w-64"
+                className="input h-11 w-full lg:w-64"
                 type="search"
                 value={keyword}
                 onChange={(e) => {
@@ -511,7 +547,7 @@ export default function Reports() {
             </Field>
             <Field label="Loại hành động">
               <select
-                className="input w-60"
+                className="input h-11 w-full lg:w-60"
                 value={actionFilter}
                 onChange={(e) => {
                   setActionFilter(e.target.value)
@@ -572,7 +608,7 @@ export default function Reports() {
             </Field>
             <Field label="Từ ngày">
               <input
-                className="input w-40"
+                className="input h-11 w-full lg:w-40"
                 type="date"
                 value={auditFromDate}
                 onChange={(e) => {
@@ -584,7 +620,7 @@ export default function Reports() {
             </Field>
             <Field label="Đến ngày">
               <input
-                className="input w-40"
+                className="input h-11 w-full lg:w-40"
                 type="date"
                 value={auditToDate}
                 onChange={(e) => {
@@ -594,33 +630,35 @@ export default function Reports() {
                 aria-label="Audit Đến ngày"
               />
             </Field>
-            <button
-              type="button"
-              onClick={() => {
-                setPage(1)
-                loadAuditLogs(1, keyword, auditFromDate, auditToDate, actionFilter)
-              }}
-              className="btn-outline h-12 px-4 text-[13px]"
-            >
-              Tra cứu
-            </button>
-            {(keyword || actionFilter || auditFromDate || auditToDate) && (
+            <div className="flex items-center gap-2 sm:col-span-2 lg:col-span-1">
               <button
                 type="button"
                 onClick={() => {
-                  setKeyword("")
-                  setActionFilter("")
-                  setAuditFromDate("")
-                  setAuditToDate("")
                   setPage(1)
-                  loadAuditLogs(1, "", "", "", "")
+                  loadAuditLogs(1, keyword, auditFromDate, auditToDate, actionFilter)
                 }}
-                className="btn-ghost h-12 px-3 text-[13px]"
+                className="btn-outline h-11 px-4 text-[13px]"
               >
-                Đặt lại
+                Tra cứu
               </button>
-            )}
-            <span className="ml-auto text-[12px] text-muted">
+              {(keyword || actionFilter || auditFromDate || auditToDate) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setKeyword("")
+                    setActionFilter("")
+                    setAuditFromDate("")
+                    setAuditToDate("")
+                    setPage(1)
+                    loadAuditLogs(1, "", "", "", "")
+                  }}
+                  className="btn-ghost h-11 px-3 text-[13px]"
+                >
+                  Đặt lại
+                </button>
+              )}
+            </div>
+            <span className="text-[12px] text-muted sm:col-span-2 lg:ml-auto">
               Tổng cộng <b className="tabular-nums text-ink">{auditTotal}</b> bản ghi bất biến (BR-ADM-05)
             </span>
           </div>
@@ -637,81 +675,130 @@ export default function Reports() {
           {auditLogs.length === 0 ? (
             <Empty>Chưa có bản ghi kiểm toán nào khớp bộ lọc hiện tại.</Empty>
           ) : (
-            <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
-              <Table head={["Thời gian", "Tác nhân", "Hành động", "Đối tượng", "Lý do", ""]}>
+            <>
+              <ul className="flex flex-col gap-3 md:hidden">
                 {auditLogs.map((log) => (
-                  <tr key={log.id}>
-                    <Td className="tabular-nums whitespace-nowrap">
-                      {new Date(log.createdAt).toLocaleString("vi-VN")}
-                    </Td>
-                    <Td>
-                      <span className="font-semibold text-ink">{log.actorEmail ?? "System"}</span>
-                      {log.actorRole && (
-                        <span className="ml-1.5 text-[11px] text-muted">({log.actorRole})</span>
-                      )}
-                    </Td>
-                    <Td>
+                  <li key={log.id} className="card flex flex-col gap-2.5 p-4">
+                    <div className="flex items-start justify-between gap-2">
                       <Status tone="wait">{log.action}</Status>
-                    </Td>
-                    <Td className="whitespace-nowrap">
-                      {log.entityType}
-                      {log.entityId ? ` · ${log.entityId.slice(0, 10)}` : ""}
-                    </Td>
-                    <Td className="max-w-[220px] truncate">{log.reason ?? "—"}</Td>
-                    <Td>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedLog(log)}
-                        className="text-[12px] font-semibold text-brand hover:underline"
-                      >
-                        Đối chiếu JSON
-                      </button>
-                    </Td>
-                  </tr>
+                      <span className="text-[11px] tabular-nums text-muted">
+                        {new Date(log.createdAt).toLocaleString("vi-VN")}
+                      </span>
+                    </div>
+                    <div className="min-w-0 text-xs">
+                      <p className="font-semibold text-ink break-all">
+                        {log.actorEmail ?? "System"}
+                        {log.actorRole ? ` (${log.actorRole})` : ""}
+                      </p>
+                      <p className="mt-0.5 text-muted">
+                        {log.entityType}
+                        {log.entityId ? ` · ${log.entityId.slice(0, 10)}` : ""}
+                      </p>
+                      {log.reason && <p className="mt-1 text-body break-words">{log.reason}</p>}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLog(log)}
+                      className="btn-outline min-h-9 w-full justify-center text-xs font-semibold"
+                    >
+                      Đối chiếu JSON
+                    </button>
+                  </li>
                 ))}
-              </Table>
+              </ul>
 
-              <aside className="card flex flex-col gap-3 p-5">
-                {!selectedLog ? (
-                  <p className="text-sm text-muted">
-                    Chọn &ldquo;Đối chiếu JSON&rdquo; ở một dòng nhật ký để xem trạng thái trước/sau (`oldValues` / `newValues`) và địa chỉ IP thực thi. Bản ghi kiểm toán bị khoá sửa/xoá ở tầng CSDL.
+              <div className="hidden md:block">
+                <Table head={["Thời gian", "Tác nhân", "Hành động", "Đối tượng", "Lý do", ""]}>
+                  {auditLogs.map((log) => (
+                    <tr key={log.id} className="transition-colors hover:bg-surface-2/40">
+                      <Td className="tabular-nums whitespace-nowrap">
+                        {new Date(log.createdAt).toLocaleString("vi-VN")}
+                      </Td>
+                      <Td>
+                        <span className="font-semibold text-ink">{log.actorEmail ?? "System"}</span>
+                        {log.actorRole && (
+                          <span className="ml-1.5 text-[11px] text-muted">({log.actorRole})</span>
+                        )}
+                      </Td>
+                      <Td>
+                        <Status tone="wait">{log.action}</Status>
+                      </Td>
+                      <Td className="whitespace-nowrap">
+                        {log.entityType}
+                        {log.entityId ? ` · ${log.entityId.slice(0, 10)}` : ""}
+                      </Td>
+                      <Td className="max-w-[240px] truncate">{log.reason ?? "—"}</Td>
+                      <Td>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLog(log)}
+                          className="text-[12px] font-semibold whitespace-nowrap text-brand hover:underline"
+                        >
+                          Đối chiếu JSON
+                        </button>
+                      </Td>
+                    </tr>
+                  ))}
+                </Table>
+              </div>
+            </>
+          )}
+
+          {selectedLog && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Chi tiết bản ghi ${selectedLog.action}`}
+              onClick={() => setSelectedLog(null)}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="card flex max-h-[90dvh] w-full max-w-xl flex-col gap-3.5 overflow-y-auto bg-white p-5 shadow-2xl sm:p-6"
+              >
+                <div className="flex items-start justify-between gap-3 border-b border-line-soft pb-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold tracking-[0.1em] text-brand uppercase">
+                      CHI TIẾT BẢN GHI BẤT BIẾN
+                    </p>
+                    <p className="mt-1 text-base font-bold text-ink break-all">{selectedLog.action}</p>
+                    <p className="text-[12px] text-muted">
+                      {new Date(selectedLog.createdAt).toLocaleString("vi-VN")} · IP:{" "}
+                      {selectedLog.ipAddress ?? "N/A"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLog(null)}
+                    aria-label="Đóng chi tiết JSON"
+                    className="grid size-9 shrink-0 place-items-center rounded-lg border border-line text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+
+                {selectedLog.reason && (
+                  <p className="rounded-lg bg-surface-2 px-3 py-2 text-[12px] text-body break-words">
+                    <b className="text-ink">Lý do:</b> {selectedLog.reason}
                   </p>
-                ) : (
-                  <>
-                    <div>
-                      <p className="text-[11px] font-bold tracking-[0.1em] text-brand uppercase">
-                        CHI TIẾT BẢN GHI BẤT BIẾN
-                      </p>
-                      <p className="mt-1 text-base font-bold text-ink">{selectedLog.action}</p>
-                      <p className="text-[12px] text-muted">
-                        {new Date(selectedLog.createdAt).toLocaleString("vi-VN")} · IP:{" "}
-                        {selectedLog.ipAddress ?? "N/A"}
-                      </p>
-                    </div>
-                    {selectedLog.reason && (
-                      <p className="rounded-md bg-surface-2 px-3 py-2 text-[12px] text-body">
-                        <b className="text-ink">Lý do:</b> {selectedLog.reason}
-                      </p>
-                    )}
-                    <div>
-                      <p className="text-[11px] font-bold text-muted uppercase">
-                        Giá trị trước (old_values)
-                      </p>
-                      <pre className="mt-1 max-h-36 overflow-auto rounded-md border border-line-soft bg-surface p-2.5 text-[11px] text-body">
-                        {selectedLog.oldValues || "null"}
-                      </pre>
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-bold text-muted uppercase">
-                        Giá trị mới (new_values)
-                      </p>
-                      <pre className="mt-1 max-h-36 overflow-auto rounded-md border border-line-soft bg-surface p-2.5 text-[11px] text-body">
-                        {selectedLog.newValues || "null"}
-                      </pre>
-                    </div>
-                  </>
                 )}
-              </aside>
+                <div>
+                  <p className="text-[11px] font-bold text-muted uppercase">
+                    Giá trị trước (old_values)
+                  </p>
+                  <pre className="mt-1 max-h-44 overflow-auto rounded-lg border border-line-soft bg-surface p-3 text-[11px] text-body">
+                    {selectedLog.oldValues || "null"}
+                  </pre>
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-muted uppercase">
+                    Giá trị mới (new_values)
+                  </p>
+                  <pre className="mt-1 max-h-44 overflow-auto rounded-lg border border-line-soft bg-surface p-3 text-[11px] text-body">
+                    {selectedLog.newValues || "null"}
+                  </pre>
+                </div>
+              </div>
             </div>
           )}
 

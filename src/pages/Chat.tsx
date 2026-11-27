@@ -1427,15 +1427,31 @@ export default function Chat() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[1360px] flex-col px-0 sm:px-5 sm:py-3 lg:px-6 lg:py-4">
-      {/* Khung Messenger tối ưu toàn khung nhìn (không Footer): Mobile khớp 100% giữa Navbar & MobileNav, PC thoáng rộng */}
-      <div className="relative flex h-[calc(100dvh-138px)] min-h-[460px] overflow-hidden border-y border-line bg-surface shadow-[0_18px_46px_-18px_rgba(15,31,21,0.12)] sm:h-[calc(100dvh-168px)] sm:rounded-[18px] sm:border lg:h-[calc(100dvh-112px)] lg:min-h-[580px]">
+    <div
+      className={
+        isRecycler
+          ? "flex w-full flex-col"
+          : "mx-auto flex w-full max-w-[1360px] flex-col px-0 sm:px-5 sm:py-3 lg:px-6 lg:py-4"
+      }
+    >
+      {/* Khung Messenger chiếm trọn vùng làm việc trên cả Web và Mobile */}
+      <div
+        className={`relative flex min-h-[460px] overflow-hidden bg-surface ${
+          isRecycler
+            ? "h-[calc(100dvh-56px)] w-full border-0"
+            : "h-[calc(100dvh-138px)] border-y border-line shadow-[0_18px_46px_-18px_rgba(15,31,21,0.12)] sm:h-[calc(100dvh-168px)] sm:rounded-[18px] sm:border lg:h-[calc(100dvh-112px)] lg:min-h-[580px]"
+        }`}
+      >
           {/* CỘT TRÁI: DANH SÁCH ĐOẠN CHAT */}
           <aside
             aria-label="Danh sách cuộc trò chuyện"
             className={`${
               mobileView === "list" ? "flex" : "hidden md:flex"
-            } w-full md:w-[276px] lg:w-[296px] xl:w-[324px] shrink-0 flex-col border-line bg-surface md:border-r`}
+            } w-full shrink-0 flex-col border-line bg-surface md:border-r ${
+              isRecycler
+                ? "md:w-[270px] lg:w-[290px] xl:w-[320px]"
+                : "md:w-[276px] lg:w-[296px] xl:w-[324px]"
+            }`}
           >
             {/* Header Sidebar */}
             <div className="flex items-center justify-between gap-2 border-b border-line-soft px-4 py-3.5">
@@ -1494,7 +1510,11 @@ export default function Chat() {
                   type="search"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm cơ sở, mã đơn BH-..."
+                  placeholder={
+                    isRecycler
+                      ? "Tìm người dân, địa chỉ, mã BH-..."
+                      : "Tìm cơ sở, mã đơn BH-..."
+                  }
                   aria-label="Tìm cuộc trò chuyện"
                   className="min-h-11 w-full rounded-full border border-line bg-surface-2/80 pl-10 pr-9 text-base text-ink placeholder:text-muted focus:border-brand focus:bg-white focus:outline-none sm:text-[15px]"
                 />
@@ -1811,6 +1831,53 @@ export default function Chat() {
             </div>
           </header>
 
+          {/* Dải tóm tắt đơn & thao tác nhanh cho Recycler trên cả Mobile và Web */}
+          {isRecycler && currentOrderId && !isInquiryOrder && thread && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-soft bg-surface-2/65 px-3 py-2 text-xs sm:px-4">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-body">
+                <span className="font-semibold text-ink">
+                  {categoryLabel(thread.categoryCode)} · {activeWeight} kg
+                </span>
+                <span className="font-bold text-brand-deep tabular-nums">
+                  {activePrice.toLocaleString("vi-VN")} đ/kg (~
+                  {estimatedTotal.toLocaleString("vi-VN")} đ)
+                </span>
+                <span className="hidden text-muted sm:inline">
+                  · {thread.confirmedTimeSlot || thread.proposedTimeSlot || "09:00 - 11:00"}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                {thread.orderStatus === "Pending" && !thread.isProposalLocked && (
+                  <button
+                    type="button"
+                    onClick={handleAcceptInitialTerms}
+                    className="btn-primary inline-flex min-h-8 items-center rounded-full px-3 text-xs font-semibold sm:hidden"
+                  >
+                    Chốt lịch
+                  </button>
+                )}
+                {(thread.isProposalLocked || statusLower === "completed") &&
+                  (nextStepAction.to ? (
+                    <Link
+                      to={nextStepAction.to}
+                      className="inline-flex min-h-8 items-center rounded-full border border-brand/35 bg-white px-3 text-xs font-semibold text-brand-deep transition-colors hover:bg-brand/10 lg:hidden"
+                    >
+                      {nextStepAction.label}
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={nextStepAction.action}
+                      className="inline-flex min-h-8 items-center rounded-full border border-brand/35 bg-white px-3 text-xs font-semibold text-brand-deep transition-colors hover:bg-brand/10 lg:hidden"
+                    >
+                      {nextStepAction.label}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
+
           {/* Luồng tin nhắn */}
           <div
             ref={messagesContainerRef}
@@ -2061,11 +2128,11 @@ export default function Chat() {
                                   {isPending && (
                                     <div className="border-t border-line/60 pt-2">
                                       {!isMe ? (
-                                        <div className="flex flex-wrap items-center gap-2">
+                                        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
                                           <button
                                             type="button"
                                             onClick={() => handleRespondProposal(m.id, true)}
-                                            className="btn-primary min-h-10 flex-1 px-3 text-[13px] font-semibold sm:min-h-9"
+                                            className="btn-primary col-span-2 min-h-10 px-3 text-[13px] font-semibold sm:min-h-9 sm:flex-1"
                                           >
                                             Chấp nhận
                                           </button>
@@ -2244,12 +2311,15 @@ export default function Chat() {
               <button
                 type="button"
                 onClick={openProposalModal}
-                className="inline-flex min-h-11 sm:min-h-10 shrink-0 items-center gap-1.5 rounded-full border border-brand/30 bg-brand/8 px-3 text-[13px] font-semibold text-brand transition-colors hover:bg-brand/15"
+                className="inline-flex min-h-11 sm:min-h-10 shrink-0 items-center gap-1.5 rounded-full border border-brand/30 bg-brand/8 px-2.5 sm:px-3 text-xs sm:text-[13px] font-semibold text-brand transition-colors hover:bg-brand/15"
                 title="Lên đơn hoặc gửi đề xuất điều chỉnh giá, khối lượng và khung giờ"
               >
                 <ClipboardList className="size-4 shrink-0" />
-                <span className="hidden sm:inline">
-                  {currentOrderId && !isInquiryOrder ? "Đề xuất giá" : "Lên đơn & Đề xuất"}
+                <span>
+                  {currentOrderId && !isInquiryOrder ? "Đề xuất" : "Lên đơn"}
+                  <span className="hidden sm:inline">
+                    {currentOrderId && !isInquiryOrder ? " giá" : " & Đề xuất"}
+                  </span>
                 </span>
               </button>
             )}
@@ -2297,7 +2367,7 @@ export default function Chat() {
             />
             <aside
               aria-label="Thông tin đơn và tệp đính kèm"
-              className="absolute inset-y-0 right-0 z-30 flex w-full max-w-[310px] flex-col border-l border-line bg-surface shadow-xl xl:static xl:z-auto xl:w-[275px] xl:shrink-0 xl:shadow-none"
+              className="absolute inset-y-0 right-0 z-30 flex w-full max-w-[310px] flex-col border-l border-line bg-surface shadow-xl xl:static xl:z-auto xl:w-[300px] xl:shrink-0 xl:shadow-none"
             >
               <div className="flex items-center justify-between border-b border-line-soft px-4 py-3">
                 <h2 className="text-sm font-bold text-ink">Chi tiết giao dịch</h2>

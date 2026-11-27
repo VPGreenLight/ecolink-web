@@ -2,7 +2,6 @@ import { Suspense, useEffect } from "react"
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useNavigate } from "react-router-dom"
 import AuthLayout from "@/components/AuthLayout"
 import Layout from "@/components/Layout"
-import Portal from "@/components/Portal"
 import AdminShell from "@/components/admin/Shell"
 import RequireRole from "@/components/RequireRole"
 import { ROLE_HOME, signOut, syncSessionState, useSession, type Role } from "@/lib/session"
@@ -19,7 +18,7 @@ const {
   Receipt, Payout, Transactions, Gamification,
   RecyclerHome, RecyclerFacility, RecyclerReviews, RecyclerPackages, Requests, Catalog, RecyclerReceipt,
   StaffHome, AiReview, Dataset, Applications, Complaints, Accounts, BlogEditor,
-  EcoFacts, Gifts, StaffCheckIn,
+  EcoFacts, Gifts,
   AdminHome, Reports, StaffAccounts, Permissions, BlogReview, Categories, Policy,
   GamificationConfig, LeaderboardConfig, Fees, Reconciliation, AccountProfile,
   AccountPassword,
@@ -36,6 +35,14 @@ const {
 function StaffWorkspaceShell() {
   const session = useSession()
   return <AdminShell role={session?.role === "admin" ? "admin" : "staff"} />
+}
+
+function ChatWorkspaceLayout() {
+  const session = useSession()
+  if (session?.role === "recycler") {
+    return <AdminShell role="recycler" />
+  }
+  return <Layout />
 }
 
 function GlobalAuthListener() {
@@ -106,17 +113,6 @@ export function AppRoutes() {
             <Route path="password" element={<Password />} />
           </Route>
 
-          {/* U-09 / R-05 chatbox: trang trò chuyện độc lập cho User & Recycler (không kèm Sidebar Portal) */}
-          <Route
-            element={
-              <RequireRole roles={["user", "recycler"]}>
-                <Outlet />
-              </RequireRole>
-            }
-          >
-            <Route path="chat" element={<Chat />} />
-          </Route>
-
           {/* ---- phân hệ USER ---- */}
           <Route element={<RequireRole roles={["user"]}><Outlet /></RequireRole>}>
             <Route path="user/handover" element={<Navigate to="/chat?newHandover=1" replace />} />
@@ -127,23 +123,41 @@ export function AppRoutes() {
             <Route path="user/gamification" element={<Gamification />} />
           </Route>
 
-          {/* ---- phân hệ RECYCLER ---- */}
-          <Route element={<RequireRole roles={["recycler"]}><Outlet /></RequireRole>}>
-            <Route path="recycler/packages" element={<RecyclerPackages />} />
-          </Route>
-          <Route element={<RequireRole roles={["recycler"]}><Portal role="recycler" /></RequireRole>}>
-            <Route path="recycler">
-              <Route index element={<RecyclerHome />} />
-              <Route path="requests" element={<Requests />} />
-              <Route path="catalog" element={<Catalog />} />
-              <Route path="receipt" element={<RecyclerReceipt />} />
-              <Route path="facility" element={<RecyclerFacility />} />
-              <Route path="reviews" element={<RecyclerReviews />} />
-            </Route>
-          </Route>
-
           <Route path="*" element={<NotFound />} />
         </Route>
+
+          {/* U-09 / R-05 chatbox:
+              - User dùng Layout công khai;
+              - Recycler giữ nguyên AdminShell (nút menu mobile + sidebar dashboard). */}
+          <Route
+            element={
+              <RequireRole roles={["user", "recycler"]}>
+                <ChatWorkspaceLayout />
+              </RequireRole>
+            }
+          >
+            <Route path="chat" element={<Chat />} />
+          </Route>
+
+          {/* ---- phân hệ RECYCLER ----
+              Dùng chung khung AdminShell với staff/admin để có thanh đầu trang 56px,
+              sidebar sticky desktop và slide-over drawer trên mobile. */}
+          <Route
+            path="/recycler"
+            element={
+              <RequireRole roles={["recycler"]}>
+                <AdminShell role="recycler" />
+              </RequireRole>
+            }
+          >
+            <Route index element={<RecyclerHome />} />
+            <Route path="requests" element={<Requests />} />
+            <Route path="catalog" element={<Catalog />} />
+            <Route path="receipt" element={<RecyclerReceipt />} />
+            <Route path="facility" element={<RecyclerFacility />} />
+            <Route path="reviews" element={<RecyclerReviews />} />
+            <Route path="packages" element={<RecyclerPackages />} />
+          </Route>
 
           {/* ---- phân hệ STAFF ----
               Nằm NGOÀI <Layout> như admin: khu vực làm việc nội bộ không mượn
@@ -166,7 +180,6 @@ export function AppRoutes() {
             <Route path="blog" element={<BlogEditor />} />
             <Route path="ecofacts" element={<EcoFacts />} />
             <Route path="gifts" element={<Gifts />} />
-            <Route path="checkin" element={<StaffCheckIn />} />
             <Route path="account" element={<AccountProfile />} />
             <Route path="account/password" element={<AccountPassword />} />
           </Route>

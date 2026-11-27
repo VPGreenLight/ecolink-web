@@ -1,19 +1,30 @@
-import { useState } from "react"
-import { NavLink, Outlet, useNavigate } from "react-router-dom"
+import { useEffect, useState } from "react"
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
+import { X } from "lucide-react"
 import { PORTAL_NAV } from "@/data/portal"
 import { ROLE_LABEL, signOut, useSession, type Role } from "@/lib/session"
 import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
 
-/** Khung chung cho 4 vai trò sau đăng nhập: sidebar điều hướng + tiêu đề.
- *
- *  Sidebar ẩn dưới `lg` thay vì có drawer: các màn hình sau đăng nhập đều dùng
- *  bảng và biểu mẫu, người dùng chủ yếu ở desktop. Ở mobile hiện thanh cuộn
- *  ngang ở đầu trang — 4 mục trở xuống vẫn bấm được. */
+/** Khung chung cho 4 vai trò sau đăng nhập: sidebar điều hướng + drawer mobile. */
 export default function Portal({ role }: { role: Role }) {
   const session = useSession()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const [open, setOpen] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
+
+  useEffect(() => {
+    setOpen(false)
+  }, [pathname])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [open])
 
   const logout = () => {
     setConfirmLogout(true)
@@ -30,32 +41,102 @@ export default function Portal({ role }: { role: Role }) {
   return (
     <div className="flex min-h-[calc(100dvh-70px)] flex-col md:min-h-[calc(100dvh-76px)]">
       <div
-        className={`border-b border-line bg-white lg:hidden ${
-          isRecycler ? "sticky top-[70px] z-20 bg-white/95 backdrop-blur-sm md:top-[76px]" : ""
+        className={`h-14 border-b border-line-soft bg-white/95 backdrop-blur-xl lg:hidden ${
+          isRecycler ? "sticky top-[70px] z-30 md:top-[76px]" : ""
         }`}
       >
-        <div className="page flex items-center gap-3 py-3">
+        <div className="flex h-full items-center gap-2.5 px-3 sm:gap-3 sm:px-4">
           <button
             type="button"
-            onClick={() => setOpen((v) => !v)}
+            onClick={() => setOpen(true)}
             aria-expanded={open}
             aria-controls="portal-nav"
-            className="btn-ghost h-10 shrink-0 px-3 text-[13px]"
+            className="grid size-10 shrink-0 place-items-center rounded-lg text-ink transition-colors hover:bg-surface-2"
           >
-            {open ? "Đóng" : "Menu"}
+            <svg
+              viewBox="0 0 24 24"
+              className="size-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
+            <span className="sr-only">Mở menu</span>
           </button>
-          <p className="min-w-0 truncate text-sm font-bold text-ink">
-            {session?.name} · {ROLE_LABEL[role]}
+
+          <span className="shrink-0 rounded-md bg-brand/10 px-2 py-1 text-[10px] font-bold tracking-[0.08em] text-brand uppercase sm:text-[11px]">
+            {ROLE_LABEL[role]}
+          </span>
+
+          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">
+            {session?.name ?? "Khách"}
           </p>
         </div>
-        {open && (
-          <nav id="portal-nav" className="page flex flex-col gap-4 pb-4">
+      </div>
+
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          aria-hidden="true"
+          className="fixed inset-0 z-[60] bg-ink/40 backdrop-blur-[1px] lg:hidden"
+        />
+      )}
+
+      {open && (
+        <aside
+          aria-label="Menu điều hướng di động"
+          className="fixed inset-y-0 left-0 z-[70] flex w-72 max-w-[85vw] flex-col border-r border-line-soft bg-white shadow-2xl lg:hidden"
+        >
+          <div className="flex h-14 shrink-0 items-center justify-between border-b border-line-soft px-4">
+            <div className="flex items-center gap-2">
+              <img src="/assets/brand/logo1.png" alt="EcoLink" className="h-6 w-auto" />
+              <span className="rounded-md bg-brand/10 px-2 py-0.5 text-[10px] font-bold tracking-[0.08em] text-brand uppercase">
+                {ROLE_LABEL[role]}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Đóng menu"
+              className="grid size-9 place-items-center rounded-lg text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+
+          <div className="border-b border-line-soft bg-surface-2/50 px-4 py-2.5">
+            <p className="truncate text-sm font-bold text-ink">{session?.name ?? "Khách"}</p>
+          </div>
+
+          <nav id="portal-nav" className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
             {PORTAL_NAV[role].map((sec) => (
-              <Section key={sec.title} title={sec.title} role={role} />
+              <Section
+                key={sec.title}
+                title={sec.title}
+                role={role}
+                variant="drawer"
+                onNavigate={() => setOpen(false)}
+              />
             ))}
           </nav>
-        )}
-      </div>
+
+          {role !== "user" && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                logout()
+              }}
+              className="mx-4 mt-auto mb-4 min-h-11 w-[calc(100%-2rem)] shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 hover:text-red-800"
+            >
+              Đăng xuất
+            </button>
+          )}
+        </aside>
+      )}
 
       <div className="page flex flex-1 gap-8 py-6 lg:py-8">
         <aside className="hidden w-56 shrink-0 lg:block">
@@ -104,14 +185,28 @@ export default function Portal({ role }: { role: Role }) {
   )
 }
 
-function Section({ title, role }: { title: string; role: Role }) {
+function Section({
+  title,
+  role,
+  variant = "sidebar",
+  onNavigate,
+}: {
+  title: string
+  role: Role
+  variant?: "sidebar" | "drawer"
+  onNavigate?: () => void
+}) {
   const items = PORTAL_NAV[role].find((s) => s.title === title)?.items ?? []
   return (
     <div className="mb-5">
       {/* Tiêu đề nhóm trong sidebar: màu chủ đạo, to và đậm hơn để tách khỏi
           danh sách mục bên dưới. Dùng đúng sắc `brand` như `.eyebrow` để
           không tự chế ra một sắc xanh thứ hai trong cùng app. */}
-      <h2 className="px-3 text-[13px] font-bold tracking-[0.12em] text-brand uppercase">
+      <h2
+        className={`px-3 font-bold tracking-[0.12em] text-brand uppercase ${
+          variant === "drawer" ? "text-[11px]" : "text-[13px]"
+        }`}
+      >
         {title}
       </h2>
       <ul className="mt-1.5 flex flex-col gap-0.5">
@@ -120,12 +215,19 @@ function Section({ title, role }: { title: string; role: Role }) {
             <NavLink
               to={item.to}
               end={item.to.split("/").length <= 2}
+              onClick={onNavigate}
               className={({ isActive }) =>
-                `block rounded-lg px-3 py-2.5 text-[14px] leading-5 font-medium transition-colors ${
-                  isActive
-                    ? "bg-brand/10 text-brand-deep"
-                    : "text-body hover:bg-surface-2 hover:text-ink"
-                }`
+                variant === "drawer"
+                  ? `flex min-h-10 items-center rounded-md px-3 py-2 text-sm leading-5 font-medium transition-colors ${
+                      isActive
+                        ? "bg-brand text-white"
+                        : "text-body hover:bg-surface-2 hover:text-ink"
+                    }`
+                  : `block rounded-lg px-3 py-2.5 text-[14px] leading-5 font-medium transition-colors ${
+                      isActive
+                        ? "bg-brand/10 text-brand-deep"
+                        : "text-body hover:bg-surface-2 hover:text-ink"
+                    }`
               }
             >
               {item.label}

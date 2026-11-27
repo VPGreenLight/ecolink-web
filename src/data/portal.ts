@@ -14,10 +14,12 @@ export const PORTAL_NAV: Record<Role, PortalSection[]> = {
       items: [
         { to: "/recycler", label: "Tổng quan" },
         { to: "/recycler/requests", label: "Yêu cầu bàn giao" },
+        { to: "/chat", label: "Chat thương lượng" },
         { to: "/recycler/catalog", label: "Danh mục và bảng giá" },
         { to: "/recycler/receipt", label: "Biên nhận thu gom" },
         { to: "/recycler/facility", label: "Hồ sơ kho bãi" },
         { to: "/recycler/reviews", label: "Đánh giá từ người dùng" },
+        { to: "/recycler/packages", label: "Gói dịch vụ Pro" },
       ],
     },
   ],
@@ -39,7 +41,6 @@ export const PORTAL_NAV: Record<Role, PortalSection[]> = {
         { to: "/staff/blog", label: "Soạn bài Blog" },
         { to: "/staff/ecofacts", label: "Nội dung Eco Fact" },
         { to: "/staff/gifts", label: "Kho quà tặng" },
-        { to: "/staff/checkin", label: "Điểm danh nhân viên" },
       ],
     },
     {
