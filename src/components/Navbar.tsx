@@ -6,7 +6,10 @@ import { isSsrSmokeTest } from "@/lib/hydration"
 import {
   createNotificationHubConnection,
   fetchMyNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
   NOTIFICATIONS_UPDATED_EVENT,
+  type NotificationDto,
 } from "@/lib/notificationsApi"
 import { useEntitlements } from "@/lib/servicePackageApi"
 import ConfirmLogoutDialog from "@/components/ConfirmLogoutDialog"
@@ -60,9 +63,8 @@ const ACCOUNT_ITEMS = [
  *  hiện khi đã đăng nhập — U-05 là bước nâng cấp từ tài khoản người dân lên
  *  cơ sở thu mua, người chưa có tài khoản thì chưa ở trong hệ sinh thái. */
 const EXPLORE = [
-  ["/terms", "Điều khoản"],
+  ["/feedback", "Khiếu nại và góp ý"],
   ["/ecofacts", "Eco Facts"],
-  ["/partners", "Đối tác tái chế"],
   ["/leaderboard", "Xếp hạng người dùng"],
 ] as const
 
@@ -178,18 +180,37 @@ function AccountMenu() {
                     </Link>
                   ))}
 
-                  {/* Lối vào nhanh nâng cấp gói dịch vụ theo vai trò */}
+                  {/* Lối vào nhanh theo vai trò */}
                   {session!.role === "user" && (
-                    <Link
-                      to="/user/payout#citizen-packages"
-                      onClick={() => setOpen(false)}
-                      className="flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
-                    >
-                      <span>Gói dịch vụ &amp; Tắt quảng cáo</span>
-                      <span className="rounded-full bg-brand/12 px-2 py-0.5 text-[11px] font-bold text-brand-deep">
-                        {entitlements.currentTier}
-                      </span>
-                    </Link>
+                    <>
+                      <Link
+                        to="/user/transactions"
+                        onClick={() => setOpen(false)}
+                        className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4 text-muted">
+                          <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+                          <path d="M8 7h8M8 11h8M8 15h5" />
+                        </svg>
+                        Lịch sử biên nhận
+                      </Link>
+                      <Link
+                        to="/user/payout#citizen-packages"
+                        onClick={() => setOpen(false)}
+                        className="flex items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
+                      >
+                        <span className="flex items-center gap-3">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4 text-muted">
+                            <path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z" />
+                            <path d="M5 21h14" />
+                          </svg>
+                          Gói dịch vụ
+                        </span>
+                        <span className="rounded-full bg-brand/12 px-2 py-0.5 text-[11px] font-bold text-brand-deep">
+                          {entitlements.currentTier}
+                        </span>
+                      </Link>
+                    </>
                   )}
                   {session!.role === "recycler" && (
                     <Link
@@ -204,17 +225,19 @@ function AccountMenu() {
                     </Link>
                   )}
 
-                  {/* Nút vào khu vực theo vai trò (hiện đồng nhất cho cả user, recycler, staff, admin) */}
-                  <Link
-                    to={ROLE_HOME[session!.role]}
-                    onClick={() => setOpen(false)}
-                    className="flex items-center justify-between rounded-xl bg-brand/10 px-3.5 py-2.5 text-sm font-semibold text-brand-deep transition-colors hover:bg-brand/16"
-                  >
-                    Khu vực {ROLE_LABEL[session!.role].toLowerCase()}
-                    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-4 text-muted">
-                      <path d="m6 4 4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </Link>
+                  {/* Nút vào khu vực theo vai trò (chỉ hiện cho recycler, staff, admin) */}
+                  {session!.role !== "user" && (
+                    <Link
+                      to={ROLE_HOME[session!.role]}
+                      onClick={() => setOpen(false)}
+                      className="flex items-center justify-between rounded-xl bg-brand/10 px-3.5 py-2.5 text-sm font-semibold text-brand-deep transition-colors hover:bg-brand/16"
+                    >
+                      Khu vực {ROLE_LABEL[session!.role].toLowerCase()}
+                      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-4 text-muted">
+                        <path d="m6 4 4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </Link>
+                  )}
                 </div>
 
                 {/* Nhóm 2: Khám phá */}
@@ -321,7 +344,7 @@ export default function Navbar() {
         </nav>
 
         {/* ponytail: one height (40px) for every control here so the row reads as a single line */}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
           {!session && (
             <button
               type="button"
@@ -331,8 +354,35 @@ export default function Navbar() {
               Đăng nhập
             </button>
           )}
+          {session && (session.role === "user" || session.role === "recycler") && (
+            <NavLink
+              to="/chat"
+              title="Chatbox thương lượng"
+              aria-label="Chatbox thương lượng"
+              className={({ isActive }) =>
+                `group relative flex size-10 items-center justify-center rounded-full border shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-[color,border-color,background-color,transform] duration-200 ease-out active:scale-[0.96] ${
+                  isActive
+                    ? "border-brand/35 bg-brand/10 text-brand-deep"
+                    : "border-line bg-white text-muted hover:border-sage-line hover:bg-surface-2 hover:text-ink"
+                }`
+              }
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="size-[18px] transition-transform duration-200 group-hover:scale-105"
+              >
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </NavLink>
+          )}
           {session && (
-            <NotificationBellLink isLoggedIn={Boolean(session)} />
+            <NotificationBellMenu isLoggedIn={Boolean(session)} />
           )}
           <AccountMenu />
         </div>
@@ -341,46 +391,137 @@ export default function Navbar() {
   )
 }
 
-function NotificationBellLink({ isLoggedIn }: { isLoggedIn: boolean }) {
+interface DropdownNote {
+  id: string
+  title: string
+  message: string
+  time: string
+  isRead: boolean
+  isBackend: boolean
+}
+
+const FALLBACK_NOTES: DropdownNote[] = [
+  {
+    id: "n1",
+    title: "Lịch thu gom đã được xác nhận",
+    message: "Cô Ba Thu Gom đã nhận yêu cầu của bạn và chốt khung giờ 10:00 - 12:00.",
+    time: "Hôm nay, 09:34",
+    isRead: false,
+    isBackend: false,
+  },
+  {
+    id: "n2",
+    title: "Biên nhận hoàn tất",
+    message: "Tiền giao dịch BH-2609-0184 đã chuyển về tài khoản của bạn.",
+    time: "Hôm nay, 11:02",
+    isRead: false,
+    isBackend: false,
+  },
+  {
+    id: "n3",
+    title: "Nhắc nhở điểm danh",
+    message: "Bạn bỏ lỡ điểm danh hôm qua, chuỗi đã tính lại từ đầu.",
+    time: "Hôm qua, 20:00",
+    isRead: true,
+    isBackend: false,
+  },
+]
+
+function mapNotificationDto(n: NotificationDto): DropdownNote {
+  return {
+    id: n.id,
+    title: n.title || "Thông báo hệ thống",
+    message: n.message,
+    time: new Date(n.createdAt).toLocaleString("vi-VN"),
+    isRead: n.isRead,
+    isBackend: true,
+  }
+}
+
+function NotificationBellMenu({ isLoggedIn }: { isLoggedIn: boolean }) {
+  const [open, setOpen] = useState(false)
+  const [filter, setFilter] = useState<"all" | "unread">("all")
+  const [items, setItems] = useState<DropdownNote[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [busyAll, setBusyAll] = useState(false)
+  const [err, setErr] = useState("")
+  const ref = useRef<HTMLDivElement>(null)
   const live = isLoggedIn && !isSsrSmokeTest() && hasLiveBackendAuth()
 
   useEffect(() => {
-    if (!live) {
+    if (!open) return
+    const onDocClick = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("mousedown", onDocClick)
+    document.addEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("mousedown", onDocClick)
+      document.removeEventListener("keydown", onKey)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!isLoggedIn || isSsrSmokeTest()) {
+      setItems([])
       setUnreadCount(0)
+      return
+    }
+    if (!live) {
+      setItems(FALLBACK_NOTES)
+      setUnreadCount(FALLBACK_NOTES.filter((n) => !n.isRead).length)
       return
     }
     let active = true
 
-    const syncUnread = () => {
-      void fetchMyNotifications({ pageNumber: 1, pageSize: 1 })
+    const syncNotifications = () => {
+      setLoading(true)
+      void fetchMyNotifications({ pageNumber: 1, pageSize: 20 })
         .then((res) => {
-          if (active && res.success && res.data) {
-            setUnreadCount(res.data.unreadCount)
+          if (!active || !res.success || !res.data) return
+          setItems((res.data.items ?? []).map(mapNotificationDto))
+          setUnreadCount(res.data.unreadCount ?? 0)
+          setErr("")
+        })
+        .catch((error) => {
+          if (active) {
+            setErr(error instanceof Error ? error.message : "Không tải được thông báo.")
           }
         })
-        .catch(() => {})
+        .finally(() => {
+          if (active) setLoading(false)
+        })
     }
 
-    syncUnread()
+    syncNotifications()
 
     const onUpdated = (e: Event) => {
       const detail = (e as CustomEvent<{ unreadCount?: number; delta?: number }>).detail
       if (typeof detail?.unreadCount === "number") {
         setUnreadCount(Math.max(0, detail.unreadCount))
+        if (detail.unreadCount === 0) {
+          setItems((prev) => prev.map((it) => ({ ...it, isRead: true })))
+        }
         return
       }
       if (typeof detail?.delta === "number") {
         setUnreadCount((c) => Math.max(0, c + detail.delta!))
         return
       }
-      syncUnread()
+      syncNotifications()
     }
     window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, onUpdated)
 
     const connection = createNotificationHubConnection({
-      onReceiveNotification: () => {
-        if (active) setUnreadCount((c) => c + 1)
+      onReceiveNotification: (incoming) => {
+        if (!active) return
+        const mapped = mapNotificationDto(incoming)
+        setItems((prev) => [mapped, ...prev.filter((x) => x.id !== mapped.id)].slice(0, 20))
+        if (!mapped.isRead) setUnreadCount((c) => c + 1)
       },
       onUnreadCountUpdated: (payload) => {
         if (active && typeof payload?.unreadCount === "number") {
@@ -399,32 +540,169 @@ function NotificationBellLink({ isLoggedIn }: { isLoggedIn: boolean }) {
         connection.stop().catch(() => {})
       }
     }
-  }, [live])
+  }, [isLoggedIn, live])
+
+  const handleMarkOne = async (note: DropdownNote) => {
+    if (note.isRead) return
+    setItems((prev) => prev.map((x) => (x.id === note.id ? { ...x, isRead: true } : x)))
+    setUnreadCount((c) => Math.max(0, c - 1))
+    if (note.isBackend && live) {
+      try {
+        await markNotificationRead(note.id)
+      } catch {
+        // ignore inline error
+      }
+    }
+  }
+
+  const handleMarkAll = async () => {
+    if (busyAll || unreadCount === 0) return
+    if (!live) {
+      setItems((prev) => prev.map((x) => ({ ...x, isRead: true })))
+      setUnreadCount(0)
+      return
+    }
+    setBusyAll(true)
+    try {
+      await markAllNotificationsRead()
+      setItems((prev) => prev.map((x) => ({ ...x, isRead: true })))
+      setUnreadCount(0)
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : "Không thể đánh dấu đã đọc tất cả.")
+    } finally {
+      setBusyAll(false)
+    }
+  }
+
+  const visibleItems = filter === "unread" ? items.filter((n) => !n.isRead) : items
 
   return (
-    <Link
-      to="/account/notifications"
-      aria-label={unreadCount > 0 ? `Thông báo (${unreadCount} chưa đọc)` : "Thông báo"}
-      className="group relative flex size-10 items-center justify-center rounded-full border border-line bg-white text-muted shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-[color,border-color,background-color,transform] duration-200 ease-out hover:border-sage-line hover:bg-surface-2 hover:text-ink active:scale-[0.96]"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-        className="size-[18px] transition-transform duration-200 group-hover:scale-105"
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        aria-label={unreadCount > 0 ? `Thông báo (${unreadCount} chưa đọc)` : "Thông báo"}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="group relative flex size-10 items-center justify-center rounded-full border border-line bg-white text-muted shadow-[0_1px_2px_rgba(15,31,21,0.04)] transition-[color,border-color,background-color,transform] duration-200 ease-out hover:border-sage-line hover:bg-surface-2 hover:text-ink active:scale-[0.96]"
       >
-        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-        <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-      </svg>
-      {unreadCount > 0 && (
-        <span className="absolute -top-1 -right-1 inline-flex min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-brand px-1 text-[10px] leading-[14px] font-bold text-white tabular-nums">
-          {unreadCount > 99 ? "99+" : unreadCount}
-        </span>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          className="size-[18px] transition-transform duration-200 group-hover:scale-105"
+        >
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+        </svg>
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 inline-flex min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-brand px-1 text-[10px] leading-[14px] font-bold text-white tabular-nums">
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          aria-label="Danh sách thông báo"
+          className="absolute top-full right-0 mt-2.5 flex max-h-[calc(100dvh-5.75rem)] w-[min(360px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)]"
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-line-soft bg-surface-2/60 px-4 py-3">
+            <div>
+              <p className="text-base font-bold text-ink">Thông báo</p>
+              <p className="text-xs text-muted">
+                {unreadCount > 0 ? `${unreadCount} chưa đọc` : "Đã đọc tất cả"}
+              </p>
+            </div>
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                disabled={busyAll}
+                onClick={() => void handleMarkAll()}
+                className="min-h-9 rounded-lg px-2.5 text-xs font-semibold text-brand-deep transition-colors hover:bg-surface-2 hover:underline disabled:opacity-50"
+              >
+                {busyAll ? "Đang xử lý..." : "Đọc tất cả"}
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 border-b border-line-soft px-4 py-2">
+            {(
+              [
+                ["all", `Tất cả (${items.length})`],
+                ["unread", `Chưa đọc (${unreadCount})`],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilter(key)}
+                className={`min-h-8 rounded-full px-3 text-xs font-semibold transition-colors ${
+                  filter === key
+                    ? "bg-brand/12 text-brand-deep"
+                    : "text-muted hover:bg-surface-2 hover:text-ink"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 divide-y divide-line-soft overflow-y-auto overscroll-contain">
+            {err && (
+              <p role="alert" className="px-4 py-2.5 text-xs font-medium text-warn">
+                {err}
+              </p>
+            )}
+            {loading && items.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-muted">Đang tải thông báo...</p>
+            ) : visibleItems.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-muted">
+                {filter === "unread" ? "Không có thông báo chưa đọc." : "Chưa có thông báo nào."}
+              </p>
+            ) : (
+              visibleItems.map((note) => (
+                <button
+                  key={note.id}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => void handleMarkOne(note)}
+                  className={`flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-surface-2 ${
+                    note.isRead ? "bg-white" : "bg-brand/[0.04]"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-sm font-bold text-ink">{note.title}</span>
+                    {!note.isRead && (
+                      <span
+                        className="mt-1.5 size-2 shrink-0 rounded-full bg-brand"
+                        aria-hidden="true"
+                      />
+                    )}
+                  </div>
+                  <p className="text-sm leading-5 text-body">{note.message}</p>
+                  <span className="text-xs text-muted tabular-nums">{note.time}</span>
+                </button>
+              ))
+            )}
+          </div>
+
+          <div className="border-t border-line-soft bg-surface-2/40 px-4 py-2 text-right">
+            <Link
+              to="/account/profile"
+              onClick={() => setOpen(false)}
+              className="inline-flex min-h-9 items-center text-xs font-semibold text-brand-deep hover:underline"
+            >
+              Hồ sơ cá nhân →
+            </Link>
+          </div>
+        </div>
       )}
-    </Link>
+    </div>
   )
 }

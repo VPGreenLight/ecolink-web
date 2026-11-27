@@ -145,7 +145,7 @@ export default function Gamification() {
     : "Cần thêm 4.500 điểm cho tất cả"
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="page flex flex-col gap-8 py-6 lg:py-8">
       <PageHead
         eyebrow="GAMIFICATION"
         title="Điểm xanh, quà tặng và cây ảo"

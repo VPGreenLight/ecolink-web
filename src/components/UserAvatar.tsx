@@ -1,10 +1,11 @@
 import { useState } from "react"
 
-export type AvatarSize = "sm" | "md"
+export type AvatarSize = "sm" | "md" | "lg"
 
 const SIZE_CLS: Record<AvatarSize, { box: string; text: string }> = {
   sm: { box: "size-8", text: "text-[11px]" },
   md: { box: "size-11", text: "text-[15px]" },
+  lg: { box: "size-16", text: "text-[19px]" },
 }
 
 export function initialsOf(name: string): string {

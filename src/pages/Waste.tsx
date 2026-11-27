@@ -234,7 +234,7 @@ export default function Waste() {
                   </Link>
                 ) : w.recyclable ? (
                   <Link
-                    to={`/user/handover?waste=${encodeURIComponent(w.categoryCode ?? w.id)}`}
+                    to={`/chat?waste=${encodeURIComponent(w.categoryCode ?? w.id)}&newHandover=1`}
                     className="text-xs font-semibold text-brand-deep hover:underline"
                   >
                     Đặt lịch thu gom →

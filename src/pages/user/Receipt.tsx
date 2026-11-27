@@ -476,7 +476,7 @@ export default function Receipt() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="page flex flex-col gap-6 py-6 lg:py-8">
       <PageHead
         eyebrow="BIÊN NHẬN"
         title="Xác nhận bàn giao rác"
@@ -484,12 +484,12 @@ export default function Receipt() {
       />
 
       {candidates.length > 1 && (
-        <div className="card flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-          <span className="text-xs font-semibold text-ink">
+        <div className="card flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+          <span className="text-sm font-semibold text-ink">
             Chọn biên nhận ({candidates.length} đơn):
           </span>
           <select
-            className="input h-9 max-w-md text-xs"
+            className="input min-h-11 h-12 w-full sm:max-w-md text-base sm:text-[15px]"
             value={h?.id ?? ""}
             onChange={(e) => {
               const nextId = e.target.value
@@ -528,15 +528,15 @@ export default function Receipt() {
         <TableSkeleton rows={4} />
       ) : !h ? (
         <div className="card flex flex-col items-center gap-3 px-5 py-10 text-center">
-          <p className="text-sm font-semibold text-ink">
+          <p className="text-base font-semibold text-ink">
             Chưa có biên nhận thu gom nào đang chờ xác nhận.
           </p>
-          <p className="max-w-[52ch] text-xs text-muted">
+          <p className="max-w-[52ch] text-sm leading-6 text-muted">
             Khi cơ sở thu gom đến cân thực tế và phát hành biên nhận, bạn có thể bấm vào nút
             &quot;Xác nhận biên nhận&quot; từ trang Yêu cầu thu gom hoặc khung Chat.
           </p>
-          <Link to="/user/handover" className="btn-primary h-10 px-5 text-xs font-semibold">
-            Quay lại Yêu cầu thu gom
+          <Link to="/chat?newHandover=1" className="btn-primary min-h-11 px-5 text-sm font-semibold">
+            Đặt lịch bàn giao trong Chat
           </Link>
         </div>
       ) : (
@@ -544,11 +544,11 @@ export default function Receipt() {
         <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-line-soft pb-4">
           <div>
             <p className="font-bold text-ink">{h.recycler}</p>
-            <p className="mt-0.5 text-[13px] text-muted">
+            <p className="mt-0.5 text-sm text-muted">
               {h.displayCode || h.id} · {h.date} · {h.slot} · {h.address}
             </p>
             {receiptInfo?.receiptCode && (
-              <p className="mt-1 text-xs font-semibold text-brand-deep">
+              <p className="mt-1 text-sm font-semibold text-brand-deep">
                 Mã biên nhận: #{receiptInfo.receiptCode}
               </p>
             )}
@@ -585,7 +585,7 @@ export default function Receipt() {
 
         {receiptInfo?.scaleProofPhotoUrls && receiptInfo.scaleProofPhotoUrls.length > 0 && (
           <div className="flex flex-col gap-2">
-            <span className="text-[13px] font-semibold text-ink">
+            <span className="text-sm font-semibold text-ink">
               Ảnh bàn giao &amp; bằng chứng cân từ cơ sở thu gom ({receiptInfo.scaleProofPhotoUrls.length} ảnh)
             </span>
             <div className="flex flex-wrap gap-3">
@@ -610,7 +610,7 @@ export default function Receipt() {
         )}
 
         {differs && !confirmed && !disputed && (
-          <p className="rounded-lg border border-line bg-surface-2 px-4 py-3 text-[13px] leading-5 text-body">
+          <p className="rounded-lg border border-line bg-surface-2 px-4 py-3 text-sm leading-6 text-body">
             Khối lượng trên biên nhận khác với ước tính ban đầu do cơ sở thu gom đã cân
             thực tế kèm ảnh bằng chứng. Thành tiền được chốt theo đúng số cân trên biên
             nhận này; nếu có sai lệch, vui lòng bấm{" "}
@@ -621,7 +621,7 @@ export default function Receipt() {
         {confirmErr && (
           <p
             role="alert"
-            className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+            className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm leading-6 font-medium text-warn"
           >
             {confirmErr}
           </p>
@@ -631,7 +631,7 @@ export default function Receipt() {
           <button
             type="submit"
             disabled={confirmed || disputed || processing}
-            className="btn-primary h-11 px-6"
+            className="btn-primary min-h-11 h-12 px-6 text-sm sm:text-[15px]"
           >
             {processing
               ? "Đang xử lý..."
@@ -647,7 +647,7 @@ export default function Receipt() {
                 setShowDisputeForm((v) => !v)
                 setDisputeErr("")
               }}
-              className="btn-ghost h-11 px-5"
+              className="btn-ghost min-h-11 h-12 px-5 text-sm"
             >
               Sai rồi, tôi muốn khiếu nại
             </button>
@@ -658,7 +658,7 @@ export default function Receipt() {
             </span>
           )}
           {!confirmed && !disputed && (
-            <p className="self-center text-[13px] text-muted">
+            <p className="self-center text-sm leading-6 text-muted">
               Xác nhận để khóa biên nhận đối chiếu và hoàn tất giao dịch này.
             </p>
           )}
@@ -682,7 +682,7 @@ export default function Receipt() {
               <RequiredMark />
             </span>
             <textarea
-              className="input h-auto resize-y py-2.5 leading-6"
+              className="input h-auto min-h-[104px] resize-y py-2.5 text-base sm:text-[15px] leading-6"
               rows={3}
               value={disputeReason}
               onChange={(e) => {
@@ -701,22 +701,22 @@ export default function Receipt() {
               accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
               multiple
               onChange={(e) => handleDisputeFileChange(e.target.files)}
-              className="text-xs text-muted"
+              className="block w-full text-sm text-body file:mr-3 file:min-h-11 file:rounded-lg file:border file:border-line file:bg-surface-2 file:px-3.5 file:py-2 file:text-sm file:font-semibold file:text-ink"
             />
             {disputeFiles.length > 0 && (
-              <p className="text-xs text-brand-deep">Đã chọn {disputeFiles.length} ảnh bằng chứng.</p>
+              <p className="text-sm text-brand-deep">Đã chọn {disputeFiles.length} ảnh bằng chứng.</p>
             )}
           </div>
           {disputeErr && (
             <p
               role="alert"
-              className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+              className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm leading-6 font-medium text-warn"
             >
               {disputeErr}
             </p>
           )}
           <div className="flex flex-wrap gap-3">
-            <button type="submit" disabled={processing} className="btn-primary h-10 px-5 text-sm">
+            <button type="submit" disabled={processing} className="btn-primary min-h-11 px-5 text-sm sm:text-[15px]">
               {processing ? "Đang gửi..." : "Gửi phiếu khiếu nại"}
             </button>
             <button
@@ -725,7 +725,7 @@ export default function Receipt() {
                 setShowDisputeForm(false)
                 setDisputeErr("")
               }}
-              className="btn-ghost h-10 px-4 text-sm"
+              className="btn-ghost min-h-11 px-4 text-sm"
             >
               Hủy
             </button>
@@ -738,7 +738,7 @@ export default function Receipt() {
           <h2 className="text-base font-bold text-ink">
             Đánh giá {h.recycler}
           </h2>
-          <p className="text-sm text-muted">
+          <p className="text-sm leading-6 text-muted">
             Điểm của bạn quyết định cơ sở này có được đề xuất cho khu vực của bạn không (mỗi đơn
             giữ tối đa 1 đánh giá đang hiển thị trong 14 ngày; bạn có thể xóa đánh giá cũ để gửi lại
             đánh giá mới).
@@ -756,17 +756,17 @@ export default function Receipt() {
                 </span>
               </div>
               {submittedReview.comment && (
-                <p className="mt-2 text-sm text-body">{submittedReview.comment}</p>
+                <p className="mt-2 text-sm leading-6 text-body">{submittedReview.comment}</p>
               )}
               {typeof submittedReview.updatedRecyclerAverageRating === "number" && (
-                <p className="mt-2 text-xs text-muted">
+                <p className="mt-2 text-sm text-muted">
                   Điểm uy tín mới của cơ sở: {submittedReview.updatedRecyclerAverageRating.toFixed(2)}★ ({submittedReview.updatedRecyclerTotalReviews ?? 1} đánh giá)
                 </p>
               )}
               {reviewErr && (
                 <p
                   role="alert"
-                  className="mt-3 rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+                  className="mt-3 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm leading-6 font-medium text-warn"
                 >
                   {reviewErr}
                 </p>
@@ -776,7 +776,7 @@ export default function Receipt() {
                   type="button"
                   disabled={reviewBusy}
                   onClick={() => void handleDeleteReview()}
-                  className="btn-ghost h-9 px-3.5 text-xs text-warn"
+                  className="btn-ghost min-h-11 px-4 text-sm text-warn"
                 >
                   {reviewBusy ? "Đang xóa..." : "Xóa đánh giá này (để gửi đánh giá mới)"}
                 </button>
@@ -785,7 +785,7 @@ export default function Receipt() {
           ) : (
             <form noValidate onSubmit={(e) => void handleSubmitReview(e)} className="flex flex-col gap-4">
               <div>
-                <p className="mb-1.5 text-xs font-semibold text-ink">
+                <p className="mb-1.5 text-sm font-semibold text-ink">
                   Chọn mức độ hài lòng (1 – 5 sao)
                   <RequiredMark />
                 </p>
@@ -818,12 +818,12 @@ export default function Receipt() {
               </div>
 
               <div>
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-ink">Nhận xét / góp ý (không bắt buộc)</span>
-                  <span className="text-xs text-muted">{note.trim().length}/1000 ký tự</span>
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-ink">Nhận xét / góp ý (không bắt buộc)</span>
+                  <span className="text-xs sm:text-sm text-muted">{note.trim().length}/1000 ký tự</span>
                 </div>
                 <textarea
-                  className="input h-auto resize-y py-3 leading-6"
+                  className="input h-auto min-h-[104px] resize-y py-3 text-base sm:text-[15px] leading-6"
                   rows={3}
                   value={note}
                   onChange={(e) => {
@@ -837,7 +837,7 @@ export default function Receipt() {
               {reviewErr && (
                 <p
                   role="alert"
-                  className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+                  className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm leading-6 font-medium text-warn"
                 >
                   {reviewErr}
                 </p>
@@ -847,12 +847,12 @@ export default function Receipt() {
                 <button
                   type="submit"
                   disabled={reviewBusy}
-                  className="btn-primary h-11 px-6"
+                  className="btn-primary min-h-11 h-12 px-6 text-sm sm:text-[15px]"
                 >
                   {reviewBusy ? "Đang gửi..." : "Gửi đánh giá"}
                 </button>
                 {stars > 0 && (
-                  <p className="text-[13px] text-muted">
+                  <p className="text-sm leading-6 text-muted">
                     {stars === 5
                       ? "Cảm ơn bạn, đánh giá này giúp khu vực của bạn."
                       : "Cảm ơn bạn, chúng tôi sẽ xem lại điểm thấp."}

@@ -360,14 +360,14 @@ export default function Requests() {
       />
 
       {flash && (
-        <p role="status" className="text-[13px] font-semibold text-brand">
+        <p role="status" className="text-sm font-semibold text-brand">
           {flash}
         </p>
       )}
       {actionErr && (
         <p
           role="alert"
-          className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+          className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-sm font-medium text-warn"
         >
           {actionErr}
         </p>
@@ -402,7 +402,7 @@ export default function Requests() {
                           <Status tone="wait">Đang thương lượng</Status>
                         )}
                       </div>
-                      <p className="mt-0.5 text-[13px] text-muted">
+                      <p className="mt-0.5 text-sm text-muted">
                         {h.displayCode}
                         {h.citizenName ? ` · Người gửi: ${h.citizenName}` : ""} · {h.date} · Khung
                         giờ đề xuất: <b className="text-ink">{h.slot}</b>
@@ -418,7 +418,7 @@ export default function Requests() {
                       {h.lines.map((l) => (
                         <li
                           key={l.wasteId}
-                          className="rounded-full bg-surface-2 px-3 py-1 text-xs text-body"
+                          className="rounded-full bg-surface-2 px-3 py-1 text-sm text-body"
                         >
                           {nameOf(l.wasteId)} · {l.kg} kg
                         </li>
@@ -429,7 +429,7 @@ export default function Requests() {
                       <button
                         type="button"
                         onClick={() => setOpenMapId(mapExpanded ? null : h.id)}
-                        className="btn-outline h-8 px-3 text-xs"
+                        className="btn-outline min-h-10 px-3.5 text-sm font-semibold"
                       >
                         {mapExpanded
                           ? "Ẩn bản đồ điểm hẹn"
@@ -453,13 +453,13 @@ export default function Requests() {
                       type="button"
                       disabled={busy === h.id}
                       onClick={() => void act(h, "accepted")}
-                      className="btn-primary h-11 px-6"
+                      className="btn-primary min-h-11 px-6 text-sm font-semibold"
                     >
                       Nhận và chốt khung giờ
                     </button>
                     <Link
                       to={`/chat?orderId=${encodeURIComponent(h.id)}`}
-                      className="btn-outline h-11 px-5"
+                      className="btn-outline min-h-11 px-5 text-sm font-semibold"
                     >
                       Chat thương lượng
                     </Link>
@@ -467,7 +467,7 @@ export default function Requests() {
                       type="button"
                       disabled={busy === h.id}
                       onClick={() => void act(h, "declined")}
-                      className="btn-ghost h-11 px-5"
+                      className="btn-ghost min-h-11 px-5 text-sm font-semibold"
                     >
                       Từ chối
                     </button>
@@ -503,7 +503,7 @@ export default function Requests() {
                   <Td>
                     <div>{h.address}</div>
                     {h.citizenName && (
-                      <div className="text-xs text-muted">Người gửi: {h.citizenName}</div>
+                      <div className="text-sm text-muted">Người gửi: {h.citizenName}</div>
                     )}
                   </Td>
                   <Td className="whitespace-nowrap">
@@ -524,7 +524,7 @@ export default function Requests() {
                       <div className="flex flex-wrap items-center gap-2 whitespace-nowrap">
                         <Link
                           to={`/recycler/receipt?orderId=${encodeURIComponent(h.id)}`}
-                          className="text-[13px] font-semibold text-brand hover:text-brand-deep"
+                          className="inline-flex min-h-10 items-center text-sm font-semibold text-brand hover:text-brand-deep"
                         >
                           Xem biên nhận
                         </Link>
@@ -533,14 +533,14 @@ export default function Requests() {
                       <div className="flex flex-wrap items-center gap-2 whitespace-nowrap">
                         <Link
                           to={`/recycler/receipt?orderId=${encodeURIComponent(h.id)}`}
-                          className="text-[13px] font-semibold text-brand hover:underline"
+                          className="inline-flex min-h-10 items-center text-sm font-semibold text-brand hover:underline"
                         >
                           Cân &amp; Lập biên nhận
                         </Link>
                         <span className="text-muted">·</span>
                         <Link
                           to={`/chat?orderId=${encodeURIComponent(h.id)}`}
-                          className="text-[13px] font-semibold text-body hover:underline"
+                          className="inline-flex min-h-10 items-center text-sm font-semibold text-body hover:underline"
                         >
                           Hỏi đường
                         </Link>
@@ -549,7 +549,7 @@ export default function Requests() {
                           type="button"
                           disabled={busy === h.id}
                           onClick={() => openCancelForm(h)}
-                          className="text-[13px] font-semibold text-warn hover:underline"
+                          className="inline-flex min-h-10 items-center text-sm font-semibold text-warn hover:underline"
                         >
                           Huỷ lịch
                         </button>
@@ -564,12 +564,12 @@ export default function Requests() {
                           setCmpFiles([])
                           setCmpErr("")
                         }}
-                        className="text-[13px] font-semibold text-warn hover:underline"
+                        className="inline-flex min-h-10 items-center text-sm font-semibold text-warn hover:underline"
                       >
                         Khiếu nại giao dịch
                       </button>
                     ) : (
-                      <span className="text-[13px] text-muted">—</span>
+                      <span className="text-sm text-muted">—</span>
                     )}
                   </Td>
                 </tr>
@@ -610,19 +610,19 @@ export default function Requests() {
                 setCancelOrder(null)
                 setCancelErr("")
               }}
-              className="btn-ghost h-9 px-3 text-xs"
+              className="btn-ghost min-h-10 px-3.5 text-sm font-semibold"
             >
               Đóng
             </button>
           </div>
 
-          <label className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
+          <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
             <span>
               Lý do hủy lịch (tối thiểu 5 ký tự, người dân sẽ thấy lý do này)
               <RequiredMark />
             </span>
             <textarea
-              className="input h-auto resize-y py-2.5 text-sm"
+              className="input h-auto min-h-11 resize-y py-2.5 text-base sm:text-[15px]"
               rows={2}
               value={cancelReason}
               onChange={(e) => {
@@ -636,7 +636,7 @@ export default function Requests() {
           {cancelErr && (
             <p
               role="alert"
-              className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+              className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-sm font-medium text-warn"
             >
               {cancelErr}
             </p>
@@ -646,7 +646,7 @@ export default function Requests() {
             <button
               type="submit"
               disabled={busy === cancelOrder.id}
-              className="btn-primary h-10 px-5 text-xs"
+              className="btn-primary min-h-11 px-5 text-sm font-semibold"
             >
               {busy === cancelOrder.id ? "Đang hủy..." : "Xác nhận hủy lịch"}
             </button>
@@ -673,19 +673,19 @@ export default function Requests() {
                 setComplaintOrder(null)
                 setCmpErr("")
               }}
-              className="btn-ghost h-9 px-3 text-xs"
+              className="btn-ghost min-h-10 px-3.5 text-sm font-semibold"
             >
               Đóng
             </button>
           </div>
 
-          <p className="rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-xs text-muted">
+          <p className="rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-sm leading-6 text-muted">
             Ràng buộc BR-DSP-01/02: chỉ khiếu nại hai chiều trong vòng 7 ngày sau khi biên nhận bàn
             giao đã xác nhận hoàn tất, tối đa 1 phiếu đang xử lý trên mỗi đơn và mô tả 15–2000 ký
             tự.
           </p>
 
-          <label className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
+          <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
             <span>
               Nhóm nguyên nhân
               <RequiredMark />
@@ -696,7 +696,7 @@ export default function Requests() {
                 setCmpCategory(e.target.value as ComplaintCategoryCode)
                 setCmpErr("")
               }}
-              className="input h-10 text-sm"
+              className="input min-h-11 text-base sm:text-[15px]"
             >
               {ALL_COMPLAINT_CATEGORIES.map((cat) => (
                 <option key={cat} value={cat}>
@@ -706,13 +706,13 @@ export default function Requests() {
             </select>
           </label>
 
-          <label className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
+          <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
             <span>
               Mô tả sự cố (15–2000 ký tự)
               <RequiredMark />
             </span>
             <textarea
-              className="input h-auto resize-y py-2.5 text-sm"
+              className="input h-auto min-h-11 resize-y py-2.5 text-base sm:text-[15px]"
               rows={3}
               value={cmpDesc}
               onChange={(e) => {
@@ -723,28 +723,28 @@ export default function Requests() {
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+          <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
             Ảnh hiện trường / biên nhận bằng chứng (tùy chọn, tối đa 5 ảnh JPG/PNG/WEBP ≤ 10 MB)
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
               multiple
               onChange={(e) => handleComplaintFileChange(e.target.files)}
-              className="text-xs font-normal text-muted"
+              className="min-h-11 py-2 text-sm font-normal text-muted"
             />
           </label>
 
           {cmpErr && (
             <p
               role="alert"
-              className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] font-medium text-warn"
+              className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-sm font-medium text-warn"
             >
               {cmpErr}
             </p>
           )}
 
           <div className="flex flex-wrap gap-3">
-            <button type="submit" disabled={cmpBusy} className="btn-primary h-10 px-5 text-xs">
+            <button type="submit" disabled={cmpBusy} className="btn-primary min-h-11 px-5 text-sm font-semibold">
               {cmpBusy ? "Đang gửi..." : "Gửi phiếu khiếu nại"}
             </button>
           </div>
@@ -757,7 +757,7 @@ export default function Requests() {
             <h2 className="text-base font-bold text-ink">
               Khiếu nại giao dịch liên quan ({myComplaints.length})
             </h2>
-            <p className="mt-1 text-xs text-muted">
+            <p className="mt-1 text-sm leading-6 text-muted">
               Hạn khiếu nại: 7 ngày kể từ bàn giao/hủy · Tối đa 1 phiếu đang xử lý cho mỗi đơn · Mô tả từ 15–2000 ký tự.
             </p>
           </div>
@@ -765,7 +765,7 @@ export default function Requests() {
             {paginateItems(myComplaints, cmpPage, FIXED_PAGE_SIZE).map((c) => (
               <li
                 key={c.complaintId}
-                className="rounded-xl border border-line-soft bg-surface-2/60 p-3.5 text-xs"
+                className="rounded-xl border border-line-soft bg-surface-2/60 p-3.5 text-sm leading-6"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-bold text-ink">{c.complaintCode}</span>

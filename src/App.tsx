@@ -1,5 +1,5 @@
 import { Suspense, useEffect } from "react"
-import { BrowserRouter, Outlet, Route, Routes, useNavigate } from "react-router-dom"
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useNavigate } from "react-router-dom"
 import AuthLayout from "@/components/AuthLayout"
 import Layout from "@/components/Layout"
 import Portal from "@/components/Portal"
@@ -12,11 +12,11 @@ import { PAGES } from "@/lazyPages"
 /** Trang nạp theo route (xem `src/lazyPages.ts`) - không import tĩnh ở đây
  *  nữa, để bundle không kéo toàn bộ project vào lần mở đầu tiên. */
 const {
-  Home, Blog, BlogDetail, Rewards, LeaderboardPage, Scanner, MapPage, Partners,
+  Home, Blog, BlogDetail, Rewards, LeaderboardPage, Scanner, MapPage,
   Feedback, Guidance, Waste, Chat, JoinRecycler, ResetPassword, Terms, EcoFactsPage,
   Login, Register, Logout, NotFound,
-  Profile, Notifications, Password,
-  UserHome, Handover, Receipt, Payout, Transactions, Gamification,
+  Profile, Password,
+  Receipt, Payout, Transactions, Gamification,
   RecyclerHome, Requests, Catalog, RecyclerReceipt,
   StaffHome, AiReview, Dataset, Applications, Complaints, Accounts, BlogEditor,
   EcoFacts, Gifts, StaffCheckIn,
@@ -33,11 +33,6 @@ const {
  *  thật với `MemoryRouter`, nếu không thì mọi route đều chỉ được test bằng
  *  cách render lẻ từng component — hỏng phần ghép route (RequireRole, Portal,
  *  Layout) thì test vẫn xanh. */
-function RolePortal() {
-  const session = useSession()
-  return <Portal role={session?.role === "recycler" ? "recycler" : "user"} />
-}
-
 function StaffWorkspaceShell() {
   const session = useSession()
   return <AdminShell role={session?.role === "admin" ? "admin" : "staff"} />
@@ -88,7 +83,6 @@ export function AppRoutes() {
           <Route path="leaderboard" element={<LeaderboardPage />} />
           <Route path="scanner" element={<Scanner />} />
           <Route path="map" element={<MapPage />} />
-          <Route path="partners" element={<Partners />} />
           <Route path="feedback" element={<Feedback />} />
           {/* U-02 hướng dẫn phân loại · U-03 tra cứu loại rác · U-04 báo AI sai */}
           <Route path="guidance" element={<Guidance />} />
@@ -108,15 +102,15 @@ export function AppRoutes() {
             }
           >
             <Route path="profile" element={<Profile />} />
-            <Route path="notifications" element={<Notifications />} />
+            <Route path="notifications" element={<Navigate to="/account/profile" replace />} />
             <Route path="password" element={<Password />} />
           </Route>
 
-          {/* U-09 / R-05 chatbox: hai vai trò cùng chat với nhau, giữ nguyên Sidebar Portal */}
+          {/* U-09 / R-05 chatbox: trang trò chuyện độc lập cho User & Recycler (không kèm Sidebar Portal) */}
           <Route
             element={
               <RequireRole roles={["user", "recycler"]}>
-                <RolePortal />
+                <Outlet />
               </RequireRole>
             }
           >
@@ -124,16 +118,13 @@ export function AppRoutes() {
           </Route>
 
           {/* ---- phân hệ USER ---- */}
-          <Route element={<RequireRole roles={["user"]}><Portal role="user" /></RequireRole>}>
-            <Route path="user">
-              <Route index element={<UserHome />} />
-              <Route path="handover" element={<Handover />} />
-              <Route path="receipt" element={<Receipt />} />
-              <Route path="payout" element={<Payout />} />
-              <Route path="subscription" element={<Payout />} />
-              <Route path="transactions" element={<Transactions />} />
-              <Route path="gamification" element={<Gamification />} />
-            </Route>
+          <Route element={<RequireRole roles={["user"]}><Outlet /></RequireRole>}>
+            <Route path="user/handover" element={<Navigate to="/chat?newHandover=1" replace />} />
+            <Route path="user/receipt" element={<Receipt />} />
+            <Route path="user/payout" element={<Payout />} />
+            <Route path="user/subscription" element={<Payout />} />
+            <Route path="user/transactions" element={<Transactions />} />
+            <Route path="user/gamification" element={<Gamification />} />
           </Route>
 
           {/* ---- phân hệ RECYCLER ---- */}

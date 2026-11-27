@@ -231,7 +231,7 @@ export default function Payout() {
   const isUpgradedTier = entitlements.currentTier.toUpperCase() !== "BASIC"
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="page flex flex-col gap-6 py-6 lg:py-8">
       <PageHead
         eyebrow="GÓI DỊCH VỤ & VIETQR · U-16"
         title="Gói dịch vụ & Tắt quảng cáo"
@@ -241,9 +241,9 @@ export default function Payout() {
             type="button"
             onClick={() => void loadSubscriptionWorkspace()}
             disabled={loadingPackages}
-            className="btn-outline inline-flex h-9 items-center gap-1.5 px-3 text-xs font-semibold"
+            className="btn-outline inline-flex min-h-11 items-center gap-2 px-4 text-sm font-semibold"
           >
-            <RefreshCw className={`size-3.5 ${loadingPackages ? "animate-spin" : ""}`} />
+            <RefreshCw className={`size-4 ${loadingPackages ? "animate-spin" : ""}`} />
             Đồng bộ quyền lợi
           </button>
         }
@@ -261,20 +261,20 @@ export default function Payout() {
             <h2 className="mt-1 text-lg font-bold text-ink">
               Nâng cấp đặc quyền EcoLink cho Người dân (Basic – Premium)
             </h2>
-            <p className="mt-1 text-xs leading-5 text-body">
+            <p className="mt-1 text-sm leading-6 text-body">
               Gia hạn sớm cùng hạng gói sẽ được cộng dồn trọn vẹn số ngày còn lại theo quy tắc{" "}
-              <code className="rounded bg-surface-2 px-1 py-0.5 text-[11px]">BR-PAY-04</code>.
+              <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">BR-PAY-04</code>.
             </p>
           </div>
 
           <div className="rounded-xl border border-brand/25 bg-brand/6 px-3.5 py-2 text-right">
-            <p className="text-[11px] font-semibold text-muted uppercase">Gói hiện tại</p>
+            <p className="text-xs font-semibold text-muted uppercase">Gói hiện tại</p>
             <p className="text-sm font-bold text-brand-deep">
               {entitlements.currentTier}
               {entitlements.isAdFree ? " · Không quảng cáo" : " · Có quảng cáo"}
             </p>
             {primaryActiveSub && (
-              <p className="text-[11px] text-muted">
+              <p className="text-xs text-muted">
                 Còn {primaryActiveSub.remainingDays} ngày · Hết hạn{" "}
                 {new Date(primaryActiveSub.expiresAt).toLocaleDateString("vi-VN")}
               </p>
@@ -283,12 +283,12 @@ export default function Payout() {
         </div>
 
         {pkgFlash && (
-          <p role="status" className="rounded-xl border border-brand/30 bg-brand/8 px-4 py-2.5 text-xs font-semibold text-brand-deep">
+          <p role="status" className="rounded-xl border border-brand/30 bg-brand/8 px-4 py-3 text-sm leading-6 font-semibold text-brand-deep">
             {pkgFlash}
           </p>
         )}
         {pkgErr && (
-          <p role="alert" className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn">
+          <p role="alert" className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-3 text-sm leading-6 font-semibold text-warn">
             {pkgErr}
           </p>
         )}
@@ -336,17 +336,17 @@ export default function Payout() {
                     </span>
                   </p>
 
-                  <p className="mt-2 text-xs leading-5 text-body">{pkg.description}</p>
+                  <p className="mt-2 text-sm leading-6 text-body">{pkg.description}</p>
 
-                  <ul className="mt-4 flex flex-col gap-1.5 text-xs text-body">
+                  <ul className="mt-4 flex flex-col gap-2 text-sm leading-6 text-body">
                     <li className="flex items-center gap-2">
-                      <Check className="size-3.5 shrink-0 text-brand" />
+                      <Check className="size-4 shrink-0 text-brand" />
                       {pkg.features.adFree
                         ? "Tắt 100% banner quảng cáo trên cổng"
                         : "Hiển thị banner tài trợ sinh thái"}
                     </li>
                     <li className="flex items-center gap-2">
-                      <Check className="size-3.5 shrink-0 text-brand" />
+                      <Check className="size-4 shrink-0 text-brand" />
                       Điểm điểm danh: x{pkg.features.dailyPointMultiplier} hằng ngày
                     </li>
                   </ul>
@@ -354,14 +354,14 @@ export default function Payout() {
 
                 <div className="mt-5 border-t border-line-soft pt-4">
                   {isIncludedInHigherPlan ? (
-                    <p className="rounded-lg border border-brand/20 bg-brand/6 px-3 py-2 text-center text-xs font-semibold text-brand-deep">
+                    <p className="rounded-lg border border-brand/20 bg-brand/6 px-3 py-2.5 text-center text-sm font-semibold text-brand-deep">
                       Đã bao gồm trong gói {entitlements.currentTier} hiện tại
                     </p>
                   ) : isBasic ? (
                     <button
                       type="button"
                       disabled
-                      className="btn-outline h-10 w-full cursor-default text-xs opacity-75"
+                      className="btn-outline min-h-11 h-12 w-full cursor-default text-sm opacity-75"
                     >
                       Mặc định không cần thanh toán
                     </button>
@@ -370,7 +370,7 @@ export default function Payout() {
                       type="button"
                       disabled={buyingCode === pkg.packageCode}
                       onClick={() => void handlePurchasePackage(pkg)}
-                      className="btn-primary inline-flex h-10 w-full items-center justify-center gap-2 text-xs font-semibold"
+                      className="btn-primary inline-flex min-h-11 h-12 w-full items-center justify-center gap-2 text-sm sm:text-[15px] font-semibold"
                     >
                       <QrCode className="size-4" />
                       {buyingCode === pkg.packageCode
@@ -415,17 +415,17 @@ export default function Payout() {
                             <button
                               type="button"
                               onClick={() => setActiveQrOrder(ord)}
-                              className="btn-outline inline-flex h-8 items-center gap-1 px-2.5 text-xs"
+                              className="btn-outline inline-flex min-h-11 items-center gap-1.5 px-3 text-sm"
                             >
-                              <QrCode className="size-3.5" />
+                              <QrCode className="size-4" />
                               Mở QR
                             </button>
                             <button
                               type="button"
                               onClick={() => void handleCancelOrder(ord)}
-                              className="inline-flex h-8 items-center gap-1 rounded-lg border border-warn/30 px-2.5 text-xs font-semibold text-warn hover:bg-warn/10"
+                              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-warn/30 px-3 text-sm font-semibold text-warn hover:bg-warn/10"
                             >
-                              <XCircle className="size-3.5" />
+                              <XCircle className="size-4" />
                               Hủy
                             </button>
                           </>
@@ -447,7 +447,7 @@ export default function Payout() {
             <h2 className="text-base font-bold text-ink">
               Quy chuẩn thanh toán tiền phế liệu trực tiếp (BR-DSP-04)
             </h2>
-            <p className="mt-1 text-xs text-muted">
+            <p className="mt-1 text-sm leading-6 text-muted">
               Tiền bán phế liệu được hai bên giao dịch trực tiếp tại điểm thu gom — EcoLink không giữ tiền hộ và không thu phí hoa hồng.
             </p>
           </div>
@@ -472,7 +472,7 @@ export default function Payout() {
                 </span>
                 <div>
                   <p className="text-sm font-semibold text-ink">{titleText}</p>
-                  <p className="mt-0.5 text-[13px] leading-5 text-body">{desc}</p>
+                  <p className="mt-0.5 text-sm leading-6 text-body">{desc}</p>
                 </div>
               </li>
             ))}
@@ -482,34 +482,34 @@ export default function Payout() {
         <aside className="card flex flex-col justify-between gap-4 p-5 md:p-6">
           <div>
             <h2 className="text-base font-bold text-ink">Lối tắt biên nhận &amp; quyền lợi</h2>
-            <p className="mt-1 text-xs leading-5 text-muted">
+            <p className="mt-1 text-sm leading-6 text-muted">
               Theo dõi các biên nhận đã chốt, đánh giá uy tín cơ sở thu mua và sử dụng Điểm Xanh tích lũy từ mỗi lượt bàn giao.
             </p>
             <div className="mt-4 flex flex-col gap-2.5">
               <Link
                 to="/user/receipt"
-                className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 text-[13px] font-semibold text-ink transition-colors hover:border-brand/40 hover:bg-surface-2"
+                className="flex min-h-11 items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 text-sm font-semibold text-ink transition-colors hover:border-brand/40 hover:bg-surface-2"
               >
                 <span>Xác nhận biên nhận &amp; Đánh giá sao (U-09 / U-10)</span>
                 <span className="text-brand">→</span>
               </Link>
               <Link
                 to="/user/transactions"
-                className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 text-[13px] font-semibold text-ink transition-colors hover:border-brand/40 hover:bg-surface-2"
+                className="flex min-h-11 items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 text-sm font-semibold text-ink transition-colors hover:border-brand/40 hover:bg-surface-2"
               >
                 <span>Lịch sử biên nhận bàn giao</span>
                 <span className="text-brand">→</span>
               </Link>
               <Link
                 to="/rewards"
-                className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 text-[13px] font-semibold text-ink transition-colors hover:border-brand/40 hover:bg-surface-2"
+                className="flex min-h-11 items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 text-sm font-semibold text-ink transition-colors hover:border-brand/40 hover:bg-surface-2"
               >
                 <span>Ví Điểm Xanh &amp; Đổi quà tặng (U-14)</span>
                 <span className="text-brand">→</span>
               </Link>
             </div>
           </div>
-          <p className="rounded-lg bg-surface-2 px-3.5 py-2.5 text-xs text-muted">
+          <p className="rounded-lg bg-surface-2 px-3.5 py-2.5 text-sm leading-6 text-muted">
             Thanh toán VietQR ở mục trên chỉ áp dụng cho gói dịch vụ nội bộ (Premium) và không dùng để thu chi hộ tiền phế liệu.
           </p>
         </aside>

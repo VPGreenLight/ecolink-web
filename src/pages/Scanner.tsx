@@ -589,7 +589,7 @@ export default function Scanner() {
     <div className="page flex flex-col py-5 md:py-6">
       <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div>
-          <p className="flex items-center gap-1.5 text-[13px] text-body">
+          <p className="flex items-center gap-1.5 text-sm text-body">
             Hệ sinh thái
             <Separator />
             <span className="font-medium text-brand-deep">Nhận diện thông minh</span>
@@ -606,10 +606,14 @@ export default function Scanner() {
                 apiOnline === false ? "bg-warn" : "bg-brand"
               }`}
             />
-            {apiOnline === false
-              ? "Chưa kết nối máy chủ nhận diện"
-              : "Hệ thống nhận diện thông minh sẵn sàng"}
+            {apiOnline === false ? "Chưa kết nối máy chủ nhận diện" : "AI sẵn sàng"}
           </p>
+          <Link
+            to="/waste"
+            className="btn-outline inline-flex min-h-9 items-center rounded-full px-4 text-sm font-semibold"
+          >
+            Tra cứu loại rác
+          </Link>
         </div>
       </header>
 
@@ -688,13 +692,13 @@ export default function Scanner() {
                     <span className="grid size-5 shrink-0 place-items-center rounded-full bg-brand/10 text-[11px] font-bold text-brand-deep">
                       {i + 1}
                     </span>
-                    <span className="text-[13px] leading-5 text-ink">{step}</span>
+                    <span className="text-sm leading-6 text-ink">{step}</span>
                   </li>
                 ))}
               </ol>
 
               {activeResult.hazardWarning && (
-                <p className="rounded-lg border border-warn/25 bg-warn/5 px-3 py-2 text-xs leading-5 text-body">
+                <p className="rounded-lg border border-warn/25 bg-warn/5 px-3 py-2 text-sm leading-6 text-body">
                   <b className="text-warn">Lưu ý an toàn:</b> {activeResult.hazardWarning}
                 </p>
               )}
@@ -702,56 +706,71 @@ export default function Scanner() {
           )}
 
           {hasSession && (
-            <div className="rounded-2xl border border-line bg-surface px-4 py-3">
+            <div className="rounded-2xl border border-line bg-surface p-3.5 sm:px-4 sm:py-3">
               <button
                 type="button"
+                aria-expanded={showMyHistory}
                 onClick={() => {
                   const next = !showMyHistory
                   setShowMyHistory(next)
                   if (next) refreshMyFeedbacks()
                 }}
-                className="flex w-full items-center justify-between text-xs font-semibold text-brand-deep hover:underline"
+                className="flex w-full items-center justify-between gap-3 text-left"
               >
-                <span>
-                  Lịch sử quét &amp; báo sai AI của tôi ({myScanHistory.length} quét ·{" "}
-                  {myFeedbacks.length} báo sai)
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm leading-6 font-semibold text-ink">
+                    Lịch sử quét &amp; báo sai AI của tôi
+                  </p>
+                  <p className="mt-0.5 text-xs tabular-nums text-muted">
+                    {myScanHistory.length} lượt quét · {myFeedbacks.length} báo sai
+                  </p>
+                </div>
+                <span className="inline-flex min-h-9 shrink-0 items-center rounded-full border border-line bg-surface-2 px-3 text-[13px] font-semibold text-brand-deep transition-colors hover:border-sage-line hover:bg-surface-3">
+                  {showMyHistory ? "Ẩn" : "Xem"}
                 </span>
-                <span>{showMyHistory ? "Ẩn" : "Xem"}</span>
               </button>
 
               {showMyHistory && (
-                <div className="mt-2.5 flex flex-col gap-3">
+                <div className="mt-3 flex flex-col gap-3 border-t border-line-soft pt-3">
                   <div>
-                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    <p className="mb-1.5 text-xs font-semibold tracking-wide text-muted uppercase">
                       Lần quét AI gần đây
                     </p>
                     {myScanHistory.length === 0 ? (
-                      <p className="text-xs text-muted">
+                      <p className="text-sm leading-6 text-muted">
                         Chưa có lượt quét ảnh AI nào được lưu.
                       </p>
                     ) : (
-                      <div className="flex flex-col gap-1.5">
+                      <div className="flex flex-col gap-2">
                         {myScanHistory.map((item) => {
                           const meta = getCategoryMeta(item.predictedLabel)
                           return (
                             <div
                               key={item.scanId}
-                              className="flex items-center justify-between gap-2 rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-xs"
+                              className="flex flex-col gap-1 rounded-xl border border-line-soft bg-surface-2/80 px-3 py-2.5 text-sm"
                             >
-                              <div className="min-w-0">
-                                <p className="truncate font-semibold text-ink">
-                                  {meta.shortName} ({Math.round(item.confidenceScore * 100)}%)
+                              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                                <p className="min-w-0 font-semibold text-ink [overflow-wrap:anywhere]">
+                                  {meta.shortName}{" "}
+                                  <span className="tabular-nums text-brand-deep">
+                                    ({Math.round(item.confidenceScore * 100)}%)
+                                  </span>
                                 </p>
-                                <p className="text-[11px] text-muted">
+                                <span className="max-w-full shrink-0 rounded-full border border-brand/20 bg-brand/10 px-2.5 py-0.5 text-xs font-semibold text-brand-deep">
+                                  {item.predictedLabel}
+                                </span>
+                              </div>
+                              <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs leading-5 text-muted">
+                                <span>
                                   {item.sortingGuide?.standardBinColor
                                     ? `Thùng ${item.sortingGuide.standardBinColor}`
-                                    : item.pipelineUsed}{" "}
-                                  · {new Date(item.scannedAt).toLocaleString("vi-VN")}
-                                </p>
-                              </div>
-                              <span className="shrink-0 rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-semibold text-brand-deep">
-                                {item.predictedLabel}
-                              </span>
+                                    : item.pipelineUsed}
+                                </span>
+                                <span aria-hidden="true">·</span>
+                                <span className="tabular-nums">
+                                  {new Date(item.scannedAt).toLocaleString("vi-VN")}
+                                </span>
+                              </p>
                             </div>
                           )
                         })}
@@ -760,25 +779,25 @@ export default function Scanner() {
                   </div>
 
                   <div>
-                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    <p className="mb-1.5 text-xs font-semibold tracking-wide text-muted uppercase">
                       Báo cáo phân loại sai của tôi
                     </p>
                     {myFeedbacks.length === 0 ? (
-                      <p className="text-xs text-muted">
+                      <p className="text-sm leading-6 text-muted">
                         Bạn chưa gửi báo cáo phân loại sai nào.
                       </p>
                     ) : (
-                      <div className="flex flex-col gap-1.5">
+                      <div className="flex flex-col gap-2">
                         {myFeedbacks.map((fb) => (
                           <div
                             key={fb.id}
-                            className="rounded-lg border border-line-soft bg-surface-2 px-3 py-2 text-xs"
+                            className="flex flex-col gap-1.5 rounded-xl border border-line-soft bg-surface-2/80 px-3 py-2.5 text-sm"
                           >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-semibold text-ink">
+                            <div className="flex flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                              <span className="min-w-0 leading-6 font-semibold text-ink [overflow-wrap:anywhere]">
                                 AI: {fb.predictedLabel} → Đề xuất: {fb.userReportedLabel}
                               </span>
-                              <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-brand-deep">
+                              <span className="max-w-full shrink-0 rounded-full border border-line bg-surface px-2.5 py-0.5 text-xs font-semibold text-brand-deep">
                                 {fb.status === "Reviewed"
                                   ? `Đã duyệt (${fb.adminVerifiedLabel ?? fb.userReportedLabel})`
                                   : fb.status === "Rejected"
@@ -787,7 +806,7 @@ export default function Scanner() {
                               </span>
                             </div>
                             {fb.reviewNote && (
-                              <p className="mt-1 text-[11px] text-muted">
+                              <p className="text-sm leading-6 text-muted [overflow-wrap:anywhere]">
                                 Phản hồi Staff: {fb.reviewNote}
                               </p>
                             )}
@@ -978,7 +997,7 @@ function Preview({
         {scanning && <div className="scan-line" aria-hidden="true" />}
 
         {scanning ? (
-          <span className="absolute top-3 left-3 z-30 inline-flex items-center gap-1.5 rounded-full bg-ink/85 px-3 py-1.5 text-[11px] font-semibold text-white">
+          <span className="absolute top-3 left-3 z-30 inline-flex items-center gap-1.5 rounded-full bg-ink/85 px-3 py-1.5 text-xs font-semibold text-white">
             <span className="pulse-bar size-1.5 rounded-full bg-mint-bright" />
             AI đang khoanh vùng &amp; phân loại
           </span>
@@ -988,7 +1007,7 @@ function Preview({
               <button
                 type="button"
                 onClick={onToggleBoxes}
-                className="inline-flex items-center gap-1 rounded-full border border-line-soft bg-white/92 px-2.5 py-1.5 text-[11px] font-semibold text-brand-deep shadow-[0_1px_2px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:bg-white"
+                className="inline-flex min-h-9 items-center gap-1 rounded-full border border-line-soft bg-white/92 px-3 py-1.5 text-xs font-semibold text-brand-deep shadow-[0_1px_2px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:bg-white"
               >
                 <BoxIcon />
                 {showBoxes ? "Ẩn khung" : `Hiện khung (${boxes.length})`}
@@ -997,7 +1016,7 @@ function Preview({
             <button
               type="button"
               onClick={onCamera}
-              className="inline-flex items-center gap-1.5 rounded-full border border-line-soft bg-white/92 px-3 py-1.5 text-[11px] font-medium text-ink shadow-[0_1px_2px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:bg-white"
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-line-soft bg-white/92 px-3 py-1.5 text-xs font-semibold text-ink shadow-[0_1px_2px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:bg-white"
             >
               <CameraIcon />
               Chụp trực tiếp
@@ -1011,7 +1030,7 @@ function Preview({
             onClick={onReset}
             title="Bỏ ảnh"
             aria-label="Bỏ ảnh"
-            className="absolute top-3 left-3 z-30 grid size-8 place-items-center rounded-full border border-line-soft bg-white/92 text-warn shadow-[0_1px_2px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:bg-warn hover:text-white"
+            className="absolute top-3 left-3 z-30 grid size-9 place-items-center rounded-full border border-line-soft bg-white/92 text-warn shadow-[0_1px_2px_rgba(0,0,0,0.06)] backdrop-blur-md transition hover:bg-warn hover:text-white"
           >
             <CloseIcon />
           </button>
@@ -1041,14 +1060,14 @@ function Preview({
         <div className="border-t border-surface-2 bg-surface/75 px-4 py-2.5">
           {boxes.length > 0 ? (
             <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                 <span className="font-semibold text-ink">
                   {boxes.length > 1
                     ? `Đã khoanh vùng ${boxes.length} vật thể (ưu tiên gần tâm #1)`
                     : "Đã khoanh vùng vật thể chính (#1)"}
                 </span>
                 {summaryChips.length > 0 && (
-                  <span className="text-[11px] text-muted">
+                  <span className="text-xs text-muted">
                     {summaryChips.map((s) => `${s.name} x${s.count}`).join(" • ")}
                   </span>
                 )}
@@ -1065,7 +1084,7 @@ function Preview({
                         role="tab"
                         aria-selected={active}
                         onClick={() => onSelectObject(idx)}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                        className={`inline-flex min-h-10 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-semibold transition sm:min-h-9 ${
                           active
                             ? box.isOod
                               ? "border-warn bg-warn/12 font-semibold text-warn"
@@ -1092,7 +1111,7 @@ function Preview({
               )}
             </div>
           ) : (
-            <p className="text-xs text-muted">
+            <p className="text-sm leading-6 text-muted">
               Chế độ phân loại toàn khung ảnh — Hãy đưa vật thể lại gần giữa khung hình để AI đóng khung chính xác hơn.
             </p>
           )}
@@ -1100,7 +1119,7 @@ function Preview({
       )}
 
       <div className="flex items-center justify-between gap-3 border-t border-surface-2 bg-white px-4 py-2.5">
-        <span className="truncate text-[13px] text-body">
+        <span className="truncate text-sm text-body">
           {file === sampleShot ? r.imageCaption : file.name}
         </span>
         <label
@@ -1110,7 +1129,7 @@ function Preview({
               openAuthPopup("login")
             }
           }}
-          className="btn-outline h-8 shrink-0 cursor-pointer px-3 text-[13px]"
+          className="btn-outline min-h-10 shrink-0 cursor-pointer px-3.5 text-[13px] font-semibold sm:min-h-9"
         >
           {isGuest ? "Đăng nhập để đổi ảnh" : "Đổi ảnh"}
           <input
@@ -1148,7 +1167,7 @@ function UploadZone({
       </span>
       <div>
         <p className="text-base font-bold text-ink">Đưa ảnh vật rác vào để bắt đầu</p>
-        <p className="mt-1.5 text-[13px] leading-5 text-muted">
+        <p className="mt-1.5 text-sm leading-6 text-muted">
           {isGuest
             ? "Khách có thể dùng thử ảnh mẫu AI bên dưới. Đăng nhập để chụp hoặc tải ảnh rác thật từ thiết bị."
             : "Hỗ trợ JPG, PNG, WEBP. AI tự động đóng khung từng món rác và ưu tiên vật thể ở giữa khung ngắm."}
@@ -1156,7 +1175,7 @@ function UploadZone({
       </div>
 
       <div className="flex flex-wrap justify-center gap-2">
-        <button type="button" onClick={onCamera} className="btn-primary h-11 px-5">
+        <button type="button" onClick={onCamera} className="btn-primary min-h-11 px-5 text-sm font-semibold">
           <CameraIcon />
           Chụp ảnh
         </button>
@@ -1167,7 +1186,7 @@ function UploadZone({
               openAuthPopup("login")
             }
           }}
-          className="btn-outline h-11 cursor-pointer px-5"
+          className="btn-outline min-h-11 cursor-pointer px-5 text-sm font-semibold"
         >
           Tải ảnh lên
           <input
@@ -1182,7 +1201,7 @@ function UploadZone({
       <button
         type="button"
         onClick={onSample}
-        className="text-[13px] font-semibold text-brand-deep underline underline-offset-4 hover:text-brand"
+        className="min-h-10 px-3 text-sm font-semibold text-brand-deep underline underline-offset-4 hover:text-brand"
       >
         Dùng luôn ảnh mẫu để quét thử AI
       </button>
@@ -1237,7 +1256,7 @@ function AiPanel({
             type="button"
             onClick={onScan}
             disabled={phase === "scanning" || !canScan}
-            className="btn-primary h-10 shrink-0 rounded-xl px-4 text-[13px]"
+            className="btn-primary min-h-10 shrink-0 rounded-xl px-4 text-sm font-semibold sm:min-h-9"
           >
             <SparkIcon />
             {CTA[phase]}
@@ -1245,17 +1264,11 @@ function AiPanel({
         }
       />
 
-      {!canScan && phase === "idle" && !error && (
-        <p className="reveal -mt-1 text-[13px] text-muted" style={{ animationDelay: `${T.gap}ms` }}>
-          Chọn hoặc chụp một ảnh để bắt đầu quét
-        </p>
-      )}
-
       {error && phase === "idle" && (
         <div
           role="alert"
           data-message-code={error.code || undefined}
-          className="reveal rounded-xl border border-warn/30 bg-warn/5 p-3.5 text-[13px] leading-5 text-ink"
+          className="reveal rounded-xl border border-warn/30 bg-warn/5 p-3.5 text-sm leading-6 text-ink"
         >
           <p className="font-semibold text-warn">Không thể hoàn tất quét AI</p>
           <p className="mt-1 text-body">{error.message}</p>
@@ -1263,7 +1276,7 @@ function AiPanel({
             <button
               type="button"
               onClick={onScan}
-              className="btn-primary h-9 px-3.5 text-xs"
+              className="btn-primary min-h-10 px-4 text-[13px] font-semibold sm:min-h-9"
             >
               Thử quét lại
             </button>
@@ -1271,7 +1284,7 @@ function AiPanel({
               <button
                 type="button"
                 onClick={onPreviewOffline}
-                className="btn-ghost h-9 px-3.5 text-xs"
+                className="btn-ghost min-h-10 px-4 text-[13px] font-semibold sm:min-h-9"
               >
                 Xem kết quả mẫu (Offline)
               </button>
@@ -1317,6 +1330,7 @@ function AiPanel({
     </div>
   )
 }
+
 
 const CTA = {
   idle: "Quét AI",
@@ -1364,7 +1378,7 @@ function AiFace({
       <div className="min-w-0 flex-1">
         <h2
           key={title}
-          className="reveal text-sm leading-5 font-bold text-ink"
+          className="reveal text-base leading-6 font-bold text-ink"
           style={{ animationDuration: "260ms" }}
         >
           {title}
@@ -1372,7 +1386,7 @@ function AiFace({
         {note && (
           <p
             key={note}
-            className="reveal text-[12px] leading-4 text-muted"
+            className="reveal text-sm leading-6 text-muted"
             style={{ animationDuration: "260ms" }}
           >
             {note}
@@ -1435,7 +1449,7 @@ function ScanResult({
   return (
     <div className="flex flex-col gap-3">
       <span
-        className={`draw-frame block w-full truncate rounded-full border px-3.5 py-1.5 text-center text-[11px] leading-4 font-semibold ${
+        className={`draw-frame block w-full truncate rounded-full border px-3.5 py-1.5 text-center text-xs leading-5 font-semibold ${
           result.recyclable
             ? "border-mint/40 bg-mint/25 text-brand-deep"
             : result.categoryCode === "battery"
@@ -1455,7 +1469,7 @@ function ScanResult({
           <Words text={result.material} from={T.title} />
         </h2>
         <p
-          className="reveal mt-1 text-[13px] leading-5 text-body"
+          className="reveal mt-1 text-sm leading-6 text-body"
           style={{ animationDelay: `${T.desc}ms` }}
         >
           {result.description}
@@ -1463,7 +1477,7 @@ function ScanResult({
         {!result.recyclable && result.hazardWarning && (
           <div
             role="alert"
-            className="mt-2.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] leading-5 font-medium text-rose-800"
+            className="mt-2.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm leading-6 font-medium text-rose-800"
           >
             {result.hazardWarning}
           </div>
@@ -1475,14 +1489,14 @@ function ScanResult({
         style={{ animationDelay: `${T.price}ms` }}
       >
         <div>
-          <p className="text-[10px] font-semibold tracking-[0.5px] text-body uppercase">
+          <p className="text-xs font-semibold tracking-[0.5px] text-body uppercase">
             {result.price.label}
           </p>
           <p className="mt-0.5 flex items-baseline gap-1.5">
             <b className="text-xl leading-7 font-bold tracking-tight text-brand-deep">
               {result.price.value}
             </b>
-            <span className="text-xs font-semibold text-body">{result.price.unit}</span>
+            <span className="text-sm font-semibold text-body">{result.price.unit}</span>
           </p>
         </div>
         <PriceIcon />
@@ -1494,14 +1508,14 @@ function ScanResult({
         style={{ animationDelay: `${T.conf}ms` }}
       >
         <div className="flex items-center justify-between gap-2">
-          <p className="flex items-center gap-1.5 text-xs font-semibold text-ink">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-ink">
             <ShieldIcon />
             Kết luận phân loại
             {result.objects.length > 1 && result.activeRank
               ? ` (Vật thể #${result.activeRank})`
               : ""}
           </p>
-          <span className="rounded-full border border-brand/20 bg-mint/25 px-2.5 py-1 text-[11px] font-semibold text-brand-deep">
+          <span className="rounded-full border border-brand/20 bg-mint/25 px-2.5 py-1 text-xs font-semibold text-brand-deep">
             {result.binColor
               ? `Thùng ${result.binColor}`
               : result.recyclable
@@ -1511,12 +1525,12 @@ function ScanResult({
         </div>
 
         <div className="mt-3 rounded-lg border border-line bg-white px-3.5 py-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
             <span className="font-semibold text-ink">
               Độ tin cậy AI (Kết quả chắc chắn nhất)
             </span>
             <span
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold tabular-nums ${conf.badgeClass}`}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold tabular-nums ${conf.badgeClass}`}
             >
               <span>{conf.pctText}</span>
               <span>·</span>
@@ -1544,19 +1558,19 @@ function ScanResult({
               {summaryEntries.map(([code, count]) => (
                 <span
                   key={code}
-                  className="inline-flex items-center gap-1 rounded-full border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink"
+                  className="inline-flex items-center gap-1 rounded-full border border-line bg-white px-2.5 py-1 text-[13px] font-semibold text-ink"
                 >
                   <span>{getCategoryMeta(code).boxLabel}</span>
                   <span className="text-brand-deep">×{count}</span>
                 </span>
               ))}
             </div>
-            <p className="text-[12px] leading-4 text-muted">
+            <p className="text-sm leading-6 text-muted">
               Đã tìm thấy {result.detectedCount} vật rác trong ảnh. Bấm vào từng khung đánh số trên ảnh để xem hướng dẫn sơ chế riêng cho từng món.
             </p>
           </div>
         ) : (
-          <p className="mt-2.5 text-[12px] leading-5 text-body">
+          <p className="mt-2.5 text-sm leading-6 text-body">
             Đã xác định loại vật liệu phù hợp nhất và đối chiếu quy chuẩn phân loại hiện hành.
           </p>
         )}
@@ -1564,11 +1578,11 @@ function ScanResult({
 
       <div className="reveal flex flex-col gap-2" style={{ animationDelay: `${T.actions}ms` }}>
         {result.recyclable ? (
-          <Link to={mapUrl} className="btn-primary h-11 w-full rounded-xl px-4">
+          <Link to={mapUrl} className="btn-primary min-h-11 w-full rounded-xl px-4 text-sm font-semibold">
             Tìm cơ sở thu mua loại rác này
           </Link>
         ) : (
-          <Link to="/guidance" className="btn-outline h-11 w-full rounded-xl px-4">
+          <Link to="/guidance" className="btn-outline min-h-11 w-full rounded-xl px-4 text-sm font-semibold">
             Xem chi tiết hướng dẫn phân loại &amp; xử lý
           </Link>
         )}
@@ -1604,19 +1618,19 @@ function OodResult({
       className="reveal flex flex-col gap-3 pt-1"
     >
       <div className="rounded-xl border border-warn/30 bg-warn/5 p-4">
-        <p className="flex items-center justify-between gap-2 text-xs font-semibold text-warn">
+        <p className="flex items-center justify-between gap-2 text-sm font-semibold text-warn">
           <span>
             {isLowConfidence ? "Chưa đủ cơ sở kết luận" : "Không thể kết luận loại vật liệu"}
             {result.activeRank ? ` • Khung #${result.activeRank}` : ""}
           </span>
           <span>{isLowConfidence ? "Cần chụp rõ hơn" : "Vui lòng quét loại rác khác"}</span>
         </p>
-        <p className="mt-1.5 text-[13px] leading-5 text-ink">
+        <p className="mt-1.5 text-sm leading-6 text-ink">
           {result.message ||
             "Loại rác trong ảnh hiện đang tạm ngưng hỗ trợ hoặc không nằm trong danh mục phân loại hiện hành. Vui lòng quét loại rác khác."}
         </p>
         {isLowConfidence && (
-          <p className="mt-2 rounded-lg border border-warn/25 bg-white/80 px-3 py-2 text-xs font-medium text-ink">
+          <p className="mt-2 rounded-lg border border-warn/25 bg-white/80 px-3 py-2 text-sm leading-6 font-medium text-ink">
             Độ tin cậy cao nhất AI đo được:{" "}
             <b className="tabular-nums text-warn">{conf.pctText}</b> (thấp hơn ngưỡng an toàn tối thiểu{" "}
             {Math.round(result.confidenceThreshold * 100)}%).
@@ -1626,20 +1640,20 @@ function OodResult({
           <button
             type="button"
             onClick={onSelectPrimary}
-            className="btn-outline mt-3 h-8 px-3 text-xs"
+            className="btn-outline mt-3 min-h-10 px-3.5 text-[13px] font-semibold sm:min-h-9"
           >
             Quay về vật thể chính (#1)
           </button>
         )}
       </div>
 
-      <div className="rounded-xl border border-line-soft bg-surface-2 p-3.5 text-[13px] leading-5 text-body">
+      <div className="rounded-xl border border-line-soft bg-surface-2 p-3.5 text-sm leading-6 text-body">
         <p className="font-semibold text-ink">
           {isLowConfidence
             ? "Mẹo chụp lại để hệ thống kết luận chính xác:"
             : "Gợi ý tiếp theo:"}
         </p>
-        <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-body">
+        <ul className="mt-1.5 list-disc space-y-1 pl-4 text-sm leading-6 text-body">
           {isLowConfidence ? (
             <>
               <li>Đặt món rác vào giữa khung hình camera, cách 20–40 cm.</li>
@@ -1754,7 +1768,7 @@ function InlineFeedbackReport({
 
   if (doneMsg) {
     return (
-      <p role="status" className="rounded-lg border border-brand/25 bg-brand/8 px-3 py-2 text-xs font-medium text-brand-deep">
+      <p role="status" className="rounded-lg border border-brand/25 bg-brand/8 px-3 py-2 text-sm leading-6 font-medium text-brand-deep">
         {doneMsg}
       </p>
     )
@@ -1771,7 +1785,7 @@ function InlineFeedbackReport({
           }
           setOpen(true)
         }}
-        className="self-center text-xs font-medium text-muted underline underline-offset-4 hover:text-brand-deep"
+        className="min-h-10 self-center px-2 text-sm font-medium text-muted underline underline-offset-4 hover:text-brand-deep sm:min-h-9"
       >
         AI nhận diện chưa đúng? Báo nhãn đúng tại đây
       </button>
@@ -1782,7 +1796,7 @@ function InlineFeedbackReport({
     <form
       noValidate
       onSubmit={(e) => void handleSubmit(e)}
-      className="rounded-xl border border-line bg-surface p-3 text-xs"
+      className="rounded-xl border border-line bg-surface p-3.5 text-sm"
     >
       <div className="flex items-center justify-between gap-2">
         <span className="font-semibold text-ink">Báo cáo nhãn rác đúng (cải thiện AI)</span>
@@ -1790,15 +1804,15 @@ function InlineFeedbackReport({
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="text-muted hover:text-ink"
+            className="min-h-9 px-2 text-[13px] font-medium text-muted hover:text-ink"
           >
             Đóng
           </button>
         )}
       </div>
 
-      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-[11px] font-semibold text-ink">
+      <div className="mt-2.5 grid gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
           <span>
             Loại rác đúng theo bạn
             <RequiredMark />
@@ -1810,7 +1824,7 @@ function InlineFeedbackReport({
               setReportedLabel(e.target.value)
               setErrMsg("")
             }}
-            className="h-9 rounded-lg border border-sage-line bg-white px-2.5 text-xs font-normal text-ink focus:border-brand focus:outline-none"
+            className="min-h-11 rounded-lg border border-sage-line bg-white px-3 text-base font-normal text-ink focus:border-brand focus:outline-none sm:text-[15px]"
           >
             <option value="">-- Chọn loại rác đúng --</option>
             {activeClassOptions.map((opt) => (
@@ -1820,7 +1834,7 @@ function InlineFeedbackReport({
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-[11px] font-semibold text-ink">
+        <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
           <span>Ghi chú thêm</span>
           <input
             type="text"
@@ -1830,13 +1844,13 @@ function InlineFeedbackReport({
               setErrMsg("")
             }}
             placeholder="Ghi chú thêm (tuỳ chọn)"
-            className="h-9 rounded-lg border border-sage-line bg-white px-2.5 text-xs font-normal text-ink placeholder:text-muted focus:border-brand focus:outline-none"
+            className="min-h-11 rounded-lg border border-sage-line bg-white px-3 text-base font-normal text-ink placeholder:text-muted focus:border-brand focus:outline-none sm:text-[15px]"
           />
         </label>
       </div>
 
       {errMsg && (
-        <p role="alert" className="mt-2 rounded-lg border border-warn/30 bg-warn/10 px-2.5 py-1.5 text-xs font-medium text-warn">
+        <p role="alert" className="mt-2 rounded-lg border border-warn/30 bg-warn/10 px-2.5 py-1.5 text-sm leading-6 font-medium text-warn">
           {errMsg}
         </p>
       )}
@@ -1844,7 +1858,7 @@ function InlineFeedbackReport({
       <button
         type="submit"
         disabled={sending}
-        className="btn-outline mt-2 h-8 px-3 text-xs disabled:opacity-50"
+        className="btn-outline mt-3 min-h-10 px-4 text-sm font-semibold disabled:opacity-50 sm:min-h-9"
       >
         {sending ? "Đang gửi..." : "Gửi phản hồi"}
       </button>
@@ -1859,7 +1873,7 @@ function HowTo() {
         <h2 className="text-lg leading-7 font-bold tracking-tight text-ink">
           Dùng trang này thế nào
         </h2>
-        <p className="mt-1 text-[13px] leading-5 text-muted">
+        <p className="mt-1 text-sm leading-6 text-muted">
           Ba bước, chưa đến một phút là có đơn giá tham khảo và điểm thu mua.
         </p>
       </div>
@@ -1871,8 +1885,8 @@ function HowTo() {
               {i + 1}
             </span>
             <div>
-              <p className="text-sm leading-5 font-semibold text-ink">{s.title}</p>
-              <p className="mt-0.5 text-[13px] leading-5 text-body">{s.desc}</p>
+              <p className="text-sm leading-6 font-semibold text-ink">{s.title}</p>
+              <p className="mt-0.5 text-sm leading-6 text-body">{s.desc}</p>
             </div>
           </li>
         ))}
@@ -2169,12 +2183,12 @@ function CameraPanel({
         {err ? (
           <div className="grid h-full place-items-center px-6 text-center">
             <div>
-              <p className="text-sm font-semibold text-white">Không mở được camera</p>
-              <p className="mt-1.5 text-[13px] leading-5 text-white/70">{err}</p>
+              <p className="text-base font-semibold text-white">Không mở được camera</p>
+              <p className="mt-1.5 text-sm leading-6 text-white/75">{err}</p>
               <button
                 type="button"
                 onClick={onClose}
-                className="mt-4 inline-flex h-9 items-center rounded-xl bg-white/20 px-4 text-xs font-semibold text-white hover:bg-white/30"
+                className="mt-4 inline-flex min-h-10 items-center rounded-xl bg-white/20 px-4 text-sm font-semibold text-white hover:bg-white/30"
               >
                 Đóng camera
               </button>
@@ -2280,17 +2294,17 @@ function CameraPanel({
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-surface-2 bg-white px-5 py-3.5">
-          <p className="text-[13px] text-muted">
+          <p className="text-sm text-muted">
             {err ? "Hoặc đóng rồi dùng nút tải ảnh lên" : "Nhấn Enter để chụp & quét ngay"}
           </p>
           <div className="flex shrink-0 flex-wrap items-center gap-2.5">
-            <button type="button" onClick={onClose} className="btn-ghost h-9 px-3.5 text-[13px]">
+            <button type="button" onClick={onClose} className="btn-ghost min-h-9 px-3.5 text-[13px] font-semibold">
               Huỷ
             </button>
             <button
               type="button"
               onClick={toggleFacingMode}
-              className="btn-outline flex h-9 items-center gap-1.5 px-3 text-[13px]"
+              className="btn-outline flex min-h-9 items-center gap-1.5 px-3 text-[13px] font-semibold"
               title="Đổi camera trước hoặc sau"
             >
               <CameraRotateIcon className="size-3.5 text-muted" />
@@ -2300,7 +2314,7 @@ function CameraPanel({
               type="button"
               onClick={() => shoot(false)}
               disabled={!!err || !ready}
-              className="btn-outline h-9 px-3.5 text-[13px] disabled:opacity-50"
+              className="btn-outline min-h-9 px-3.5 text-[13px] font-semibold disabled:opacity-50"
             >
               Chụp xem lại
             </button>
@@ -2308,7 +2322,7 @@ function CameraPanel({
               type="button"
               onClick={() => shoot(true)}
               disabled={!!err || !ready}
-              className="btn-primary h-9 px-4 text-[13px] font-semibold shadow-sm disabled:opacity-50"
+              className="btn-primary min-h-9 px-4 text-[13px] font-semibold shadow-sm disabled:opacity-50"
             >
               <SparkIcon />
               Chụp &amp; Quét ngay

@@ -121,7 +121,7 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-controls="admin-nav"
-            className="grid size-9 place-items-center rounded-lg text-ink transition-colors hover:bg-surface-2 lg:hidden"
+            className="grid size-10 place-items-center rounded-lg text-ink transition-colors hover:bg-surface-2 lg:hidden"
           >
             <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
               <path d="M4 7h16M4 12h16M4 17h16" />
@@ -167,7 +167,7 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
                         to={item.to}
                         end={item.to.split("/").length <= 2}
                         className={({ isActive }) =>
-                          `block rounded-md px-3 py-2 text-[13px] leading-5 font-medium transition-colors ${
+                          `flex min-h-10 items-center rounded-md px-3 py-2 text-sm leading-5 font-medium transition-colors ${
                             isActive
                               ? "bg-brand text-white"
                               : "text-body hover:bg-surface-2 hover:text-ink"
@@ -189,7 +189,7 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
           <button
             type="button"
             onClick={logout}
-            className="mx-4 mb-4 w-[calc(100%-2rem)] shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-semibold text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 hover:text-red-800 lg:mt-auto"
+            className="mx-4 mb-4 min-h-11 w-[calc(100%-2rem)] shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 hover:text-red-800 lg:mt-auto"
           >
             Đăng xuất
           </button>
@@ -210,7 +210,7 @@ export default function AdminShell({ role }: { role: "staff" | "admin" }) {
                 Vui lòng liên hệ Quản trị viên để được bật quyền tại mục Phân quyền Staff.
               </p>
               <div className="mt-4">
-                <Link to="/staff" className="btn-primary inline-flex h-10 items-center px-4 text-xs font-semibold">
+                <Link to="/staff" className="btn-primary inline-flex min-h-10 items-center px-4 text-sm font-semibold">
                   Quay về tổng quan Nhân viên
                 </Link>
               </div>
@@ -281,10 +281,10 @@ function AccountMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 rounded-full border border-line bg-white py-1 pr-2 pl-1 transition-colors hover:border-sage-line hover:bg-surface-2"
+        className="flex min-h-10 items-center gap-1.5 rounded-full border border-line bg-white py-1 pr-2.5 pl-1 transition-colors hover:border-sage-line hover:bg-surface-2"
       >
         <UserAvatar name={name} avatarUrl={avatarUrl} size="sm" />
-        <span className="hidden text-[13px] text-muted sm:block">{name}</span>
+        <span className="hidden text-sm font-medium text-muted sm:block">{name}</span>
         <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-3.5 text-muted">
           <path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -299,7 +299,7 @@ function AccountMenu({
             <UserAvatar name={name} avatarUrl={avatarUrl} size="md" />
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-ink">{name}</p>
-              <p className="text-xs text-muted">{label}</p>
+              <p className="text-sm text-muted">{label}</p>
             </div>
           </div>
 
@@ -309,7 +309,7 @@ function AccountMenu({
                 key={to}
                 to={to}
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
+                className="flex min-h-10 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-body transition-colors hover:bg-surface-2 hover:text-ink"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4 text-muted">
                   <circle cx="12" cy="8" r="3.5" />
@@ -325,7 +325,7 @@ function AccountMenu({
                 signOut()
                 openAuthPopup("login")
               }}
-              className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 hover:text-red-800"
+              className="mt-1 flex min-h-10 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50 hover:text-red-800"
             >
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="size-4">
                 <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -468,7 +468,7 @@ function NotificationBellPopover({ role }: { role: "staff" | "admin" }) {
         onClick={() => setOpen((v) => !v)}
         aria-label={unreadCount > 0 ? `Thông báo (${unreadCount} chưa đọc)` : "Thông báo"}
         aria-expanded={open}
-        className="relative grid size-9 place-items-center rounded-full border border-line bg-white text-muted transition-colors hover:border-sage-line hover:bg-surface-2 hover:text-ink"
+        className="relative grid size-10 place-items-center rounded-full border border-line bg-white text-muted transition-colors hover:border-sage-line hover:bg-surface-2 hover:text-ink"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4">
           <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
@@ -490,7 +490,7 @@ function NotificationBellPopover({ role }: { role: "staff" | "admin" }) {
           <div className="flex items-center justify-between border-b border-line-soft bg-surface-2/70 px-4 py-3">
             <div>
               <p className="text-sm font-bold text-ink">Thông báo hệ thống</p>
-              <p className="text-[11px] text-muted">
+              <p className="text-xs text-muted">
                 {unreadCount > 0 ? `${unreadCount} thông báo chưa đọc` : "Đã đọc tất cả"}
               </p>
             </div>
@@ -499,7 +499,7 @@ function NotificationBellPopover({ role }: { role: "staff" | "admin" }) {
                 type="button"
                 disabled={busyAll}
                 onClick={() => void handleMarkAll()}
-                className="text-xs font-semibold text-brand-deep hover:underline disabled:opacity-50"
+                className="min-h-10 px-2 text-sm font-semibold text-brand-deep hover:underline disabled:opacity-50"
               >
                 {busyAll ? "Đang xử lý..." : "Đọc tất cả"}
               </button>
@@ -508,18 +508,18 @@ function NotificationBellPopover({ role }: { role: "staff" | "admin" }) {
 
           <div className="max-h-80 overflow-y-auto divide-y divide-line-soft">
             {err && (
-              <p role="alert" className="px-4 py-2.5 text-xs font-medium text-warn">
+              <p role="alert" className="px-4 py-2.5 text-sm font-medium text-warn">
                 {err}
               </p>
             )}
             {!live ? (
-              <p className="px-4 py-6 text-center text-xs text-muted">
+              <p className="px-4 py-6 text-center text-sm leading-6 text-muted">
                 Kết nối tài khoản Backend để nhận thông báo thời gian thực.
               </p>
             ) : loading && items.length === 0 ? (
-              <p className="px-4 py-6 text-center text-xs text-muted">Đang tải thông báo...</p>
+              <p className="px-4 py-6 text-center text-sm leading-6 text-muted">Đang tải thông báo...</p>
             ) : items.length === 0 ? (
-              <p className="px-4 py-6 text-center text-xs text-muted">
+              <p className="px-4 py-6 text-center text-sm leading-6 text-muted">
                 Chưa có thông báo nào.
               </p>
             ) : (
@@ -533,13 +533,13 @@ function NotificationBellPopover({ role }: { role: "staff" | "admin" }) {
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-xs font-bold text-ink">{n.title}</span>
+                    <span className="text-sm font-bold text-ink">{n.title}</span>
                     {!n.isRead && (
                       <span className="mt-1 size-2 shrink-0 rounded-full bg-brand" aria-hidden="true" />
                     )}
                   </div>
-                  <p className="text-xs leading-5 text-body">{n.message}</p>
-                  <span className="text-[11px] text-muted tabular-nums">
+                  <p className="text-sm leading-6 text-body">{n.message}</p>
+                  <span className="text-xs text-muted tabular-nums">
                     {new Date(n.createdAt).toLocaleString("vi-VN")}
                   </span>
                 </button>
@@ -551,7 +551,7 @@ function NotificationBellPopover({ role }: { role: "staff" | "admin" }) {
             <Link
               to={`/${role}/account`}
               onClick={() => setOpen(false)}
-              className="text-xs font-semibold text-brand-deep hover:underline"
+              className="inline-flex min-h-10 items-center text-sm font-semibold text-brand-deep hover:underline"
             >
               Mở trang Hồ sơ &amp; Thông báo →
             </Link>

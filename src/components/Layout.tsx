@@ -12,6 +12,7 @@ const TREE_FAB_ROUTES = new Set(["/", "/scanner", "/map", "/rewards"])
 export default function Layout() {
   const { pathname } = useLocation()
   const showTreeFab = TREE_FAB_ROUTES.has(pathname)
+  const isChatPage = pathname === "/chat"
 
   useEffect(() => {
     window.scrollTo({ top: 0 })
@@ -19,14 +20,14 @@ export default function Layout() {
   }, [pathname])
 
   return (
-    <div className="min-h-dvh bg-page pb-20 lg:pb-0">
+    <div className={`min-h-dvh bg-page ${isChatPage ? "pb-[68px] lg:pb-0" : "pb-20 lg:pb-0"}`}>
       <Navbar />
       <main className="pt-[70px] md:pt-[76px]">
         <Suspense fallback={null}>
           <Outlet />
         </Suspense>
       </main>
-      <Footer />
+      {!isChatPage && <Footer />}
       {showTreeFab && <VirtualTreeFab />}
       <MobileNav />
     </div>

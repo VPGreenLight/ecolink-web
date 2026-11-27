@@ -24,6 +24,8 @@ export default function MobileNav() {
             key={link.to}
             to={link.to}
             end={link.to === "/"}
+            title={link.label}
+            aria-label={link.label}
             className={({ isActive }) =>
               `flex min-h-[54px] flex-col items-center justify-start gap-1 border-0 border-r border-line/60 px-0.5 pt-2 pb-1.5 text-center text-[10px] leading-[1.15] font-semibold tracking-[-0.015em] transition-colors last:border-r-0 min-[412px]:text-[11px] sm:px-1 sm:text-xs sm:tracking-normal ${
                 isActive ? "bg-surface-2 text-brand-deep" : "text-body"
@@ -37,7 +39,7 @@ export default function MobileNav() {
                   strokeWidth={isActive ? 2.15 : 1.75}
                   className="size-[17px] shrink-0 sm:size-[18px]"
                 />
-                <span>{link.label}</span>
+                <span>{"mobileLabel" in link ? link.mobileLabel : link.label}</span>
               </>
             )}
           </NavLink>

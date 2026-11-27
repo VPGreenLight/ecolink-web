@@ -2,9 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { fmt, LEADERBOARD, type Rank } from "@/data/rewards"
 import { fetchLeaderboard, type LeaderboardCycleDto } from "@/lib/gamificationApi"
 import { initApiLoading, initApiState, isSsrSmokeTest } from "@/lib/hydration"
-import SearchFilterBar from "@/components/SearchFilterBar"
 import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
-import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 
 type BoardRow = Rank & {
   id?: string
@@ -12,14 +10,6 @@ type BoardRow = Rank & {
   neededAbove?: number
   recycledKg?: number
 }
-
-const ROLE_TABS = [
-  { key: "all", label: "Tất cả" },
-  { key: "user", label: "Người dân" },
-  { key: "recycler", label: "Người thu gom" },
-] as const
-
-type RoleTab = (typeof ROLE_TABS)[number]["key"]
 
 function RoleBadge({ role }: { role?: string }) {
   if (!role) return null
@@ -54,9 +44,6 @@ function daysRemaining(endsAt?: string | null) {
 /** Bảng xếp hạng theo điểm xếp hạng — áp dụng cho cả Người dân và Người thu gom (BR-GAM-07: đổi quà không làm tụt hạng). */
 export default function Leaderboard() {
   const [liveAuth] = useState(() => !isSsrSmokeTest())
-  const [roleTab, setRoleTab] = useState<RoleTab>("all")
-  const [search, setSearch] = useState("")
-  const debouncedSearch = useDebouncedValue(search, 250)
   const [page, setPage] = useState(1)
   const pageSize = FIXED_PAGE_SIZE
 
@@ -69,7 +56,7 @@ export default function Leaderboard() {
   useEffect(() => {
     let active = true
     if (liveAuth) setLoading(true)
-    fetchLeaderboard({ top: 100, role: roleTab })
+    fetchLeaderboard({ top: 100 })
       .then((res) => {
         if (!active || !res.data) return
         setCycle(res.data.activeCycle ?? null)
@@ -109,64 +96,19 @@ export default function Leaderboard() {
     return () => {
       active = false
     }
-  }, [liveAuth, roleTab])
+  }, [liveAuth])
 
   const [first, second, third] = rows
   const rest = rows.slice(3)
-
-  const filteredRest = useMemo(() => {
-    const q = debouncedSearch.trim().toLowerCase()
-    const indexed = rest.map((r, idx) => ({ ...r, actualRank: idx + 4 }))
-    if (!q) return indexed
-    return indexed.filter(
-      (r) =>
-        r.name.toLowerCase().includes(q) ||
-        r.area.toLowerCase().includes(q),
-    )
-  }, [rest, debouncedSearch])
-
   const pagedRest = useMemo(
-    () => paginateItems(filteredRest, page, pageSize),
-    [filteredRest, page, pageSize],
+    () => paginateItems(rest, page, pageSize),
+    [rest, page, pageSize],
   )
 
   const daysLeft = daysRemaining(cycle?.endsAt)
 
   return (
     <section className="mt-8 first:mt-0 flex flex-col gap-5">
-      {/* Bộ lọc vai trò + tìm kiếm */}
-      <SearchFilterBar
-        label="Tìm thành viên / cơ sở trên bảng xếp hạng"
-        value={search}
-        onChange={(v) => {
-          setSearch(v)
-          setPage(1)
-        }}
-        placeholder="Nhập tên người dân, tên vựa hoặc khu vực..."
-        totalCount={rows.length}
-        countLabel="thành viên"
-      >
-        <div className="flex flex-wrap gap-1.5">
-          {ROLE_TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => {
-                setRoleTab(t.key)
-                setPage(1)
-              }}
-              className={`h-9 rounded-lg border px-3 text-xs font-semibold transition-colors ${
-                roleTab === t.key
-                  ? "border-brand bg-brand text-white"
-                  : "border-line bg-white text-body hover:bg-surface-2"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </SearchFilterBar>
-
       {/* Top 3 + list bao bằng một khung chung border */}
       <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-[0_1px_2px_rgba(15,31,21,0.05)]">
         {/* Băng nền dọc giữa, chữ trắng trên brand-deep, 2 lá vàng phẳng hai bên */}
@@ -236,6 +178,7 @@ export default function Leaderboard() {
                 </li>
                 {pagedRest.map((r) => {
                   const gap = r.neededAbove ?? 0
+                  const actualRank = rest.indexOf(r) + 4
                   return (
                     <li
                       key={r.id ?? r.name}
@@ -244,7 +187,7 @@ export default function Leaderboard() {
                       }`}
                     >
                       <span className="text-sm font-semibold tabular-nums text-muted">
-                        {String(r.actualRank).padStart(2, "0")}
+                        {String(actualRank).padStart(2, "0")}
                       </span>
                       <div className="flex min-w-0 items-center gap-3">
                         <span
@@ -327,11 +270,11 @@ export default function Leaderboard() {
         )}
       </div>
 
-      {filteredRest.length > pageSize && (
+      {rest.length > pageSize && (
         <PaginationBar
           page={page}
           pageSize={pageSize}
-          totalCount={filteredRest.length}
+          totalCount={rest.length}
           onPageChange={setPage}
           itemLabel="thành viên"
           className="mt-0"

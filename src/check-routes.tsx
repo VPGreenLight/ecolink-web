@@ -31,13 +31,11 @@ globalThis.localStorage = {
 /** URL nào kiểm bằng vai trò nào — ở đây chỉ vào các route có RequireRole. */
 const BY_ROLE: Record<Role, [string, string][]> = {
   user: [
-    ["/user", "Xin chào"],
-    ["/user/handover", "Yêu cầu thu gom rác"],
     ["/user/receipt", "Xác nhận bàn giao rác"],
     ["/user/payout", "Quy chuẩn thanh toán tiền phế liệu trực tiếp"],
     ["/user/transactions", "Lịch sử biên nhận bàn giao"],
     ["/user/gamification", "Cây ảo của bạn"],
-    ["/chat", "Tạo yêu cầu bàn giao"],
+    ["/chat", "Tạo yêu cầu"],
   ],
   recycler: [
     ["/recycler", "Trạng thái hoạt động"],

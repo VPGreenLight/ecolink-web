@@ -690,7 +690,7 @@ export default function RecyclerHome() {
         action={
           <a
             href="#recycler-packages"
-            className="inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand/6 px-3 py-1.5 text-xs font-semibold text-brand-deep hover:bg-brand/12"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-brand/25 bg-brand/6 px-3.5 py-2 text-sm font-semibold text-brand-deep hover:bg-brand/12"
           >
             {entitlements.hasVerifiedBlueBadge ? (
               <>
@@ -717,17 +717,17 @@ export default function RecyclerHome() {
               </span>
             </p>
             {profile.verificationStatus === "Rejected" ? (
-              <p className="text-xs leading-5">
+              <p className="text-sm leading-6">
                 <b>Lý do từ chối:</b> {profile.rejectionReason || "Hồ sơ chưa đạt yêu cầu xác minh."}{" "}
                 Theo quy chuẩn <code>BR-MTH-02</code>, khi bạn cập nhật lại thông tin hoặc ghim kho bãi bên dưới, hồ sơ sẽ tự động chuyển về <b>Pending</b> để nhân viên xét duyệt lại.
               </p>
             ) : (
-              <p className="text-xs leading-5">
+              <p className="text-sm leading-6">
                 Nhân viên vận hành đang kiểm tra giấy phép pháp lý và tọa độ kho bãi của bạn. Khi được duyệt, cơ sở có thể bật trực tuyến trên bản đồ.
               </p>
             )}
           </div>
-          <Link to="/join-recycler" className="btn-outline h-9 shrink-0 bg-white px-3.5 text-xs">
+          <Link to="/join-recycler" className="btn-outline min-h-10 shrink-0 bg-white px-4 text-sm font-semibold">
             Xem / nộp lại hồ sơ KYB →
           </Link>
         </section>
@@ -783,17 +783,17 @@ export default function RecyclerHome() {
       {actionErr && (
         <p
           role="alert"
-          className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn"
+          className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-sm font-semibold text-warn"
         >
           {actionErr}
         </p>
       )}
       {flash && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand/25 bg-brand/6 px-4 py-3">
-          <p role="status" className="text-[13px] font-semibold text-brand-deep">
+          <p role="status" className="text-sm font-semibold text-brand-deep">
             {flash}
           </p>
-          <Link to="/map" className="text-xs font-semibold text-brand hover:underline">
+          <Link to="/map" className="text-sm font-semibold text-brand hover:underline">
             Kiểm tra trên trang Bản đồ →
           </Link>
         </div>
@@ -805,12 +805,12 @@ export default function RecyclerHome() {
           <div className="min-w-0">
             <h2 className="text-base font-bold text-ink">Vị trí kho bãi trên bản đồ</h2>
             <p className="mt-0.5 text-sm text-body">{profile.businessAddress}</p>
-            <p className="mt-0.5 text-xs tabular-nums text-muted">
+            <p className="mt-0.5 text-sm leading-6 tabular-nums text-muted">
               Toạ độ hiện tại: {profile.latitude.toFixed(5)}, {profile.longitude.toFixed(5)} · Giờ mở cửa: {profile.operatingHours}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link to="/map" className="btn-ghost h-9 px-3 text-xs">
+            <Link to="/map" className="btn-ghost min-h-10 px-3.5 text-sm font-semibold">
               Xem trên /map
             </Link>
             <button
@@ -819,7 +819,7 @@ export default function RecyclerHome() {
                 setEditingProfile((v) => !v)
                 setProfileErr("")
               }}
-              className="btn-outline h-9 px-3.5 text-xs"
+              className="btn-outline min-h-10 px-4 text-sm font-semibold"
             >
               {editingProfile ? "Đóng mô tả cơ sở" : "Sửa mô tả & liên hệ"}
             </button>
@@ -829,7 +829,7 @@ export default function RecyclerHome() {
                 setEditingSchedule((v) => !v)
                 setScheduleErr("")
               }}
-              className="btn-outline h-9 px-3.5 text-xs"
+              className="btn-outline min-h-10 px-4 text-sm font-semibold"
             >
               {editingSchedule ? "Đóng lịch tuần" : "Lịch hoạt động tuần (R-02)"}
             </button>
@@ -839,7 +839,7 @@ export default function RecyclerHome() {
                 setEditingLocation((v) => !v)
                 setPinErr("")
               }}
-              className="btn-outline h-9 px-3.5 text-xs"
+              className="btn-outline min-h-10 px-4 text-sm font-semibold"
             >
               {editingLocation ? "Đóng chỉnh vị trí" : "Cập nhật ghim kho bãi"}
             </button>
@@ -854,7 +854,7 @@ export default function RecyclerHome() {
             partnerKey={profile.recyclerId}
             variant="detail"
           />
-          <div className="flex flex-col gap-1.5 text-xs leading-5 text-body">
+          <div className="flex flex-col gap-1.5 text-sm leading-6 text-body">
             <p className="font-semibold text-ink">Giới thiệu &amp; quy trình tiếp nhận</p>
             <p>
               {profile.description ||
@@ -871,54 +871,54 @@ export default function RecyclerHome() {
           >
             <h3 className="text-sm font-bold text-ink">Thông tin giới thiệu &amp; Liên hệ cơ sở</h3>
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+              <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
                 Tên cơ sở thu mua
                 <input
-                  className="input"
+                  className="input min-h-11 text-base sm:text-[15px]"
                   value={draftFacilityName}
                   onChange={(e) => setDraftFacilityName(e.target.value)}
                 />
               </label>
-              <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+              <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
                 Người đại diện
                 <input
-                  className="input"
+                  className="input min-h-11 text-base sm:text-[15px]"
                   value={draftRepresentativeName}
                   onChange={(e) => setDraftRepresentativeName(e.target.value)}
                 />
               </label>
-              <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+              <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
                 Số điện thoại liên hệ
                 <input
-                  className="input tabular-nums"
+                  className="input min-h-11 text-base sm:text-[15px] tabular-nums"
                   value={draftContactPhone}
                   onChange={(e) => setDraftContactPhone(e.target.value)}
                 />
               </label>
-              <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+              <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
                 Giờ mở cửa tóm tắt
                 <input
-                  className="input"
+                  className="input min-h-11 text-base sm:text-[15px]"
                   placeholder="Ví dụ: 07:30 - 18:30 (T2 - T7)"
                   value={draftOperatingHours}
                   onChange={(e) => setDraftOperatingHours(e.target.value)}
                 />
               </label>
             </div>
-            <label className="flex flex-col gap-1 text-xs font-semibold text-ink">
+            <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
               Mô tả năng lực thu mua / hướng dẫn gửi hàng
               <textarea
-                className="input min-h-[76px] py-2"
+                className="input min-h-[88px] py-2.5 text-base sm:text-[15px]"
                 value={draftDescription}
                 onChange={(e) => setDraftDescription(e.target.value)}
                 placeholder="Giới thiệu dịch vụ thu gom tận nơi, cân điện tử tại chỗ..."
               />
             </label>
-            <div className="flex flex-col gap-1.5 text-xs font-semibold text-ink">
+            <div className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
               <span>Ảnh thực tế mặt tiền / kho bãi</span>
               <div className="flex flex-wrap items-center gap-2.5">
-                <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border border-line bg-surface-2 px-3.5 text-xs font-medium text-ink transition-colors hover:border-sage-line hover:bg-surface-3">
-                  <Camera className="size-3.5 text-brand" strokeWidth={1.7} aria-hidden="true" />
+                <label className="inline-flex min-h-10 cursor-pointer items-center gap-1.5 rounded-full border border-line bg-surface-2 px-4 text-sm font-semibold text-ink transition-colors hover:border-sage-line hover:bg-surface-3">
+                  <Camera className="size-4 text-brand" strokeWidth={1.7} aria-hidden="true" />
                   {uploadingPhoto
                     ? "Đang tải ảnh lên..."
                     : draftBusinessPhotoUrl
@@ -941,26 +941,26 @@ export default function RecyclerHome() {
                     type="button"
                     disabled={uploadingPhoto}
                     onClick={() => setDraftBusinessPhotoUrl("")}
-                    className="inline-flex h-9 items-center rounded-full border border-line bg-white px-3 text-xs font-medium text-muted transition-colors hover:text-warn"
+                    className="inline-flex min-h-10 items-center rounded-full border border-line bg-white px-4 text-sm font-semibold text-muted transition-colors hover:text-warn"
                   >
                     Dùng ảnh mặc định
                   </button>
                 )}
               </div>
-              <p className="text-[11px] font-normal text-muted">
+              <p className="text-sm leading-6 font-normal text-muted">
                 Chấp nhận JPG, PNG hoặc WebP tối đa 5 MB. Hiển thị ngay trong chi tiết cơ sở trên Bản đồ &amp; Đối tác.
               </p>
             </div>
             {profileErr && (
               <p
                 role="alert"
-                className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn"
+                className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-sm font-semibold text-warn"
               >
                 {profileErr}
               </p>
             )}
             <div className="flex flex-wrap items-center gap-3">
-              <button type="submit" disabled={savingProfile} className="btn-primary h-10 px-5 text-xs">
+              <button type="submit" disabled={savingProfile} className="btn-primary min-h-11 px-5 text-sm font-semibold">
                 {savingProfile ? "Đang lưu hồ sơ..." : "Lưu thông tin cơ sở"}
               </button>
             </div>
@@ -976,7 +976,7 @@ export default function RecyclerHome() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-bold text-ink">Lịch hoạt động cố định theo tuần (R-02)</h3>
               {!isKybVerified && (
-                <span className="text-xs font-medium text-warn">
+                <span className="text-sm font-medium text-warn">
                   Yêu cầu hồ sơ Verified trước khi cập nhật lịch tuần.
                 </span>
               )}
@@ -985,14 +985,15 @@ export default function RecyclerHome() {
               {weeklySchedule.map((day) => (
                 <div
                   key={day.dayOfWeek}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface-2 px-3.5 py-2.5 text-xs"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface-2 px-3.5 py-2.5 text-sm"
                 >
                   <span className="w-24 font-semibold text-ink">
                     {WEEKDAY_LABELS[day.dayOfWeek] ?? `Ngày ${day.dayOfWeek}`}
                   </span>
-                  <label className="inline-flex items-center gap-2 text-body">
+                  <label className="inline-flex min-h-10 items-center gap-2 text-body">
                     <input
                       type="checkbox"
+                      className="size-4 accent-brand"
                       checked={!day.isClosed}
                       onChange={(e) => {
                         const openDay = e.target.checked
@@ -1020,7 +1021,7 @@ export default function RecyclerHome() {
                         )
                         setScheduleErr("")
                       }}
-                      className="input h-8 w-28 text-xs tabular-nums disabled:opacity-50"
+                      className="input min-h-11 w-32 text-base sm:text-[15px] tabular-nums disabled:opacity-50"
                       aria-label={`Giờ mở cửa ${WEEKDAY_LABELS[day.dayOfWeek]}`}
                     />
                     <span className="text-muted">đến</span>
@@ -1037,7 +1038,7 @@ export default function RecyclerHome() {
                         )
                         setScheduleErr("")
                       }}
-                      className="input h-8 w-28 text-xs tabular-nums disabled:opacity-50"
+                      className="input min-h-11 w-32 text-base sm:text-[15px] tabular-nums disabled:opacity-50"
                       aria-label={`Giờ đóng cửa ${WEEKDAY_LABELS[day.dayOfWeek]}`}
                     />
                   </div>
@@ -1047,7 +1048,7 @@ export default function RecyclerHome() {
             {scheduleErr && (
               <p
                 role="alert"
-                className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn"
+                className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-sm font-semibold text-warn"
               >
                 {scheduleErr}
               </p>
@@ -1056,11 +1057,11 @@ export default function RecyclerHome() {
               <button
                 type="submit"
                 disabled={savingSchedule || !isKybVerified}
-                className="btn-primary h-10 px-5 text-xs disabled:opacity-50"
+                className="btn-primary min-h-11 px-5 text-sm font-semibold disabled:opacity-50"
               >
                 {savingSchedule ? "Đang lưu lịch tuần..." : "Lưu lịch hoạt động tuần"}
               </button>
-              <span className="text-xs text-muted">
+              <span className="text-sm leading-6 text-muted">
                 Giờ mở/đóng cửa sẽ tự đồng bộ để kiểm tra hợp lệ khi người dân đặt lịch hẹn.
               </span>
             </div>
@@ -1073,10 +1074,10 @@ export default function RecyclerHome() {
             onSubmit={(e) => void handleSaveWarehousePin(e)}
             className="flex flex-col gap-3 border-t border-line-soft pt-4"
           >
-            <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-ink">
+            <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink">
               Địa chỉ hiển thị công khai
               <input
-                className="input"
+                className="input min-h-11 text-base sm:text-[15px]"
                 value={draftAddress}
                 onChange={(e) => {
                   setDraftAddress(e.target.value)
@@ -1098,7 +1099,7 @@ export default function RecyclerHome() {
             {pinErr && (
               <p
                 role="alert"
-                className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn"
+                className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-sm font-semibold text-warn"
               >
                 {pinErr}
               </p>
@@ -1107,11 +1108,11 @@ export default function RecyclerHome() {
               <button
                 type="submit"
                 disabled={savingPin}
-                className="btn-primary h-10 px-5 text-xs"
+                className="btn-primary min-h-11 px-5 text-sm font-semibold"
               >
                 {savingPin ? "Đang lưu toạ độ..." : "Lưu vị trí kho bãi"}
               </button>
-              <span className="text-xs text-muted">
+              <span className="text-sm leading-6 text-muted">
                 Vị trí mới sẽ cập nhật ngay trên truy vấn bán kính của người dân.
               </span>
             </div>
@@ -1129,7 +1130,7 @@ export default function RecyclerHome() {
             <h2 className="mt-1 text-base font-bold text-ink">
               Nâng cấp Tích xanh Xác minh &amp; Ghim nổi bật trên Bản đồ
             </h2>
-            <p className="mt-1 text-xs leading-5 text-body">
+            <p className="mt-1 text-sm leading-6 text-body">
               Gói <b>PRO (1.000.000 đ / 365 ngày)</b> cấp Tích xanh thương hiệu, tắt quảng cáo và
               đẩy ghim cơ sở lên đầu kết quả tìm kiếm bản đồ khu vực (<code className="rounded bg-surface-2 px-1 py-0.5">+100 ưu tiên</code>).
               Nâng cấp từ Premium sang Pro sẽ kích hoạt Pro ngay lập tức (<code>BR-PAY-04</code>).
@@ -1138,16 +1139,16 @@ export default function RecyclerHome() {
           <button
             type="button"
             onClick={() => void refreshRecyclerPackages()}
-            className="btn-outline inline-flex h-9 items-center gap-1.5 px-3 text-xs font-semibold"
+            className="btn-outline inline-flex min-h-10 items-center gap-1.5 px-4 text-sm font-semibold"
           >
-            <RefreshCw className="size-3.5" />
+            <RefreshCw className="size-4" />
             Đồng bộ gói
           </button>
         </div>
 
         {!isKybVerified && (
-          <div className="flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-            <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+          <div className="flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+            <ShieldAlert className="mt-1 size-4 shrink-0" />
             <span>
               <b>MSG-PAY-06:</b> Cơ sở thu mua cần hoàn tất xác minh hồ sơ KYB (<code>VerificationStatus = Verified</code>)
               trước khi mua gói Tích xanh &amp; Ghim nổi bật <b>PRO</b>.
@@ -1156,18 +1157,18 @@ export default function RecyclerHome() {
         )}
 
         {pkgNotice && (
-          <p role="status" className="rounded-xl border border-brand/30 bg-brand/8 px-4 py-2.5 text-xs font-semibold text-brand-deep">
+          <p role="status" className="rounded-xl border border-brand/30 bg-brand/8 px-4 py-2.5 text-sm font-semibold text-brand-deep">
             {pkgNotice}
           </p>
         )}
         {pkgErr && (
-          <p role="alert" className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn">
+          <p role="alert" className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-sm font-semibold text-warn">
             {pkgErr}
           </p>
         )}
 
         {activeSubs.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/25 bg-brand/6 px-4 py-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/25 bg-brand/6 px-4 py-3 text-sm">
             <div>
               <span className="font-bold text-brand-deep">
                 Thuê bao hiệu lực: {activeSubs[0].packageName}
@@ -1231,13 +1232,13 @@ export default function RecyclerHome() {
                     <span className="text-xl font-bold text-ink tabular-nums">
                       {pkg.priceVnd === 0 ? "0 đ" : fmtVnd(pkg.priceVnd)}
                     </span>
-                    <span className="text-xs text-muted">
+                    <span className="text-sm text-muted">
                       {pkg.durationDays > 0 ? `/ ${pkg.durationDays} ngày` : "/ Trọn đời"}
                     </span>
                   </p>
-                  <p className="mt-1.5 text-xs leading-5 text-body">{pkg.description}</p>
+                  <p className="mt-1.5 text-sm leading-6 text-body">{pkg.description}</p>
 
-                  <ul className="mt-3 flex flex-col gap-1.5 text-xs text-body">
+                  <ul className="mt-3 flex flex-col gap-1.5 text-sm text-body">
                     <li className="flex items-center gap-2">
                       <Check className="size-3.5 shrink-0 text-brand" />
                       {pkg.features.adFree ? "Tắt toàn bộ quảng cáo" : "Gói mặc định có banner"}
@@ -1323,19 +1324,19 @@ export default function RecyclerHome() {
 
                 <div className="mt-4 border-t border-line-soft pt-3">
                   {isIncludedInHigherPlan ? (
-                    <p className="rounded-lg border border-brand/20 bg-brand/6 px-3 py-2 text-center text-xs font-semibold text-brand-deep">
+                    <p className="rounded-lg border border-brand/20 bg-brand/6 px-3 py-2 text-center text-sm font-semibold text-brand-deep">
                       Đã bao gồm trong gói {entitlements.currentTier} hiện tại
                     </p>
                   ) : isBasic ? (
                     <button
                       type="button"
                       disabled
-                      className="btn-outline h-9 w-full cursor-default text-xs opacity-75"
+                      className="btn-outline min-h-10 w-full cursor-default text-sm font-semibold opacity-75"
                     >
                       Gói mặc định của hệ thống
                     </button>
                   ) : isPro && isCurrent ? (
-                    <div className="rounded-lg border border-amber-300/80 bg-amber-100/60 px-3 py-2 text-center text-[11px] leading-4 font-semibold text-amber-950">
+                    <div className="rounded-lg border border-amber-300/80 bg-amber-100/60 px-3 py-2 text-center text-sm leading-6 font-semibold text-amber-950">
                       Đang hiệu lực
                       {pkg.currentActiveExpiresAt
                         ? ` đến ${new Date(pkg.currentActiveExpiresAt).toLocaleDateString("vi-VN")}`
@@ -1352,13 +1353,13 @@ export default function RecyclerHome() {
                           proEval?.blockingReasons?.[0] ||
                           "Chưa đáp ứng đủ điều kiện đăng ký gói Pro"
                         }
-                        className="btn-outline inline-flex h-9 w-full cursor-not-allowed items-center justify-center gap-1.5 text-xs opacity-75"
+                        className="btn-outline inline-flex min-h-10 w-full cursor-not-allowed items-center justify-center gap-1.5 text-sm font-semibold opacity-75"
                       >
-                        <Lock className="size-3.5" />
+                        <Lock className="size-4" />
                         Chưa đủ điều kiện lên Pro
                       </button>
                       {(pkg.ineligibleReason || proEval?.blockingReasons?.[0]) && (
-                        <p className="text-[11px] leading-4 text-warn">
+                        <p className="text-sm leading-6 text-warn">
                           {pkg.ineligibleReason || proEval?.blockingReasons?.[0]}
                         </p>
                       )}
@@ -1368,9 +1369,9 @@ export default function RecyclerHome() {
                       type="button"
                       disabled={buyingCode === pkg.packageCode}
                       onClick={() => void handleBuyPackage(pkg)}
-                      className="btn-primary inline-flex h-9 w-full items-center justify-center gap-1.5 text-xs font-semibold"
+                      className="btn-primary inline-flex min-h-11 w-full items-center justify-center gap-1.5 text-sm font-semibold"
                     >
-                      <QrCode className="size-3.5" />
+                      <QrCode className="size-4" />
                       {buyingCode === pkg.packageCode
                         ? "Đang tạo VietQR..."
                         : isCurrent && !isPro
@@ -1386,12 +1387,12 @@ export default function RecyclerHome() {
 
         {recentOrders.length > 0 && (
           <div className="border-t border-line-soft pt-3">
-            <p className="mb-2 text-xs font-bold text-ink">Đơn thanh toán VietQR gần đây</p>
+            <p className="mb-2 text-sm font-bold text-ink">Đơn thanh toán VietQR gần đây</p>
             <ul className="flex flex-col gap-2">
               {recentOrders.slice(0, 4).map((ord) => (
                 <li
                   key={ord.orderCode}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 text-xs"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm"
                 >
                   <div>
                     <span className="font-mono font-bold text-ink">{ord.orderCode}</span>
@@ -1407,7 +1408,7 @@ export default function RecyclerHome() {
                       <button
                         type="button"
                         onClick={() => setActiveQrOrder(ord)}
-                        className="btn-outline h-7 px-2 text-[11px]"
+                        className="btn-outline min-h-10 px-3 text-sm font-semibold"
                       >
                         Mở QR
                       </button>
@@ -1448,7 +1449,7 @@ export default function RecyclerHome() {
           <h2 className="text-base font-bold text-ink">Lịch sắp tới</h2>
           <Link
             to="/recycler/requests"
-            className="text-[13px] font-semibold text-brand hover:text-brand-deep"
+            className="text-sm font-semibold text-brand hover:text-brand-deep"
           >
             Xem tất cả yêu cầu →
           </Link>
@@ -1468,7 +1469,7 @@ export default function RecyclerHome() {
                   <span className="block text-sm font-semibold text-ink">
                     {h.address}
                   </span>
-                  <span className="block text-[13px] text-muted">
+                  <span className="block text-sm text-muted">
                     {h.date} · {h.slot}
                     {typeof h.pickupLat === "number" && typeof h.pickupLng === "number" && (
                       <span className="ml-2 tabular-nums text-brand-deep">
@@ -1492,12 +1493,12 @@ export default function RecyclerHome() {
             <h2 className="text-base font-bold text-ink">
               Đánh giá từ khách hàng &amp; Tiến độ gói PRO
             </h2>
-            <p className="mt-0.5 text-xs text-muted">
+            <p className="mt-0.5 text-sm leading-6 text-muted">
               Điều kiện mở khóa gói Tích xanh PRO: Hồ sơ Verified, tối thiểu 50 đánh giá và điểm trung bình từ 4.0★ trở lên.
             </p>
           </div>
           {reviewsSummary && (
-            <div className="flex items-center gap-2 rounded-xl border border-line bg-surface-2 px-3 py-1.5 text-xs">
+            <div className="flex items-center gap-2 rounded-xl border border-line bg-surface-2 px-3 py-1.5 text-sm">
               <Star className="size-4 fill-amber-400 text-amber-500" />
               <b className="text-sm tabular-nums text-ink">
                 {reviewsSummary.averageRating.toFixed(1)}
@@ -1510,7 +1511,7 @@ export default function RecyclerHome() {
         {reviewsErr && (
           <p
             role="alert"
-            className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-xs font-semibold text-warn"
+            className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-2.5 text-sm font-semibold text-warn"
           >
             {reviewsErr}
           </p>
@@ -1520,7 +1521,7 @@ export default function RecyclerHome() {
           <>
             <div className="grid gap-3 rounded-xl border border-line-soft bg-surface-2/60 p-4 sm:grid-cols-2">
               <div>
-                <div className="flex items-center justify-between text-xs font-semibold text-ink">
+                <div className="flex items-center justify-between text-sm font-semibold text-ink">
                   <span>Số lượng đánh giá hợp lệ</span>
                   <span className="tabular-nums">
                     {Math.min(reviewsSummary.totalReviews, 50)} / 50 lượt
@@ -1536,7 +1537,7 @@ export default function RecyclerHome() {
                 </div>
               </div>
               <div>
-                <div className="flex items-center justify-between text-xs font-semibold text-ink">
+                <div className="flex items-center justify-between text-sm font-semibold text-ink">
                   <span>Điểm hài lòng trung bình</span>
                   <span className="tabular-nums">
                     {reviewsSummary.averageRating.toFixed(1)} / 5.0 ★ (cần ≥ 4.0)
@@ -1554,11 +1555,11 @@ export default function RecyclerHome() {
             </div>
 
             {reviewsSummary.reviews.items.length === 0 ? (
-              <p className="text-xs text-muted">Chưa có đánh giá nào từ người dân.</p>
+              <p className="text-sm leading-6 text-muted">Chưa có đánh giá nào từ người dân.</p>
             ) : (
               <ul className="divide-y divide-line-soft">
                 {reviewsSummary.reviews.items.map((rv) => (
-                  <li key={rv.reviewId} className="flex flex-col gap-1 py-2.5 text-xs">
+                  <li key={rv.reviewId} className="flex flex-col gap-1 py-2.5 text-sm leading-6">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-semibold text-ink">{rv.reviewerDisplayName}</span>
                       <span className="font-semibold tabular-nums text-amber-600">
@@ -1572,7 +1573,7 @@ export default function RecyclerHome() {
             )}
           </>
         ) : (
-          <p className="text-xs text-muted">
+          <p className="text-sm leading-6 text-muted">
             Số liệu đánh giá sao sẽ tự động hiển thị khi kết nối với hồ sơ Recycler trên hệ thống.
           </p>
         )}
@@ -1582,7 +1583,7 @@ export default function RecyclerHome() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-ink">Giao dịch thu gom đã hoàn tất</h2>
-            <p className="mt-0.5 text-xs text-muted">
+            <p className="mt-0.5 text-sm leading-6 text-muted">
               Tổng hợp các biên nhận đã được người dân xác nhận hoàn tất (GET /api/v1/recycler/transactions).
             </p>
           </div>
@@ -1592,7 +1593,7 @@ export default function RecyclerHome() {
             onChange={(e) => setTxSearch(e.target.value)}
             placeholder="Lọc mã đơn, người dân, vật liệu..."
             aria-label="Lọc giao dịch đã hoàn tất"
-            className="input h-9 w-64 text-xs"
+            className="input min-h-11 w-full sm:w-72 text-base sm:text-[15px]"
           />
         </div>
         {(() => {
@@ -1615,16 +1616,16 @@ export default function RecyclerHome() {
             <Table head={["Mã biên nhận", "Người dân", "Loại phế liệu", "Khối lượng", "Giá trị", "Thời điểm"]}>
               {filteredTx.map((it) => (
                 <tr key={it.receiptId || it.requestId}>
-                  <Td className="font-mono text-xs font-semibold text-ink whitespace-nowrap">
+                  <Td className="font-mono text-sm font-semibold text-ink whitespace-nowrap">
                     {it.receiptCode || it.requestCode}
                   </Td>
                   <Td>{it.counterpartName}</Td>
-                  <Td className="text-xs">{it.categories.join(", ") || "—"}</Td>
+                  <Td className="text-sm">{it.categories.join(", ") || "—"}</Td>
                   <Td className="tabular-nums whitespace-nowrap">{it.totalWeightKg} kg</Td>
                   <Td className="tabular-nums font-semibold text-brand-deep whitespace-nowrap">
                     {fmtVnd(it.totalAmountCash)}
                   </Td>
-                  <Td className="tabular-nums text-xs text-muted whitespace-nowrap">
+                  <Td className="tabular-nums text-sm text-muted whitespace-nowrap">
                     {new Date(it.completedAt).toLocaleString("vi-VN")}
                   </Td>
                 </tr>
