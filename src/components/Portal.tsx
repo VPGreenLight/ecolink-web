@@ -25,9 +25,15 @@ export default function Portal({ role }: { role: Role }) {
     navigate("/")
   }
 
+  const isRecycler = role === "recycler"
+
   return (
     <div className="flex min-h-[calc(100dvh-70px)] flex-col md:min-h-[calc(100dvh-76px)]">
-      <div className="border-b border-line bg-white lg:hidden">
+      <div
+        className={`border-b border-line bg-white lg:hidden ${
+          isRecycler ? "sticky top-[70px] z-20 bg-white/95 backdrop-blur-sm md:top-[76px]" : ""
+        }`}
+      >
         <div className="page flex items-center gap-3 py-3">
           <button
             type="button"
@@ -53,7 +59,13 @@ export default function Portal({ role }: { role: Role }) {
 
       <div className="page flex flex-1 gap-8 py-6 lg:py-8">
         <aside className="hidden w-56 shrink-0 lg:block">
-          <div className="sticky top-24">
+          <div
+            className={
+              isRecycler
+                ? "lg:fixed lg:top-[100px] lg:max-h-[calc(100dvh-7.5rem)] lg:w-56 lg:overflow-y-auto"
+                : "sticky top-24"
+            }
+          >
             <p className="rounded-lg border border-line bg-surface-2 px-3 py-2.5">
               <span className="block truncate text-sm font-bold text-ink">
                 {session?.name ?? "Khách"}
@@ -139,8 +151,8 @@ export function PageHead({
   action?: React.ReactNode
 }) {
   return (
-    <header className="flex flex-wrap items-start justify-between gap-4 border-b border-line pb-5">
-      <div className="min-w-0">
+    <header className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0 flex-1">
         {eyebrow && <p className="eyebrow">{eyebrow}</p>}
         <h1 className="display mt-1.5 text-[24px] leading-8 md:text-[28px] md:leading-9">
           {title}

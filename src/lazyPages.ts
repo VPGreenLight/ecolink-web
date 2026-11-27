@@ -39,6 +39,9 @@ const loaders = {
   Gamification: () => import("@/pages/user/Gamification"),
 
   RecyclerHome: () => import("@/pages/recycler/Home"),
+  RecyclerFacility: () => import("@/pages/recycler/Facility"),
+  RecyclerReviews: () => import("@/pages/recycler/Reviews"),
+  RecyclerPackages: () => import("@/pages/recycler/Packages"),
   Requests: () => import("@/pages/recycler/Requests"),
   Catalog: () => import("@/pages/recycler/Catalog"),
   RecyclerReceipt: () => import("@/pages/recycler/Receipt"),

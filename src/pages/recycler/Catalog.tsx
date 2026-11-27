@@ -344,6 +344,7 @@ export default function Catalog() {
               </select>
             </SearchFilterBar>
 
+            <div className="min-h-[420px]">
             {loading ? (
               <TableSkeleton rows={5} />
             ) : (
@@ -365,14 +366,14 @@ export default function Catalog() {
                       </p>
                     </Td>
                     <Td>
-                      <label className="flex min-h-10 items-center gap-2">
+                      <label className="flex min-h-10 items-center gap-2 whitespace-nowrap">
                         <input
                           type="checkbox"
-                          className="size-4 accent-brand"
+                          className="size-4 shrink-0 accent-brand"
                           checked={r.on}
                           onChange={(e) => set(r.wasteCategoryId, { on: e.target.checked })}
                         />
-                        <span className="text-sm font-medium text-body">
+                        <span className="inline-block min-w-[82px] text-sm font-medium text-body">
                           {r.on ? "Đang mua" : "Tạm ngưng"}
                         </span>
                       </label>
@@ -433,6 +434,7 @@ export default function Catalog() {
             />
             </>
             )}
+            </div>
           </>
         )
       })()}

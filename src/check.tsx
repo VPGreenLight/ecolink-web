@@ -40,6 +40,9 @@ import Transactions from "@/pages/user/Transactions"
 import Gamification from "@/pages/user/Gamification"
 
 import RecyclerHome from "@/pages/recycler/Home"
+import RecyclerFacility from "@/pages/recycler/Facility"
+import RecyclerReviews from "@/pages/recycler/Reviews"
+import RecyclerPackages from "@/pages/recycler/Packages"
 import Requests from "@/pages/recycler/Requests"
 import Catalog from "@/pages/recycler/Catalog"
 import RecyclerReceipt from "@/pages/recycler/Receipt"
@@ -112,6 +115,9 @@ const CASES = [
   ["recycler/Requests", Requests, "Tiếp nhận yêu cầu bàn giao"],
   ["recycler/Catalog", Catalog, "Danh mục và bảng giá"],
   ["recycler/Receipt", RecyclerReceipt, "Tạo biên nhận thu gom"],
+  ["recycler/Facility", RecyclerFacility, "Hồ sơ kho bãi"],
+  ["recycler/Reviews", RecyclerReviews, "Đánh giá từ người dùng"],
+  ["recycler/Packages", RecyclerPackages, "Gói dịch vụ"],
 
   // ---- phân hệ STAFF ----
   ["staff/Home", StaffHome, "Việc đang chờ bạn xử lý"],

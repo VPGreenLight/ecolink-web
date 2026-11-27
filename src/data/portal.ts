@@ -6,11 +6,6 @@ import type { Role } from "@/lib/session"
 export type PortalItem = { to: string; label: string }
 export type PortalSection = { title: string; items: PortalItem[] }
 
-const ACCOUNT: PortalItem[] = [
-  { to: "/account/profile", label: "Hồ sơ cá nhân" },
-  { to: "/account/password", label: "Đổi mật khẩu" },
-]
-
 export const PORTAL_NAV: Record<Role, PortalSection[]> = {
   user: [],
   recycler: [
@@ -21,14 +16,8 @@ export const PORTAL_NAV: Record<Role, PortalSection[]> = {
         { to: "/recycler/requests", label: "Yêu cầu bàn giao" },
         { to: "/recycler/catalog", label: "Danh mục và bảng giá" },
         { to: "/recycler/receipt", label: "Biên nhận thu gom" },
-      ],
-    },
-    {
-      title: "Khác",
-      items: [
-        { to: "/chat", label: "Chatbox thương lượng" },
-        { to: "/feedback", label: "Khiếu nại và góp ý" },
-        ...ACCOUNT,
+        { to: "/recycler/facility", label: "Hồ sơ kho bãi" },
+        { to: "/recycler/reviews", label: "Đánh giá từ người dùng" },
       ],
     },
   ],

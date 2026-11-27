@@ -38,10 +38,13 @@ const BY_ROLE: Record<Role, [string, string][]> = {
     ["/chat", "Tạo yêu cầu"],
   ],
   recycler: [
-    ["/recycler", "Trạng thái hoạt động"],
+    ["/recycler", "Tổng quan cơ sở thu mua"],
     ["/recycler/requests", "Tiếp nhận yêu cầu bàn giao"],
     ["/recycler/catalog", "Danh mục và bảng giá"],
     ["/recycler/receipt", "Tạo biên nhận thu gom"],
+    ["/recycler/facility", "Hồ sơ kho bãi"],
+    ["/recycler/reviews", "Đánh giá từ người dùng"],
+    ["/recycler/packages", "Gói dịch vụ"],
   ],
   staff: [
     ["/staff", "Việc đang chờ bạn xử lý"],

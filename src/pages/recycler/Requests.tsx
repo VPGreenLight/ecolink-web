@@ -393,16 +393,16 @@ export default function Requests() {
               const mapExpanded = openMapId === h.id
 
               return (
-                <li key={h.id} className="card flex flex-col gap-4 p-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
+                <li key={h.id} className="card flex flex-col gap-4 p-4 sm:p-5">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                    <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-bold text-ink">{h.address}</p>
+                        <p className="font-bold leading-snug text-ink break-words">{h.address}</p>
                         {h.rawStatus?.toLowerCase() === "negotiating" && (
                           <Status tone="wait">Đang thương lượng</Status>
                         )}
                       </div>
-                      <p className="mt-0.5 text-sm text-muted">
+                      <p className="mt-1 text-sm leading-relaxed text-muted break-words">
                         {h.displayCode}
                         {h.citizenName ? ` · Người gửi: ${h.citizenName}` : ""} · {h.date} · Khung
                         giờ đề xuất: <b className="text-ink">{h.slot}</b>
@@ -496,12 +496,96 @@ export default function Requests() {
             </p>
           ) : (
             <>
+            <ul className="flex flex-col gap-3 md:hidden">
+              {pagedActive.map((h) => (
+                <li key={h.id} className="card flex flex-col gap-3 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-xs font-semibold tabular-nums text-muted">
+                      {h.displayCode}
+                    </span>
+                    {h.rawStatus?.toLowerCase() === "disputed" ? (
+                      <Status tone="wait">Đang tranh chấp</Status>
+                    ) : (
+                      <Status tone={TONE[h.status]}>{STATUS_LABEL[h.status]}</Status>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold leading-snug text-ink break-words">
+                      {h.address}
+                    </p>
+                    {h.citizenName && (
+                      <p className="mt-0.5 text-xs text-muted">Người gửi: {h.citizenName}</p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+                    <span>
+                      {h.date} · {h.slot}
+                    </span>
+                    <span className="text-sm font-bold tabular-nums text-brand">
+                      {VND(calc(h, priceForOrder(h)).gross)}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line-soft pt-2.5">
+                    {h.status === "collected" ? (
+                      <Link
+                        to={`/recycler/receipt?orderId=${encodeURIComponent(h.id)}`}
+                        className="inline-flex min-h-9 items-center text-sm font-semibold text-brand hover:text-brand-deep"
+                      >
+                        Xem biên nhận
+                      </Link>
+                    ) : h.status === "accepted" ? (
+                      <>
+                        <Link
+                          to={`/recycler/receipt?orderId=${encodeURIComponent(h.id)}`}
+                          className="inline-flex min-h-9 items-center text-sm font-semibold text-brand hover:underline"
+                        >
+                          Cân &amp; Lập biên nhận
+                        </Link>
+                        <span className="text-muted">·</span>
+                        <Link
+                          to={`/chat?orderId=${encodeURIComponent(h.id)}`}
+                          className="inline-flex min-h-9 items-center text-sm font-semibold text-body hover:underline"
+                        >
+                          Hỏi đường
+                        </Link>
+                        <span className="text-muted">·</span>
+                        <button
+                          type="button"
+                          disabled={busy === h.id}
+                          onClick={() => openCancelForm(h)}
+                          className="inline-flex min-h-9 items-center text-sm font-semibold text-warn hover:underline"
+                        >
+                          Huỷ lịch
+                        </button>
+                      </>
+                    ) : h.fromBackend && h.status === "done" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setComplaintOrder(h)
+                          setCmpCategory("ScaleDiscrepancy")
+                          setCmpDesc("")
+                          setCmpFiles([])
+                          setCmpErr("")
+                        }}
+                        className="inline-flex min-h-9 items-center text-sm font-semibold text-warn hover:underline"
+                      >
+                        Khiếu nại giao dịch
+                      </button>
+                    ) : (
+                      <span className="text-sm text-muted">—</span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden md:block">
             <Table head={["Mã", "Địa chỉ", "Khung giờ", "Tiền ước tính", "Trạng thái", "Thao tác"]}>
               {pagedActive.map((h) => (
                 <tr key={h.id}>
                   <Td className="tabular-nums whitespace-nowrap">{h.displayCode}</Td>
-                  <Td>
-                    <div>{h.address}</div>
+                  <Td className="min-w-[220px] max-w-[340px]">
+                    <div className="leading-snug break-words">{h.address}</div>
                     {h.citizenName && (
                       <div className="text-sm text-muted">Người gửi: {h.citizenName}</div>
                     )}
@@ -575,6 +659,7 @@ export default function Requests() {
                 </tr>
               ))}
             </Table>
+            </div>
             <PaginationBar
               page={activePage}
               pageSize={activePageSize}

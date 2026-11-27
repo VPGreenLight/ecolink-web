@@ -17,7 +17,7 @@ const {
   Login, Register, Logout, NotFound,
   Profile, Password,
   Receipt, Payout, Transactions, Gamification,
-  RecyclerHome, Requests, Catalog, RecyclerReceipt,
+  RecyclerHome, RecyclerFacility, RecyclerReviews, RecyclerPackages, Requests, Catalog, RecyclerReceipt,
   StaffHome, AiReview, Dataset, Applications, Complaints, Accounts, BlogEditor,
   EcoFacts, Gifts, StaffCheckIn,
   AdminHome, Reports, StaffAccounts, Permissions, BlogReview, Categories, Policy,
@@ -128,12 +128,17 @@ export function AppRoutes() {
           </Route>
 
           {/* ---- phân hệ RECYCLER ---- */}
+          <Route element={<RequireRole roles={["recycler"]}><Outlet /></RequireRole>}>
+            <Route path="recycler/packages" element={<RecyclerPackages />} />
+          </Route>
           <Route element={<RequireRole roles={["recycler"]}><Portal role="recycler" /></RequireRole>}>
             <Route path="recycler">
               <Route index element={<RecyclerHome />} />
               <Route path="requests" element={<Requests />} />
               <Route path="catalog" element={<Catalog />} />
               <Route path="receipt" element={<RecyclerReceipt />} />
+              <Route path="facility" element={<RecyclerFacility />} />
+              <Route path="reviews" element={<RecyclerReviews />} />
             </Route>
           </Route>
 

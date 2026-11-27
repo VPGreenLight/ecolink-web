@@ -399,14 +399,14 @@ export default function Profile() {
             <Link
               to={
                 session.role === "recycler"
-                  ? "/recycler#recycler-packages"
+                  ? "/recycler/packages"
                   : "/user/payout#citizen-packages"
               }
               className="inline-flex items-center justify-between gap-3 rounded-lg border border-brand/25 bg-brand/6 px-3.5 py-2.5 text-[13px] font-semibold text-brand-deep transition-colors hover:bg-brand/12"
             >
               <span>
                 {session.role === "recycler"
-                  ? "Quản lý gói Tích xanh Pro & VietQR"
+                  ? "Quản lý gói dịch vụ"
                   : entitlements.isAdFree
                     ? "Quản lý gói Premium tắt quảng cáo"
                     : "Nâng cấp gói Premium tắt quảng cáo"}

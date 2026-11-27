@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
-import { PageHead, RequiredMark, Table, TableSkeleton, Td } from "@/components/Portal"
+import { Camera, FileCheck2, Receipt as ReceiptIcon, Search, X } from "lucide-react"
+import PaginationBar, { FIXED_PAGE_SIZE, paginateItems } from "@/components/PaginationBar"
+import { PageHead, RequiredMark, Status, Table, TableSkeleton, Td } from "@/components/Portal"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
 import { INCOMING, type Handover } from "@/data/handover"
 import { VND, WASTES } from "@/data/waste"
@@ -49,6 +51,8 @@ export default function Receipt() {
 
   const defaultHandover = INCOMING.find((x) => x.status === "collected") || INCOMING[0]
   const [loadingOrder, setLoadingOrder] = useState<boolean>(() => initApiLoading(true))
+  const [loadingDetail, setLoadingDetail] = useState(false)
+  const hasLoadedOrdersRef = useRef(false)
   const [eligibleOrders, setEligibleOrders] = useState<SyncedHandoverOrder[]>([])
   const [orderUnitPrice, setOrderUnitPrice] = useState<number | undefined>(undefined)
   const [h, setH] = useState<Handover | null>(() => {
@@ -87,7 +91,29 @@ export default function Receipt() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [previewData, setPreviewData] = useState<ReceiptDto | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [modalOpen, setModalOpen] = useState<boolean>(() => Boolean(orderId))
+  const [orderSearch, setOrderSearch] = useState("")
+  const [orderStatusFilter, setOrderStatusFilter] = useState<
+    "all" | "accepted" | "collected" | "done"
+  >("all")
+  const [orderPage, setOrderPage] = useState(1)
   const debouncedRows = useDebouncedValue(rows, 350)
+
+  const filteredEligibleOrders = useMemo(() => {
+    const kw = orderSearch.trim().toLowerCase()
+    return eligibleOrders.filter((o) => {
+      if (orderStatusFilter !== "all" && o.status !== orderStatusFilter) return false
+      if (!kw) return true
+      return `${o.displayCode} ${o.citizenName ?? ""} ${o.address} ${o.date}`
+        .toLowerCase()
+        .includes(kw)
+    })
+  }, [eligibleOrders, orderSearch, orderStatusFilter])
+
+  const pagedEligibleOrders = useMemo(
+    () => paginateItems(filteredEligibleOrders, orderPage, FIXED_PAGE_SIZE),
+    [filteredEligibleOrders, orderPage],
+  )
 
   useEffect(() => {
     if (files.length === 0) {
@@ -104,11 +130,13 @@ export default function Receipt() {
   useEffect(() => {
     let active = true
     async function loadOrder() {
-      setLoadingOrder(true)
+      if (!hasLoadedOrdersRef.current) {
+        setLoadingOrder(true)
+      } else {
+        setLoadingDetail(true)
+      }
       setErrorMessage(null)
       setStatusMessage(null)
-      setSent(false)
-      setExistingProofUrls([])
       setFiles([])
 
       try {
@@ -119,6 +147,7 @@ export default function Receipt() {
           (o) => o.status === "accepted" || o.status === "collected" || o.status === "done",
         )
         setEligibleOrders(candidates)
+        hasLoadedOrdersRef.current = true
 
         const found = orderId
           ? ordersRes.orders.find((o) => o.id === orderId || o.displayCode === orderId)
@@ -204,6 +233,8 @@ export default function Receipt() {
               )
             }
           } else if (detail && detail.items.length > 0) {
+            setSent(false)
+            setExistingProofUrls([])
             setRows(
               detail.items.map((it) => ({
                 itemId: it.id,
@@ -216,6 +247,8 @@ export default function Receipt() {
               })),
             )
           } else if (found) {
+            setSent(false)
+            setExistingProofUrls([])
             setRows(
               found.lines.map((l) => ({
                 wasteId: l.wasteId,
@@ -243,7 +276,10 @@ export default function Receipt() {
           err instanceof Error ? err.message : "Không thể tải dữ liệu đơn thu gom.",
         )
       } finally {
-        if (active) setLoadingOrder(false)
+        if (active) {
+          setLoadingOrder(false)
+          setLoadingDetail(false)
+        }
       }
     }
     void loadOrder()
@@ -422,25 +458,134 @@ export default function Receipt() {
         body="Nhập khối lượng thực tế bạn vừa cân và chụp ảnh làm bằng chứng. Hệ thống lưu trữ biên nhận để hai bên đối chiếu minh bạch sau khi người dùng xác nhận."
       />
 
-      {eligibleOrders.length > 1 && (
-        <div className="card flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-          <span className="text-sm font-semibold text-ink">
-            Chọn đơn cần lập / xem biên nhận ({eligibleOrders.length} đơn):
-          </span>
-          <select
-            className="input min-h-11 max-w-md text-base sm:text-[15px]"
-            value={h?.id ?? ""}
-            onChange={(e) => {
-              const nextId = e.target.value
-              if (nextId) navigate(`/recycler/receipt?orderId=${encodeURIComponent(nextId)}`)
-            }}
-          >
-            {eligibleOrders.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.displayCode} · {o.citizenName || o.address} ({o.status === "accepted" ? "Chờ lập biên nhận" : o.status === "collected" ? "Đã gửi biên nhận" : "Hoàn tất"})
-              </option>
-            ))}
-          </select>
+      {eligibleOrders.length > 0 && (
+        <div className="rounded-3xl border border-line/80 bg-surface-2/50 p-1.5">
+          <section className="flex flex-col gap-3 rounded-2xl border border-line-soft bg-white p-4 shadow-[0_10px_24px_-14px_rgba(15,31,21,0.08)] sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-ink">
+                  Chọn đơn cần lập / xem biên nhận
+                </h2>
+                <p className="mt-0.5 text-xs text-muted">
+                  Tìm nhanh theo mã đơn, tên người dân, địa chỉ hoặc lọc theo trạng thái.
+                </p>
+              </div>
+              <div className="relative w-full sm:w-72">
+                <Search
+                  className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted"
+                  aria-hidden="true"
+                />
+                <input
+                  type="search"
+                  value={orderSearch}
+                  onChange={(e) => {
+                    setOrderSearch(e.target.value)
+                    setOrderPage(1)
+                  }}
+                  placeholder="Tìm mã đơn, tên, địa chỉ..."
+                  aria-label="Tìm đơn cần lập hoặc xem biên nhận"
+                  className="input h-10 min-h-10 pl-10 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(
+                [
+                  ["all", `Tất cả (${eligibleOrders.length})`],
+                  [
+                    "accepted",
+                    `Chờ lập biên nhận (${eligibleOrders.filter((o) => o.status === "accepted").length})`,
+                  ],
+                  [
+                    "collected",
+                    `Đã gửi biên nhận (${eligibleOrders.filter((o) => o.status === "collected").length})`,
+                  ],
+                  [
+                    "done",
+                    `Hoàn tất (${eligibleOrders.filter((o) => o.status === "done").length})`,
+                  ],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    setOrderStatusFilter(key)
+                    setOrderPage(1)
+                  }}
+                  className={`min-h-8 rounded-full border px-3 text-xs font-semibold transition-colors ${
+                    orderStatusFilter === key
+                      ? "border-brand bg-brand/12 text-brand-deep"
+                      : "border-line bg-surface-2 text-muted hover:border-sage-line hover:text-ink"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {filteredEligibleOrders.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-line bg-surface-2/50 px-4 py-4 text-center text-xs text-muted">
+                Không tìm thấy đơn nào khớp từ khoá hoặc trạng thái đang lọc.
+              </p>
+            ) : (
+              <>
+                <ul className="flex flex-col gap-2">
+                  {pagedEligibleOrders.map((o) => {
+                    const isActive = h?.id === o.id
+                    return (
+                      <li key={o.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalOpen(true)
+                            if (o.id !== orderId) {
+                              navigate(`/recycler/receipt?orderId=${encodeURIComponent(o.id)}`)
+                            }
+                          }}
+                          className={`flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
+                            isActive && modalOpen
+                              ? "border-brand bg-brand/10 ring-1 ring-brand/25"
+                              : "border-line-soft bg-surface-2/55 hover:border-sage-line hover:bg-surface-2"
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-ink">
+                                {o.displayCode}
+                              </span>
+                              <span className="text-sm font-semibold text-ink">
+                                {o.citizenName || o.address}
+                              </span>
+                            </div>
+                            <p className="mt-0.5 text-xs text-muted">
+                              {o.date} · {o.slot} · {o.address}
+                            </p>
+                          </div>
+                          <Status tone={o.status === "done" || o.status === "collected" ? "ok" : "wait"}>
+                            {o.status === "accepted"
+                              ? "Chờ lập biên nhận"
+                              : o.status === "collected"
+                                ? "Đã gửi biên nhận"
+                                : "Hoàn tất"}
+                          </Status>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+
+                <PaginationBar
+                  page={orderPage}
+                  pageSize={FIXED_PAGE_SIZE}
+                  totalCount={filteredEligibleOrders.length}
+                  onPageChange={setOrderPage}
+                  itemLabel="đơn"
+                />
+              </>
+            )}
+          </section>
         </div>
       )}
 
@@ -453,163 +598,226 @@ export default function Receipt() {
       {loadingOrder ? (
         <TableSkeleton rows={4} />
       ) : !h ? (
-        <div className="card flex flex-col items-center gap-3 px-5 py-10 text-center">
-          <p className="text-sm font-semibold text-ink">
-            Chưa có lịch hẹn nào đã chốt để lập biên nhận.
-          </p>
-          <p className="max-w-[52ch] text-sm leading-6 text-muted">
-            Hãy tiếp nhận đơn hoặc chốt điều khoản trong Chat trước khi đến điểm hẹn cân thực tế
-            và phát hành biên nhận.
-          </p>
-          <Link to="/recycler/requests" className="btn-primary min-h-11 px-5 text-sm font-semibold">
-            Quay lại Tiếp nhận yêu cầu
-          </Link>
-        </div>
-      ) : (
-      <form noValidate onSubmit={submit} className="card flex flex-col gap-5 p-5 md:p-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-line-soft pb-4">
-          <div>
-            <p className="font-bold text-ink">{h.address}</p>
-            <p className="mt-0.5 text-sm text-muted">
-              {h.displayCode || h.id} · {h.date} · {h.slot}
+        <div className="rounded-3xl border border-line/80 bg-surface-2/50 p-1.5">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-line-soft bg-white px-5 py-10 text-center">
+            <p className="text-sm font-semibold text-ink">
+              Chưa có lịch hẹn nào đã chốt để lập biên nhận.
             </p>
+            <p className="max-w-[52ch] text-sm leading-6 text-muted">
+              Hãy tiếp nhận đơn hoặc chốt điều khoản trong Chat trước khi đến điểm hẹn cân thực tế
+              và phát hành biên nhận.
+            </p>
+            <Link to="/recycler/requests" className="btn-primary min-h-11 px-5 text-sm font-semibold">
+              Quay lại Tiếp nhận yêu cầu
+            </Link>
           </div>
-          <span className="rounded-full bg-mint/25 px-3 py-1 text-[11px] font-semibold text-brand-deep">
-            Người dùng ước tính {totalEstimatedKg} kg
-          </span>
         </div>
-
-        <Table head={["Loại rác", "Người dùng bỏ ra", "Bạn cân được (kg) *", "Thành tiền"]}>
-          {rows.map((r, i) => {
-            const unitPrice = rowPriceOf(r, i)
-            return (
-              <tr key={r.itemId || `${r.wasteId}-${i}`}>
-                <Td className="font-semibold text-ink">
-                  {r.wasteName || nameOf(r.wasteId)}
-                </Td>
-                <Td className="tabular-nums text-muted">{r.estimatedKg} kg</Td>
-                <Td>
-                  <input
-                    className="input min-h-11 w-32 text-base sm:text-[15px] tabular-nums"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    inputMode="decimal"
-                    aria-label={`Khối lượng cân thực tế ${r.wasteName || nameOf(r.wasteId)}`}
-                    value={r.rawKg ?? (Number.isFinite(r.kg) ? String(r.kg) : "")}
-                    disabled={sent || submitting}
-                    onChange={(e) => {
-                      const raw = e.target.value
-                      const parsed = raw.trim() === "" ? Number.NaN : Number(raw)
-                      setRows((rs) =>
-                        rs.map((x, n) =>
-                          n === i ? { ...x, rawKg: raw, kg: parsed } : x,
-                        ),
-                      )
-                    }}
-                    onBlur={() =>
-                      setRows((rs) =>
-                        rs.map((x, n) =>
-                          n === i && Number.isFinite(x.kg) && x.kg > 0
-                            ? { ...x, rawKg: undefined, kg: Number(x.kg.toFixed(2)) }
-                            : x,
-                        ),
-                      )
-                    }
-                  />
-                </Td>
-                <Td className="tabular-nums font-semibold text-ink">
-                  {VND(r.kg * unitPrice)}
-                </Td>
-              </tr>
-            )
-          })}
-        </Table>
-
-        <label className="flex cursor-pointer flex-col gap-2 text-sm font-semibold text-ink">
-          <span>
-            Ảnh bàn giao &amp; bằng chứng cân {liveAuth ? "(Bắt buộc tối thiểu 1 ảnh)" : ""}
-            <RequiredMark />
-          </span>
-          <span className="rounded-lg border border-dashed border-sage-line bg-surface-2 px-4 py-6 text-center text-sm leading-6 font-normal text-muted">
-            {files.length > 0
-              ? files.map((f) => f.name).join(" · ")
-              : existingProofUrls.length > 0
-                ? `Đã lưu ${existingProofUrls.length} ảnh bằng chứng cân trên hệ thống`
-                : "Chọn ảnh rác đã cân hoặc biên nhận cân, tối đa 4 ảnh (.jpg, .png, .webp)"}
-          </span>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
-            multiple
-            disabled={sent || submitting}
-            className="sr-only"
-            onChange={(e) => handleProofFileChange(e.target.files)}
-          />
-        </label>
-
-        {(previewUrls.length > 0 || existingProofUrls.length > 0) && (
-          <div className="flex flex-wrap gap-3">
-            {(existingProofUrls.length > 0 ? existingProofUrls : previewUrls).map((url, idx) => (
-              <a
-                key={`${url}-${idx}`}
-                href={url}
-                target="_blank"
-                rel="noreferrer"
-                className="block size-20 overflow-hidden rounded-lg border border-line bg-surface-2"
-                title={`Ảnh bằng chứng cân #${idx + 1}`}
-              >
-                <img
-                  src={url}
-                  alt={`Bằng chứng cân #${idx + 1}`}
-                  className="size-full object-cover"
-                />
-              </a>
-            ))}
-          </div>
-        )}
-
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-surface-2 px-5 py-4">
-          <p className="text-sm text-body">
-            Tổng tiền ước tính thanh toán{" "}
-            <b className="tabular-nums text-brand">{VND(effectiveTotalCash)}</b>
-          </p>
-          <span className="text-sm leading-6 text-muted">
-            {previewLoading
-              ? "Đang kiểm tra biên nhận từ máy chủ..."
-              : "Hệ thống lưu trữ biên nhận để hai bên đối chiếu minh bạch, không thu phí giao dịch."}
-          </span>
-        </div>
-
-        {effectiveDeviationWarning && (
-          <div
-            role="status"
-            className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 font-medium text-amber-950"
+      ) : modalOpen && h ? (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="receipt-modal-title"
+        onClick={() => {
+          if (!submitting) setModalOpen(false)
+        }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-line/80 bg-surface-2/95 p-1.5 shadow-2xl"
+        >
+          <form
+            noValidate
+            onSubmit={submit}
+            className="flex flex-col gap-5 rounded-2xl border border-line-soft bg-white p-5 md:p-6"
           >
-            <b>Cảnh báo lệch khối lượng ({effectiveDeviationPercent > 0 ? `+${effectiveDeviationPercent}` : effectiveDeviationPercent}%):</b>{" "}
-            {previewData?.deviationMessage ||
-              "Khối lượng thực cân chênh lệch quá 20% so với ước tính ban đầu. Vui lòng kiểm tra kỹ và chụp rõ ảnh đồng hồ cân (MSG-HND-04)."}
-          </div>
-        )}
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line-soft pb-4">
+              <div className="flex min-w-0 flex-1 items-start gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand-deep">
+                  <ReceiptIcon className="size-5" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 id="receipt-modal-title" className="font-bold text-ink">
+                      {h.address}
+                    </h3>
+                    <Status tone={sent || h.status === "done" ? "ok" : "wait"}>
+                      {sent ? "Đã gửi biên nhận" : h.status === "done" ? "Hoàn tất" : "Chờ lập biên nhận"}
+                    </Status>
+                  </div>
+                  <p className="mt-0.5 text-sm text-muted tabular-nums">
+                    {h.displayCode || h.id} · {h.date} · {h.slot}
+                    {loadingDetail ? " · Đang đồng bộ chi tiết..." : ""}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-mint/25 px-3 py-1 text-xs font-semibold tabular-nums text-brand-deep">
+                  Ước tính {totalEstimatedKg} kg
+                </span>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => setModalOpen(false)}
+                  aria-label="Đóng chi tiết biên nhận"
+                  className="inline-flex size-9 items-center justify-center rounded-full border border-line bg-surface-2 text-muted transition-colors hover:bg-surface-3 hover:text-ink"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            </div>
 
-        {errorMessage && (
-          <p role="alert" className="rounded-xl border border-warn/40 bg-warn/10 px-4 py-2.5 text-sm font-medium text-warn">
-            {errorMessage}
-          </p>
-        )}
+          <Table head={["Loại rác", "Người dùng bỏ ra", "Bạn cân được (kg) *", "Thành tiền"]}>
+                {rows.map((r, i) => {
+                  const unitPrice = rowPriceOf(r, i)
+                  return (
+                    <tr key={r.itemId || `${r.wasteId}-${i}`}>
+                      <Td className="font-semibold text-ink">
+                        {r.wasteName || nameOf(r.wasteId)}
+                      </Td>
+                      <Td className="tabular-nums text-muted">{r.estimatedKg} kg</Td>
+                      <Td>
+                        <input
+                          className="input min-h-11 w-32 text-base tabular-nums sm:text-[15px]"
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          inputMode="decimal"
+                          aria-label={`Khối lượng cân thực tế ${r.wasteName || nameOf(r.wasteId)}`}
+                          value={r.rawKg ?? (Number.isFinite(r.kg) ? String(r.kg) : "")}
+                          disabled={sent || submitting}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            const parsed = raw.trim() === "" ? Number.NaN : Number(raw)
+                            setRows((rs) =>
+                              rs.map((x, n) =>
+                                n === i ? { ...x, rawKg: raw, kg: parsed } : x,
+                              ),
+                            )
+                          }}
+                          onBlur={() =>
+                            setRows((rs) =>
+                              rs.map((x, n) =>
+                                n === i && Number.isFinite(x.kg) && x.kg > 0
+                                  ? { ...x, rawKg: undefined, kg: Number(x.kg.toFixed(2)) }
+                                  : x,
+                              ),
+                            )
+                          }
+                        />
+                      </Td>
+                      <Td className="font-semibold tabular-nums text-ink">
+                        {VND(r.kg * unitPrice)}
+                      </Td>
+                    </tr>
+                  )
+                })}
+              </Table>
 
-        <div className="flex flex-wrap items-center gap-4 border-t border-line-soft pt-4">
-          <button type="submit" disabled={sent || submitting} className="btn-primary min-h-11 px-6 text-sm font-semibold">
-            {submitting ? "Đang tải ảnh & gửi..." : sent ? "Đã gửi biên nhận" : "Gửi biên nhận"}
-          </button>
-          {statusMessage && (
-            <p role="status" className="text-sm font-semibold text-brand">
-              {statusMessage}
-            </p>
-          )}
+              <label className="flex cursor-pointer flex-col gap-2 text-sm font-semibold text-ink">
+                <span className="flex items-center gap-1.5">
+                  <Camera className="size-4 text-brand-deep" aria-hidden="true" />
+                  Ảnh bàn giao &amp; bằng chứng cân {liveAuth ? "(Bắt buộc tối thiểu 1 ảnh)" : ""}
+                  <RequiredMark />
+                </span>
+                <span className="flex min-h-[76px] items-center justify-center rounded-xl border border-dashed border-sage-line bg-surface-2 px-4 py-4 text-center text-sm leading-6 font-normal text-muted transition-colors hover:border-brand/50">
+                  {files.length > 0
+                    ? files.map((f) => f.name).join(" · ")
+                    : existingProofUrls.length > 0
+                      ? `Đã lưu ${existingProofUrls.length} ảnh bằng chứng cân trên hệ thống`
+                      : "Chọn ảnh rác đã cân hoặc biên nhận cân, tối đa 4 ảnh (.jpg, .png, .webp)"}
+                </span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                  multiple
+                  disabled={sent || submitting}
+                  className="sr-only"
+                  onChange={(e) => handleProofFileChange(e.target.files)}
+                />
+              </label>
+
+              <div className="flex min-h-[84px] flex-wrap items-center gap-3">
+                {loadingDetail ? (
+                  <div className="size-20 animate-pulse rounded-xl border border-line bg-surface-2" />
+                ) : previewUrls.length > 0 || existingProofUrls.length > 0 ? (
+                  (existingProofUrls.length > 0 ? existingProofUrls : previewUrls).map((url, idx) => (
+                    <a
+                      key={`${url}-${idx}`}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block size-20 shrink-0 overflow-hidden rounded-xl border border-line bg-surface-2 transition-transform hover:scale-105"
+                      title={`Ảnh bằng chứng cân #${idx + 1}`}
+                    >
+                      <img
+                        src={url}
+                        alt={`Bằng chứng cân #${idx + 1}`}
+                        className="size-full object-cover"
+                      />
+                    </a>
+                  ))
+                ) : (
+                  <span className="text-xs text-muted">
+                    Chưa có ảnh bằng chứng cân đính kèm.
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-brand/25 bg-brand/6 px-5 py-4">
+                <p className="text-sm font-medium text-ink">
+                  Tổng tiền ước tính thanh toán:{" "}
+                  <b className="text-base tabular-nums text-brand-deep">{VND(effectiveTotalCash)}</b>
+                </p>
+                <span className="text-xs leading-5 text-muted">
+                  {previewLoading
+                    ? "Đang kiểm tra biên nhận từ máy chủ..."
+                    : "Hệ thống lưu trữ biên nhận để hai bên đối chiếu minh bạch, không thu phí giao dịch."}
+                </span>
+              </div>
+
+              {effectiveDeviationWarning && (
+                <div
+                  role="status"
+                  className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 font-medium text-amber-950"
+                >
+                  <b>Cảnh báo lệch khối lượng ({effectiveDeviationPercent > 0 ? `+${effectiveDeviationPercent}` : effectiveDeviationPercent}%):</b>{" "}
+                  {previewData?.deviationMessage ||
+                    "Khối lượng thực cân chênh lệch quá 20% so với ước tính ban đầu. Vui lòng kiểm tra kỹ và chụp rõ ảnh đồng hồ cân (MSG-HND-04)."}
+                </div>
+              )}
+
+              {errorMessage && (
+                <p role="alert" className="rounded-xl border border-warn/40 bg-warn/10 px-4 py-2.5 text-sm font-medium text-warn">
+                  {errorMessage}
+                </p>
+              )}
+
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line-soft pt-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <button type="submit" disabled={sent || submitting} className="btn-primary min-h-11 rounded-xl px-6 text-sm font-semibold">
+                    <FileCheck2 className="size-4" />
+                    {submitting ? "Đang tải ảnh & gửi..." : sent ? "Đã gửi biên nhận" : "Gửi biên nhận"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => setModalOpen(false)}
+                    className="btn-ghost min-h-11 px-4 text-sm font-semibold"
+                  >
+                    Đóng
+                  </button>
+                </div>
+                {statusMessage && (
+                  <p role="status" className="text-sm font-semibold text-brand-deep">
+                    {statusMessage}
+                  </p>
+                )}
+              </div>
+          </form>
         </div>
-      </form>
-      )}
+      </div>
+      ) : null}
     </div>
   )
 }

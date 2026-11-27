@@ -13,6 +13,7 @@ export default function Layout() {
   const { pathname } = useLocation()
   const showTreeFab = TREE_FAB_ROUTES.has(pathname)
   const isChatPage = pathname === "/chat"
+  const isRecyclerPortal = pathname === "/recycler" || pathname.startsWith("/recycler/")
 
   useEffect(() => {
     window.scrollTo({ top: 0 })
@@ -27,7 +28,7 @@ export default function Layout() {
           <Outlet />
         </Suspense>
       </main>
-      {!isChatPage && <Footer />}
+      {!isChatPage && !isRecyclerPortal && <Footer />}
       {showTreeFab && <VirtualTreeFab />}
       <MobileNav />
     </div>

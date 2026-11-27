@@ -316,6 +316,12 @@ export default function Chat() {
   const [proposalNote, setProposalNote] = useState<string>("")
   const [proposalErr, setProposalErr] = useState<string>("")
   const [submittingProposal, setSubmittingProposal] = useState(false)
+  const [pendingConfirm, setPendingConfirm] = useState<
+    | { kind: "proposal"; messageId: string; isAccepted: boolean }
+    | { kind: "initial" }
+    | null
+  >(null)
+  const [confirmingAction, setConfirmingAction] = useState(false)
 
   const appointmentBounds = getAppointmentDateBounds()
 
@@ -1176,18 +1182,12 @@ export default function Chat() {
     }
   }
 
-  // Phản hồi đề xuất: Chấp nhận hoặc Từ chối (BR-NEG-03, BR-NEG-05)
-  const handleRespondProposal = async (messageId: string, isAccepted: boolean) => {
-    if (
-      !confirm(
-        isAccepted
-          ? "Bạn có chắc chắn đồng ý chốt đơn với điều khoản này không?"
-          : "Bạn muốn từ chối đề xuất này?",
-      )
-    ) {
-      return
-    }
+  // Phản hồi đề xuất: mở hộp thoại xác nhận trong ứng dụng thay vì confirm() trình duyệt
+  const handleRespondProposal = (messageId: string, isAccepted: boolean) => {
+    setPendingConfirm({ kind: "proposal", messageId, isAccepted })
+  }
 
+  const executeRespondProposal = async (messageId: string, isAccepted: boolean) => {
     setChatErr("")
     try {
       const result = await respondToProposal(currentOrderId, messageId, {
@@ -1244,9 +1244,11 @@ export default function Chat() {
   }
 
   // Recycler chấp nhận trực tiếp điều khoản ban đầu (R-05 / BR-NEG-05)
-  const handleAcceptInitialTerms = async () => {
-    if (!confirm("Xác nhận chấp nhận lịch hẹn và đơn giá ban đầu của người dân?")) return
+  const handleAcceptInitialTerms = () => {
+    setPendingConfirm({ kind: "initial" })
+  }
 
+  const executeAcceptInitialTerms = async () => {
     setChatErr("")
     try {
       const result = await acceptOrderInitialTerms(currentOrderId)
@@ -2013,6 +2015,17 @@ export default function Chat() {
                                         {p.proposedWeightKg} kg
                                       </span>
                                     </div>
+                                    <div className="col-span-2 flex items-center justify-between gap-2 rounded-lg border border-brand/25 bg-brand/8 px-3 py-2">
+                                      <span className="text-xs font-semibold text-brand-deep">
+                                        Tổng giá ước tính
+                                      </span>
+                                      <span className="text-sm font-bold text-brand-deep tabular-nums">
+                                        {Math.round(
+                                          (p.proposedPricePerKg || 0) * (p.proposedWeightKg || 0),
+                                        ).toLocaleString("vi-VN")}{" "}
+                                        đ
+                                      </span>
+                                    </div>
                                     <div className="col-span-2 rounded-lg border border-line-soft bg-white/85 p-2">
                                       <span className="block text-xs text-muted">
                                         Khung giờ thu gom
@@ -2536,6 +2549,16 @@ export default function Chat() {
                 />
               </div>
 
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-brand/25 bg-brand/8 px-3.5 py-2.5 text-sm">
+                <span className="font-semibold text-brand-deep">Tổng giá ước tính</span>
+                <span className="text-base font-bold text-brand-deep tabular-nums">
+                  {Math.round(
+                    Math.max(0, proposalPrice || 0) * Math.max(0, proposalWeight || 0),
+                  ).toLocaleString("vi-VN")}{" "}
+                  đ
+                </span>
+              </div>
+
               <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block leading-6 font-semibold text-ink">
@@ -2648,6 +2671,79 @@ export default function Chat() {
                 </button>
               </div>
             </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Xác nhận Chấp nhận / Từ chối đề xuất (thay thế confirm() trình duyệt) */}
+      {pendingConfirm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="chat-confirm-title"
+          onClick={() => {
+            if (!confirmingAction) setPendingConfirm(null)
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-2xl border border-line bg-white p-5 shadow-2xl"
+          >
+            <h3 id="chat-confirm-title" className="text-base font-bold text-ink">
+              {pendingConfirm.kind === "initial"
+                ? "Chấp nhận lịch hẹn & đơn giá ban đầu"
+                : pendingConfirm.isAccepted
+                  ? "Xác nhận chốt đơn thương lượng"
+                  : "Từ chối bản đề xuất thương lượng"}
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-body">
+              {pendingConfirm.kind === "initial"
+                ? "Bạn xác nhận đồng ý với lịch hẹn và đơn giá ban đầu do người dân đề xuất?"
+                : pendingConfirm.isAccepted
+                  ? "Bạn có chắc chắn đồng ý chốt đơn với các điều khoản trong bản đề xuất này không?"
+                  : "Bạn muốn từ chối bản đề xuất này? Hai bên vẫn có thể gửi đề xuất mới."}
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2.5 border-t border-line-soft pt-3.5">
+              <button
+                type="button"
+                disabled={confirmingAction}
+                onClick={() => setPendingConfirm(null)}
+                className="btn-ghost min-h-10 px-4 text-sm font-semibold sm:min-h-9"
+              >
+                Huỷ
+              </button>
+              <button
+                type="button"
+                disabled={confirmingAction}
+                onClick={async () => {
+                  const current = pendingConfirm
+                  if (!current || confirmingAction) return
+                  setConfirmingAction(true)
+                  try {
+                    if (current.kind === "initial") {
+                      await executeAcceptInitialTerms()
+                    } else {
+                      await executeRespondProposal(current.messageId, current.isAccepted)
+                    }
+                    setPendingConfirm(null)
+                  } finally {
+                    setConfirmingAction(false)
+                  }
+                }}
+                className={`min-h-10 rounded-xl px-4 text-sm font-semibold text-white transition-colors disabled:opacity-60 sm:min-h-9 ${
+                  pendingConfirm.kind === "proposal" && !pendingConfirm.isAccepted
+                    ? "bg-warn hover:opacity-90"
+                    : "btn-primary"
+                }`}
+              >
+                {confirmingAction
+                  ? "Đang xử lý..."
+                  : pendingConfirm.kind === "proposal" && !pendingConfirm.isAccepted
+                    ? "Từ chối đề xuất"
+                    : "Xác nhận đồng ý"}
+              </button>
             </div>
           </div>
         </div>

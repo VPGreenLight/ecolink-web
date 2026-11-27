@@ -64,7 +64,6 @@ const ACCOUNT_ITEMS = [
  *  cơ sở thu mua, người chưa có tài khoản thì chưa ở trong hệ sinh thái. */
 const EXPLORE = [
   ["/feedback", "Khiếu nại và góp ý"],
-  ["/ecofacts", "Eco Facts"],
   ["/leaderboard", "Xếp hạng người dùng"],
 ] as const
 
@@ -184,19 +183,6 @@ function AccountMenu() {
                   {session!.role === "user" && (
                     <>
                       <Link
-                        to="/user/gamification"
-                        onClick={() => setOpen(false)}
-                        className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4 text-muted">
-                          <path d="M12 22v-9" />
-                          <path d="M15.14 8.86a4 4 0 0 0-6.28 0C7.5 10.6 8 14 12 14s4.5-3.4 3.14-5.14Z" />
-                          <path d="M8 14c-2.5 0-4-1.5-4-4 2.5 0 4 1.5 4 4Z" />
-                          <path d="M16 14c2.5 0 4-1.5 4-4-2.5 0-4 1.5-4 4Z" />
-                        </svg>
-                        Cây ảo &amp; Eco Fact
-                      </Link>
-                      <Link
                         to="/user/transactions"
                         onClick={() => setOpen(false)}
                         className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
@@ -227,11 +213,17 @@ function AccountMenu() {
                   )}
                   {session!.role === "recycler" && (
                     <Link
-                      to="/recycler#recycler-packages"
+                      to="/recycler/packages"
                       onClick={() => setOpen(false)}
                       className="flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-medium text-body transition-colors hover:bg-surface-2 hover:text-ink"
                     >
-                      <span>Gói dịch vụ &amp; Tích xanh Pro</span>
+                      <span className="flex items-center gap-3">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4 text-muted">
+                          <path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z" />
+                          <path d="M5 21h14" />
+                        </svg>
+                        Gói dịch vụ
+                      </span>
                       <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
                         {entitlements.currentTier}
                       </span>
@@ -255,7 +247,7 @@ function AccountMenu() {
 
                 {/* Nhóm 2: Khám phá */}
                 <div className="border-t border-line-soft">
-                  <ExploreList close={() => setOpen(false)} withRegister />
+                  <ExploreList close={() => setOpen(false)} withRegister={session?.role === "user"} />
                 </div>
 
                 {/* Nhóm 3: Khác */}

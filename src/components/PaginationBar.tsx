@@ -88,7 +88,7 @@ export default function PaginationBar({
             type="button"
             disabled={current <= 1}
             onClick={() => onPageChange(current - 1)}
-            className="btn-outline h-8 px-2.5 text-xs disabled:opacity-45"
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-line bg-white px-3 text-xs font-semibold text-body transition-colors hover:bg-surface-2 disabled:opacity-45"
           >
             Trước
           </button>
@@ -100,7 +100,7 @@ export default function PaginationBar({
                 type="button"
                 aria-current={tok === current ? "page" : undefined}
                 onClick={() => onPageChange(tok)}
-                className={`h-8 min-w-8 rounded-lg border px-2 text-xs font-semibold tabular-nums transition-colors ${
+                className={`inline-flex h-9 min-w-9 items-center justify-center rounded-lg border px-2.5 text-xs font-semibold tabular-nums transition-colors ${
                   tok === current
                     ? "border-brand bg-brand text-white"
                     : "border-line bg-white text-body hover:bg-surface-2"
@@ -109,7 +109,7 @@ export default function PaginationBar({
                 {tok}
               </button>
             ) : (
-              <span key={tok} className="px-1 text-muted select-none">
+              <span key={tok} className="inline-flex h-9 items-center px-1 text-muted select-none">
                 …
               </span>
             ),
@@ -119,7 +119,7 @@ export default function PaginationBar({
             type="button"
             disabled={current >= totalPages}
             onClick={() => onPageChange(current + 1)}
-            className="btn-outline h-8 px-2.5 text-xs disabled:opacity-45"
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-line bg-white px-3 text-xs font-semibold text-body transition-colors hover:bg-surface-2 disabled:opacity-45"
           >
             Sau
           </button>

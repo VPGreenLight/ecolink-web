@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { Check, QrCode, RefreshCw, ShieldCheck, Sparkles, XCircle } from "lucide-react"
 import { PageHead, Status, Table, Td } from "@/components/Portal"
-import SponsoredAdBanner from "@/components/SponsoredAdBanner"
 import VietQrCheckoutModal from "@/components/VietQrCheckoutModal"
 import { fmtVnd } from "@/data/ops"
 import { initApiLoading, initApiState } from "@/lib/hydration"
@@ -248,8 +247,6 @@ export default function Payout() {
           </button>
         }
       />
-
-      <SponsoredAdBanner upgradeTo="#citizen-packages" compact />
 
       {/* Khu vực U-16: Bảng gói dịch vụ 3 cấp bậc & Thanh toán VietQR Động */}
       <section id="citizen-packages" className="card flex flex-col gap-5 p-5 md:p-6">
