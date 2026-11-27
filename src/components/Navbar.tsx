@@ -134,7 +134,7 @@ function AccountMenu() {
   }
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="sm:relative" ref={ref}>
         {/* trigger: avatar + mũi tên trong một nút, hover chung */}
         <button
           type="button"
@@ -151,7 +151,7 @@ function AccountMenu() {
         {open && (
           <div
             role="menu"
-            className="absolute top-full right-0 mt-2.5 max-h-[calc(100dvh-5.75rem)] w-[min(360px,calc(100vw-2rem))] overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)]"
+            className="absolute top-[calc(100%+0.5rem)] right-3 left-3 max-h-[calc(100dvh-5.75rem)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)] sm:top-full sm:right-0 sm:left-auto sm:mt-2.5 sm:w-[360px]"
           >
             {user ? (
               <>
@@ -590,7 +590,7 @@ function NotificationBellMenu({ isLoggedIn }: { isLoggedIn: boolean }) {
   const visibleItems = filter === "unread" ? items.filter((n) => !n.isRead) : items
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="sm:relative" ref={ref}>
       <button
         type="button"
         aria-label={unreadCount > 0 ? `Thông báo (${unreadCount} chưa đọc)` : "Thông báo"}
@@ -623,7 +623,7 @@ function NotificationBellMenu({ isLoggedIn }: { isLoggedIn: boolean }) {
         <div
           role="menu"
           aria-label="Danh sách thông báo"
-          className="absolute top-full right-0 mt-2.5 flex max-h-[calc(100dvh-5.75rem)] w-[min(360px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)]"
+          className="absolute top-[calc(100%+0.5rem)] right-3 left-3 flex max-h-[calc(100dvh-5.75rem)] flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)] sm:top-full sm:right-0 sm:left-auto sm:mt-2.5 sm:w-[360px]"
         >
           <div className="flex items-center justify-between gap-2 border-b border-line-soft bg-surface-2/60 px-4 py-3">
             <div>

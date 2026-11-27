@@ -847,13 +847,29 @@ export default function RecyclerHome() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-[minmax(0,300px)_1fr] md:items-start">
-          <FacilityPhotoCard
-            facilityName={profile.facilityName}
-            address={profile.businessAddress}
-            photoUrl={editingProfile ? draftBusinessPhotoUrl || null : profile.businessPhotoUrl}
-            partnerKey={profile.recyclerId}
-            variant="detail"
-          />
+          {profile.recyclerType === "Individual" ? (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm leading-6 text-sky-950">
+              <strong className="font-semibold">Người thu mua lưu động (Cá nhân):</strong> Hoạt động thu gom tận nơi bằng xe cá nhân, được miễn Giấy phép ĐKKD và kho bãi cố định theo Nghị định 39/2007/NĐ-CP. Đã xác thực CCCD 2 mặt nội bộ.
+            </div>
+          ) : (
+            <FacilityPhotoCard
+              facilityName={profile.facilityName}
+              address={profile.businessAddress}
+              photoUrl={editingProfile ? draftBusinessPhotoUrl || null : profile.businessPhotoUrl}
+              photoUrls={
+                editingProfile && draftBusinessPhotoUrl
+                  ? [
+                      draftBusinessPhotoUrl,
+                      ...(profile.businessPhotoUrls ?? []).filter(
+                        (u) => u !== draftBusinessPhotoUrl,
+                      ),
+                    ].slice(0, 5)
+                  : profile.businessPhotoUrls
+              }
+              partnerKey={profile.recyclerId}
+              variant="detail"
+            />
+          )}
           <div className="flex flex-col gap-1.5 text-sm leading-6 text-body">
             <p className="font-semibold text-ink">Giới thiệu &amp; quy trình tiếp nhận</p>
             <p>

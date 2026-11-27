@@ -388,7 +388,7 @@ function AccountMenu$1() {
 		navigate("/");
 	};
 	return /* @__PURE__ */ jsxs("div", {
-		className: "relative",
+		className: "sm:relative",
 		ref,
 		children: [
 			/* @__PURE__ */ jsxs("button", {
@@ -406,7 +406,7 @@ function AccountMenu$1() {
 			}),
 			open && /* @__PURE__ */ jsx("div", {
 				role: "menu",
-				className: "absolute top-full right-0 mt-2.5 max-h-[calc(100dvh-5.75rem)] w-[min(360px,calc(100vw-2rem))] overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)]",
+				className: "absolute top-[calc(100%+0.5rem)] right-3 left-3 max-h-[calc(100dvh-5.75rem)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)] sm:top-full sm:right-0 sm:left-auto sm:mt-2.5 sm:w-[360px]",
 				children: user ? /* @__PURE__ */ jsxs(Fragment, { children: [
 					/* @__PURE__ */ jsxs("div", {
 						className: "flex items-center gap-3.5 border-b border-line-soft bg-surface-2/60 px-4 py-3.5",
@@ -834,7 +834,7 @@ function NotificationBellMenu({ isLoggedIn }) {
 	};
 	const visibleItems = filter === "unread" ? items.filter((n) => !n.isRead) : items;
 	return /* @__PURE__ */ jsxs("div", {
-		className: "relative",
+		className: "sm:relative",
 		ref,
 		children: [/* @__PURE__ */ jsxs("button", {
 			type: "button",
@@ -860,7 +860,7 @@ function NotificationBellMenu({ isLoggedIn }) {
 		}), open && /* @__PURE__ */ jsxs("div", {
 			role: "menu",
 			"aria-label": "Danh sách thông báo",
-			className: "absolute top-full right-0 mt-2.5 flex max-h-[calc(100dvh-5.75rem)] w-[min(360px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)]",
+			className: "absolute top-[calc(100%+0.5rem)] right-3 left-3 flex max-h-[calc(100dvh-5.75rem)] flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-[0_20px_48px_-10px_rgba(15,31,21,0.18)] sm:top-full sm:right-0 sm:left-auto sm:mt-2.5 sm:w-[360px]",
 			children: [
 				/* @__PURE__ */ jsxs("div", {
 					className: "flex items-center justify-between gap-2 border-b border-line-soft bg-surface-2/60 px-4 py-3",
@@ -2461,7 +2461,7 @@ var loaders = {
 	Payout: () => import("./assets/Payout-BextYZzi.js"),
 	Transactions: () => import("./assets/Transactions-C3lnnlxN.js"),
 	Gamification: () => import("./assets/Gamification-DqbN3I2q.js"),
-	RecyclerHome: () => import("./assets/Home-Djprglvk.js"),
+	RecyclerHome: () => import("./assets/Home-rnnImtk3.js"),
 	Requests: () => import("./assets/Requests-D5gmY4pX.js"),
 	Catalog: () => import("./assets/Catalog-CMJ6ewKe.js"),
 	RecyclerReceipt: () => import("./assets/Receipt-C1qa_U0p.js"),
